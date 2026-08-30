@@ -1,0 +1,38 @@
+export const problemStatement =
+  "Operators and engineers had no window into the selective solder driver's RabbitMQ traffic — issues were invisible until something downstream broke.";
+
+## The problem
+
+The selective solder driver publishes a continuous stream of RabbitMQ
+messages, but nothing surfaced them to the people who needed to see what was
+happening — operators watching the line, and engineers debugging it.
+
+## What I built
+
+BeholderWebUI, an internal monitoring UI in Blazor that subscribes to the
+driver's RabbitMQ messages and gives operators and engineers filtering,
+inspection, and message publishing against a 5,000-message working set.
+
+<ArchDiagram slug="beholderwebui" />
+
+I built this alongside mentoring a junior developer — pairing on the
+RabbitMQ subscription model and the filtering UX together. It's the one
+place on this site where that shows up, and for a Software Engineer II role,
+it's a real signal: this wasn't just solo output.
+
+## Hard parts
+
+Keeping the UI usable at a 5,000-message working set meant the filtering and
+inspection model had to be designed for scan-ability from the start, not
+bolted on after the list got slow. **[NEEDS PETER]** — the specific
+performance or UX decision that mattered most here.
+
+## Outcome
+
+Operators and engineers use it to see and act on driver traffic that used to
+be invisible. Internal only — no public URL, no screenshots, by design.
+
+## What I'd do differently
+
+I'd add saved filter presets — the same three or four filters get rebuilt by
+hand by whoever's debugging that day.

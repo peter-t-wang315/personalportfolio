@@ -1,0 +1,47 @@
+export const problemStatement =
+  "Prepping for competitive VGC play means reading three data sources with different shapes and update cadences, or already having a year of pattern recognition.";
+
+## The problem
+
+Figuring out what a team is weak to — and what a specific unfamiliar
+opponent can actually do to you — normally means cross-referencing a
+spreadsheet against sites that don't agree on format or update schedule.
+That's a real barrier for anyone newer to the format, and it doesn't get
+easier by memorizing more; it gets easier by having the right data in one
+place.
+
+## What I built
+
+The real problem here is data integration before it's a game tool: three
+sources — PokéAPI, Smogon, and Pikalytics — with different shapes and
+different update cadences, normalized into one model. On top of that,
+paste-a-team threat analysis (what beats you, what you beat, by how much)
+and a quick-reference card for unfamiliar opponents: base stats, the common
+competitive build, and the damage your team can put on them, via the
+`@smogon/calc` damage engine.
+
+<ArchDiagram slug="vgclite" />
+
+This is the same underlying skill as the protocol translation layer at
+SEL — reconciling sources that don't agree on shape into one schema
+something else can build on.
+
+## Hard parts
+
+Keeping the normalized model correct as the underlying sources update on
+their own schedules, without a shared versioning signal between them, is the
+ongoing hard part. A "common competitive build" is also a moving target — it
+changes as the metagame does, so the reference card is only as good as how
+recently the underlying usage data was pulled.
+
+## Outcome
+
+Live at [vgclite.com](https://vgclite.com), with real users — the only
+project on this site with a public URL and actual traffic. **[NEEDS PETER]**
+— whether Vercel Analytics has usage numbers worth citing here.
+
+## What I'd do differently
+
+I'd add a visible "data last updated" timestamp per source, so a user can
+tell at a glance whether a reference card reflects the current metagame or a
+stale pull.

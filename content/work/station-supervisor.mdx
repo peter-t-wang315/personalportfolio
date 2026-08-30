@@ -1,0 +1,42 @@
+export const problemStatement =
+  "Six production lines across two sites had no shared deployment model — every line risked becoming its own bespoke integration.";
+
+## The problem
+
+Each production line runs its own mix of equipment, but the software that
+supervises a line and the workers that talk to individual machines shouldn't
+be six different codebases. Without a shared topology, every new line is a
+new one-off, and every fix has to be re-applied by hand everywhere it
+matters.
+
+## What I built
+
+A three-tier topology: a station supervisor per line, a set of config-driven
+plugin workers underneath it, and the line hardware those workers talk to.
+The plugin workers are configuration, not code — adding a new machine type to
+a line is a config change, not a new service. The whole stack is
+containerized and deployed through a shared monorepo deployment model across
+all six lines and both sites.
+
+<ArchDiagram slug="station-supervisor" />
+
+I consumed the Kubernetes platform here rather than building it — the
+containerization, the service topology, and the config-driven plugin model
+are what I own.
+
+## Hard parts
+
+**[NEEDS PETER]** — the specific edge case or decision that took the most
+time on this one. The three-tier, config-driven shape is solid, but this
+section needs the real failure mode or tradeoff from working on it, not a
+plausible-sounding guess.
+
+## Outcome
+
+The pattern became the team's standard for how new lines and new machine
+types get integrated — not just used on the lines it started on.
+
+## What I'd do differently
+
+**[NEEDS PETER]** — same as above: a genuine "next time I'd..." lands better
+than an invented one.

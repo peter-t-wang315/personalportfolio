@@ -1,0 +1,60 @@
+export const problemStatement =
+  "Twelve-plus machines, three vendor protocols, and no shared schema — every new machine meant a bespoke integration.";
+
+## The problem
+
+The equipment on the floor doesn't agree on how to talk. Some machines speak
+SMEMA handshakes, and three different vendors layer their own proprietary
+protocols on top of that. Without a common event shape, every new machine
+integration was its own one-off service, and nothing downstream could reason
+about "a board moved" the same way twice.
+
+## What I built
+
+An adapter layer: one adapter per vendor protocol, each translating its
+machine's native handshake into a common event, normalized by a single
+service into the IPC-CFX event schema. Twelve-plus machines, three
+protocols, one schema out the other side. A new vendor integration is now an
+adapter implementation against a known interface, not a new bespoke service.
+
+<ArchDiagram slug="protocol-layer" />
+
+The pipeline simulator on the homepage models this exact adapter layer — the
+producers, the protocol adapters, and the normalizer are this system,
+relabeled in software vocabulary.
+
+## Hard parts
+
+This is the most interesting work on the site.
+
+- **TCP reconnect with exponential backoff and heartbeat-based detection.**
+  Machine connections drop. The adapter has to notice — via heartbeat, not
+  just a failed write — and back off its reconnect attempts instead of
+  hammering a machine that's already struggling.
+- **Board-eligibility validation that withholds the SMEMA ready signal.**
+  When a board isn't eligible to advance, the adapter doesn't just log a
+  warning — it withholds the ready signal back to the machine, which
+  physically holds the board in place rather than letting it move forward
+  incorrectly. That's a design decision with a physical consequence: get it
+  wrong in one direction and a board advances when it shouldn't; get it
+  wrong in the other and a healthy line stalls. This is the single most
+  interesting thing I've built, and it's the one the simulator's "validation
+  hold" button is modeling.
+
+I haven't built message deduplication, idempotency keys, or drop detection
+here — where retention or redelivery exists, it's RabbitMQ's queue
+durability doing that work, not something I wrote. I'm not claiming
+at-least-once or exactly-once delivery anywhere in this system.
+
+## Outcome
+
+New vendor integrations are scoped to writing an adapter against the IPC-CFX
+contract, not standing up a new service. The validation-hold behavior has
+been running as the correctness backstop for board eligibility across the
+protocol layer.
+
+## What I'd do differently
+
+I'd formalize the adapter interface into a proper contract test suite, so a
+new adapter can be verified against the schema before it ever touches a real
+machine, instead of being validated by hand against the normalizer.

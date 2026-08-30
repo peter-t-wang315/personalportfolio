@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --shell: #e3ded2;
+  --shell-deep: #cfc8b9;
+  --ink: #1f1e1a;
+  --graphite: #6e6c63;
+  --plum: #7c3a55;
+  --moss: #7f8e63;
+  --moss-1: #c8cfae;
+  --moss-2: #9caa7c;
+  --moss-3: #7f8e63;
+  --moss-4: #48533a;
+}
+
+@theme inline {
+  --color-shell: var(--shell);
+  --color-shell-deep: var(--shell-deep);
+  --color-ink: var(--ink);
+  --color-graphite: var(--graphite);
+  --color-plum: var(--plum);
+  --color-moss: var(--moss);
+  --color-moss-1: var(--moss-1);
+  --color-moss-2: var(--moss-2);
+  --color-moss-3: var(--moss-3);
+  --color-moss-4: var(--moss-4);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-utility: var(--font-utility);
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 3rem;
+  --text-4xl: 4.5rem;
+}
+
+* {
+  border-color: var(--shell-deep);
+}
+
+body {
+  font-feature-settings: "tnum" 1;
+}
+
+::selection {
+  background: var(--plum);
+  color: var(--shell);
+}
+
+:focus-visible {
+  outline: 2px solid var(--plum);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

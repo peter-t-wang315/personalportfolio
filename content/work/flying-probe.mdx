@@ -1,0 +1,34 @@
+export const problemStatement =
+  "An operator-facing flying probe tester dashboard was running on aging WPF, on a factory floor where breaking it isn't an option.";
+
+## The problem
+
+The flying probe tester dashboard is something real operators look at during
+a live shift. It was built in WPF, and moving it to a modern web stack meant
+touching a tool people depend on continuously — with none of the slack a
+green-field rewrite would have.
+
+## What I built
+
+A migration of the dashboard from WPF to React and Redux, backed by the
+existing C#/.NET services. Same operator-facing functionality, new stack
+underneath it.
+
+<ArchDiagram slug="flying-probe" />
+
+## Hard parts
+
+**[NEEDS PETER]** — the real story here is almost certainly feature parity
+and rollout risk on a floor tool operators can't stop using. This section
+needs the specific moment that was hardest to get right, not a generic
+"migrations are hard" gloss.
+
+## Outcome
+
+The React and Redux dashboard is what operators use in production today.
+
+## What I'd do differently
+
+**[NEEDS PETER]** — a genuine note on what the migration process itself would
+have gone better with (staged rollout, feature flags, parallel-run period —
+whatever's actually true).

@@ -1,0 +1,36 @@
+export const problemStatement =
+  "Preventive maintenance scheduling had no single owned system — the data model, the contract, and the UI all needed to exist for the first time.";
+
+## The problem
+
+Preventive maintenance across the floor didn't have a system of record. The
+relationships involved — equipment, maintenance tasks, schedules, and the
+teams responsible for them — form a genuinely nested hierarchy, and nobody
+had modeled it end to end before.
+
+## What I built
+
+Full-stack ownership: a relational schema with a four-level many-to-many
+hierarchy, a REST contract designed and coordinated across frontend,
+backend, and DBA teams, and the React client on top of it.
+
+<ArchDiagram slug="maintenance-platform" />
+
+## Hard parts
+
+**[NEEDS PETER]** — the specific schema or contract decision that was hardest
+to get right. A four-level many-to-many hierarchy almost always has at least
+one relationship that's ambiguous until you hit real data; this section
+should name it.
+
+## Outcome
+
+In use across two sites, covering roughly 30% of manufacturing. That's
+adoption scope, not measured impact — I don't track how many teams consume
+it, so I'm not citing that number.
+
+## What I'd do differently
+
+I'd push harder up front to log actual adoption and usage against the
+schema, so "roughly 30%" could eventually become a number backed by
+telemetry instead of a scope estimate.

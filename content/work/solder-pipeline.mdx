@@ -1,0 +1,60 @@
+export const problemStatement =
+  "Not every board on a mixed-model solder line needs solder — something has to decide that in real time, and act on the decision correctly.";
+
+## The problem
+
+A selective solder line doesn't solder every board the same way. Depending on
+the board model, some units need solder at specific points and some don't
+need it at all. That decision, and the physical act of routing a board
+through — or around — the solder station, has to happen inline, continuously,
+without a person watching every unit.
+
+Before this pipeline existed, that coordination lived as tribal knowledge and
+manual routing. It didn't scale past a handful of board models, and it had no
+recovery story: if the line hiccuped mid-cycle, there was no defined way back
+to a known-good state.
+
+## What I built
+
+Three services, coordinated over RabbitMQ: a camera scan service that reads
+the board and determines eligibility, a routing service that decides where
+the board goes next, and a machine driver that talks to the solder line over
+a TCP socket. Each is a long-running background service — there's no request
+a person makes and waits on. The board simply keeps moving, and the pipeline
+has to make the correct call at every step or a physical mistake happens.
+
+<ArchDiagram slug="solder-pipeline" />
+
+## Hard parts
+
+- **Partial failure mid-cycle.** If the routing service or the machine driver
+  drops out while a board is mid-transit, the pipeline has to know it, not
+  silently continue as if nothing happened.
+- **Machine timeouts.** The solder line doesn't always respond on the happy
+  path. A driver that doesn't distinguish "slow" from "gone" will make the
+  wrong call.
+- **Bad scans.** A camera read that doesn't map to a known board model has to
+  fail safe, not fail silent.
+- **Mid-cycle abort.** Stopping a board that's already committed to a solder
+  pass without leaving the line in an inconsistent state.
+
+**[VERIFY WITH PETER]** — what actually happens today when the routing
+service receives a malformed or unexpected message: is it logged and
+ignored, retried, or does it crash the consumer? This case study should say
+whichever one is true, plainly, rather than the version that sounds better.
+
+## Outcome
+
+The pipeline runs continuously on the solder line, making the
+solder-or-skip call per board without a person in the loop. I'm not citing a
+message-rate or defect-rate number here — the site doesn't claim scale that
+wasn't measured, and this system's story is correctness under continuous
+operation, not throughput.
+
+## What I'd do differently
+
+If the answer above turns out to be "logged and ignored," that's the first
+thing I'd change: a malformed message on a live solder line shouldn't just
+disappear into a log file. I'd add an explicit dead-letter path with an
+operator-visible alert, the same pattern the protocol translation layer uses
+for its poison-message handling.
