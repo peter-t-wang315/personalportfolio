@@ -30,7 +30,7 @@ export default function Resume() {
           <a
             href="/resume.pdf"
             download
-            className="text-[0.875rem] text-mask hover:underline"
+            className="text-[0.875rem] text-mask link-underline"
           >
             Download PDF
           </a>
@@ -39,7 +39,7 @@ export default function Resume() {
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-[0.875rem]">
           <a
             href={`mailto:${site.email}`}
-            className="text-mask hover:underline"
+            className="text-mask link-underline"
           >
             {site.email}
           </a>
@@ -47,7 +47,7 @@ export default function Resume() {
             href={site.github}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-mask hover:underline"
+            className="text-mask link-underline"
           >
             GitHub
           </a>
@@ -55,7 +55,7 @@ export default function Resume() {
             href={site.linkedin}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-mask hover:underline"
+            className="text-mask link-underline"
           >
             LinkedIn
           </a>

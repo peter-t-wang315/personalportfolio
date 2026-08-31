@@ -42,7 +42,7 @@ export default function WorkList() {
                 {clusterProjects.map((project) => (
                   <li key={project.id} className="py-5">
                     <Link href={`/work/${project.slug}`} className="group block">
-                      <p className="text-[1.0625rem] font-medium group-hover:underline">
+                      <p className="text-[1.0625rem] font-medium inline-block link-underline">
                         {project.title}
                       </p>
                       <p className="text-[0.875rem] text-ink-muted mt-1">

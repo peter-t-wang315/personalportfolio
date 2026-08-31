@@ -102,7 +102,7 @@ export default async function ProjectPage({
                 href={link.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-mask hover:underline"
+                className="text-mask link-underline"
               >
                 {link.label}
               </a>

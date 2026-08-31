@@ -15,7 +15,7 @@ export default function NebulaComingSoon() {
           An interactive version of this graph is being built — the same
           projects and technologies, connected as a 3D constellation.
         </p>
-        <Link href="/work" className="mt-6 inline-block text-mask hover:underline">
+        <Link href="/work" className="mt-6 inline-block text-mask link-underline">
           See the full list of work
         </Link>
       </div>
