@@ -98,7 +98,7 @@ export default async function ProjectPage({
         ) : null}
 
         {project.links && project.links.length > 0 ? (
-          <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2">
+          <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem]">
             {project.links.map((link) => (
               <a
                 key={link.href}

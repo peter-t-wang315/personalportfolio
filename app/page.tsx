@@ -67,7 +67,10 @@ export default function Home() {
           ))}
         </dl>
 
-        <nav aria-label="Primary" className="mt-16 md:mt-20 flex flex-wrap gap-x-6 gap-y-2">
+        <nav
+          aria-label="Primary"
+          className="mt-16 md:mt-20 flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem]"
+        >
           {navLinks.map((link) => (
             <Link
               key={link.label}

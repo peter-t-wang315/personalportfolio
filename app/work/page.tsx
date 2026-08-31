@@ -33,7 +33,7 @@ export default function WorkList() {
           if (clusterProjects.length === 0) return null;
 
           return (
-            <section key={cluster.id} className="mt-16">
+            <section key={cluster.id} className="mt-10 md:mt-14">
               <h2 className="text-[1.25rem] font-medium">{cluster.label}</h2>
               {cluster.context ? (
                 <p className="text-[0.875rem] text-ink-muted mt-1">

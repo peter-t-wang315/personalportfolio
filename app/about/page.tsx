@@ -36,7 +36,7 @@ export default function About() {
           about
         </h1>
 
-        <div className="mt-10 flex flex-col sm:flex-row gap-8 items-start">
+        <div className="mt-10 md:mt-14 flex flex-col sm:flex-row gap-8 items-start">
           {/* TODO(peter): swap for a real photo. */}
           <div className="w-32 h-32 shrink-0 bg-paper-sunk" />
           <div>

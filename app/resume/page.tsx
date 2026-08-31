@@ -69,7 +69,7 @@ export default function Resume() {
           if (clusterProjects.length === 0) return null;
 
           return (
-            <section key={cluster.id} className="mt-14">
+            <section key={cluster.id} className="mt-10 md:mt-14">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4">
                 <h2 className="text-[1.0625rem] font-medium">
                   {cluster.label}
@@ -97,14 +97,14 @@ export default function Resume() {
           );
         })}
 
-        <section className="mt-14">
+        <section className="mt-10 md:mt-14">
           <h2 className="text-[1.0625rem] font-medium">Education</h2>
           <p className="mt-3 text-[0.9375rem] text-ink-muted">
             Washington State University
           </p>
         </section>
 
-        <section className="mt-14">
+        <section className="mt-10 md:mt-14">
           <h2 className="text-[1.0625rem] font-medium">Skills</h2>
           <p className="mt-3 text-[0.9375rem] text-ink-muted">
             {tech.map((t) => t.label).join(", ")}.
