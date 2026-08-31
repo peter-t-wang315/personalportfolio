@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { site, clusters, tech, projectsInCluster } from "@/content";
+import { HomeLink } from "../home-link";
 
 export const metadata: Metadata = {
   title: "Resume | Peter Wang",
@@ -10,9 +11,11 @@ const orderedClusters = [...clusters].sort((a, b) => a.order - b.order);
 
 export default function Resume() {
   return (
-    <div className="px-6 py-20 md:px-16">
+    <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
-        <div className="flex flex-wrap items-baseline justify-between gap-4">
+        <HomeLink />
+
+        <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">
           <div>
             <h1
               className="font-display lowercase"

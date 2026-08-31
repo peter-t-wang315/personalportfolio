@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { site, tech } from "@/content";
+import { HomeLink } from "../home-link";
 
 export const metadata: Metadata = {
   title: "About | Peter Wang",
@@ -19,10 +20,12 @@ const alsoFamiliarWith = [
 
 export default function About() {
   return (
-    <div className="px-6 py-20 md:px-16">
+    <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
+        <HomeLink />
+
         <h1
-          className="font-display lowercase"
+          className="font-display lowercase mt-4"
           style={{
             fontSize: "clamp(1.75rem, 4vw, 2.75rem)",
             fontWeight: 400,

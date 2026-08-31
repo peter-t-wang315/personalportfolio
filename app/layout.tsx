@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { site } from "@/content";
 import { NebulaCanvasLoader } from "./nebula-canvas-loader";
 import { PointerTracker } from "./pointer-tracker";
+import { SiteHeader } from "./site-header";
 import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
 
@@ -23,6 +24,7 @@ export default function RootLayout({
       <body className="font-body bg-paper text-ink antialiased">
         <PointerTracker />
         <NebulaCanvasLoader />
+        <SiteHeader />
         <main className="relative z-10">{children}</main>
       </body>
     </html>
