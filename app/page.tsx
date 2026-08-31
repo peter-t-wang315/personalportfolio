@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { site, heroMetrics, projectById } from "@/content";
-import { HeroParallax } from "./hero-parallax";
+import { PointerParallax } from "./pointer-parallax";
+import { ScrollCue } from "./scroll-cue";
 
 const navLinks = [
   { label: "Resume", href: "/resume", external: false },
@@ -28,7 +29,7 @@ export default function Home() {
   return (
     <>
     <section className="min-h-dvh flex flex-col px-6 pt-16 pb-8 md:px-16 md:pt-20 md:pb-10">
-      <HeroParallax className="flex-1 flex flex-col justify-between">
+      <PointerParallax className="flex-1 flex flex-col justify-between">
       <div className="max-w-[66ch]">
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
@@ -89,37 +90,12 @@ export default function Home() {
         </Link>
       </div>
 
-      <a
-        href="#selected-work"
-        aria-label="Scroll to selected work"
-        className="self-start flex flex-row items-center gap-2 text-ink-muted hover:text-ink"
-      >
-        {[0, 1, 2].map((i) => (
-          <svg
-            key={i}
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            className="scroll-cue-caret"
-            style={{ animationDelay: `${i * 0.15}s` }}
-            aria-hidden="true"
-          >
-            <path
-              d="M4 7L10 13L16 7"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ))}
-      </a>
-      </HeroParallax>
+      <ScrollCue />
+      </PointerParallax>
     </section>
 
     <section id="selected-work" className="px-6 py-20 md:px-16">
-      <div className="max-w-[66ch]">
+      <PointerParallax className="max-w-[66ch]">
         <p className="text-[1.0625rem] leading-[1.6]">
           I build the software that keeps automated manufacturing lines
           talking to each other — device drivers, message-passing services,
@@ -144,7 +120,7 @@ export default function Home() {
             </li>
           ))}
         </ul>
-      </div>
+      </PointerParallax>
     </section>
     </>
   );

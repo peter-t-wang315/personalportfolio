@@ -8,12 +8,12 @@ const MAX_OFFSET_PX = 12;
 const SPRING = { stiffness: 120, damping: 20, mass: 0.6 };
 
 /**
- * Foreground text half of the landing-page cursor parallax. Translates up to
- * 12px opposite the background cluster (see nebula-canvas.tsx), spring-eased
- * with high damping so it reads as weighted rather than floaty. Fully inert
- * under prefers-reduced-motion.
+ * Cursor parallax for landing-page text, opposite the background cluster
+ * (see nebula-canvas.tsx). Translates up to 12px, spring-eased with high
+ * damping so it reads as weighted rather than floaty. Used by both the hero
+ * and the section below it. Fully inert under prefers-reduced-motion.
  */
-export function HeroParallax({
+export function PointerParallax({
   children,
   className,
 }: {
