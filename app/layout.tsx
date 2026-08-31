@@ -3,9 +3,12 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { site } from "@/content";
 import { NebulaCanvasLoader } from "./nebula-canvas-loader";
+import { PointerTracker } from "./pointer-tracker";
+import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: site.name,
   description: site.role,
 };
@@ -18,6 +21,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-body bg-paper text-ink antialiased">
+        <PointerTracker />
         <NebulaCanvasLoader />
         <main className="relative z-10">{children}</main>
       </body>

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { CanvasErrorBoundary } from "./canvas-error-boundary";
 
 const NebulaCanvas = dynamic(
   () => import("./nebula-canvas").then((mod) => mod.NebulaCanvas),
@@ -12,5 +13,9 @@ const NebulaCanvas = dynamic(
 );
 
 export function NebulaCanvasLoader() {
-  return <NebulaCanvas />;
+  return (
+    <CanvasErrorBoundary>
+      <NebulaCanvas />
+    </CanvasErrorBoundary>
+  );
 }

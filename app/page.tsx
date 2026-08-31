@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { site, heroMetrics, projectById } from "@/content";
+import { HeroParallax } from "./hero-parallax";
 
 const navLinks = [
   { label: "Resume", href: "/resume", external: false },
@@ -26,6 +27,7 @@ const featuredProjects = featuredProjectIds
 export default function Home() {
   return (
     <div className="px-6 py-20 md:px-16">
+      <HeroParallax>
       <div className="max-w-[66ch]">
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
@@ -77,7 +79,15 @@ export default function Home() {
             </Link>
           ))}
         </nav>
+
+        <Link
+          href="/nebula"
+          className="mt-16 inline-block text-[0.8125rem] text-ink-faint hover:text-ink-muted"
+        >
+          What&apos;s this?
+        </Link>
       </div>
+      </HeroParallax>
 
       <div className="max-w-[66ch] mt-24">
         <p className="text-[1.0625rem] leading-[1.6]">
