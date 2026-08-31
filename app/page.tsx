@@ -2,7 +2,7 @@ import { site, heroMetrics } from "@/content";
 
 export default function Home() {
   return (
-    <main className="min-h-screen px-6 py-24 md:px-16">
+    <div className="min-h-screen px-6 py-24 md:px-16">
       <div className="max-w-[66ch]">
         <p className="text-[0.875rem] text-ink-muted">{site.role}</p>
 
@@ -39,6 +39,6 @@ export default function Home() {
           ))}
         </dl>
       </div>
-    </main>
+    </div>
   );
 }
