@@ -14,6 +14,7 @@ import { makeRng } from "@/lib/seeded-random";
 const CLUSTER_SEED = 0xc105a7;
 const NODE_COUNT = 40;
 const CLUSTER_RADIUS = 3;
+const CLUSTER_DEPTH = -14;
 const PARALLAX_MAX = 1.4;
 
 interface NodeDatum {
@@ -152,7 +153,7 @@ function Cluster() {
   });
 
   return (
-    <group ref={groupRef}>
+    <group ref={groupRef} position={[0, 0, CLUSTER_DEPTH]}>
       {nodes.map((node, i) => (
         <mesh
           key={i}

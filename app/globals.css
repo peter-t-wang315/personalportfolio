@@ -14,6 +14,16 @@
   --font-body: var(--font-geist-sans), ui-sans-serif, sans-serif;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
 body {
   background-color: var(--color-paper);
   color: var(--color-ink);
@@ -22,6 +32,35 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-mask);
   outline-offset: 2px;
+}
+
+/* Third sitewide idle-motion exception, alongside cursor parallax and
+   Nebula edge pulses — see 01-design-system.md's Motion section. Three
+   carets side by side, each double-bobbing then holding still for most of
+   a 3.6s cycle, staggered slightly so they ripple rather than move as one. */
+@keyframes scroll-cue-bob {
+  0%,
+  38%,
+  100% {
+    transform: translateY(0);
+  }
+  9%,
+  28% {
+    transform: translateY(5px);
+  }
+  19% {
+    transform: translateY(0);
+  }
+}
+
+.scroll-cue-caret {
+  animation: scroll-cue-bob 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue-caret {
+    animation: none;
+  }
 }
 
 * {

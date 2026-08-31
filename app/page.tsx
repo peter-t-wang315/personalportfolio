@@ -26,14 +26,15 @@ const featuredProjects = featuredProjectIds
 
 export default function Home() {
   return (
-    <div className="px-6 py-20 md:px-16">
-      <HeroParallax>
+    <>
+    <section className="min-h-dvh flex flex-col px-6 pt-16 pb-8 md:px-16 md:pt-20 md:pb-10">
+      <HeroParallax className="flex-1 flex flex-col justify-between">
       <div className="max-w-[66ch]">
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
 
         <h1
-          className="font-display lowercase mt-6"
+          className="font-display lowercase mt-8 md:mt-10"
           style={{
             fontSize: "clamp(2.5rem, 7vw, 5.5rem)",
             fontWeight: 400,
@@ -44,7 +45,7 @@ export default function Home() {
           {site.positioning}
         </h1>
 
-        <dl className="mt-14 flex flex-wrap gap-10">
+        <dl className="mt-20 md:mt-24 flex flex-wrap gap-10">
           {heroMetrics.map((metric) => (
             <div key={metric.label}>
               <dd
@@ -65,7 +66,7 @@ export default function Home() {
           ))}
         </dl>
 
-        <nav aria-label="Primary" className="mt-10 flex flex-wrap gap-x-6 gap-y-2">
+        <nav aria-label="Primary" className="mt-16 md:mt-20 flex flex-wrap gap-x-6 gap-y-2">
           {navLinks.map((link) => (
             <Link
               key={link.label}
@@ -82,14 +83,43 @@ export default function Home() {
 
         <Link
           href="/nebula"
-          className="mt-16 inline-block text-[0.8125rem] text-ink-faint hover:text-ink-muted"
+          className="mt-24 md:mt-28 inline-block text-[0.8125rem] text-ink-faint hover:text-ink-muted"
         >
-          What&apos;s this?
+          Explore this as a graph
         </Link>
       </div>
-      </HeroParallax>
 
-      <div className="max-w-[66ch] mt-24">
+      <a
+        href="#selected-work"
+        aria-label="Scroll to selected work"
+        className="self-start flex flex-row items-center gap-2 text-ink-muted hover:text-ink"
+      >
+        {[0, 1, 2].map((i) => (
+          <svg
+            key={i}
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            className="scroll-cue-caret"
+            style={{ animationDelay: `${i * 0.15}s` }}
+            aria-hidden="true"
+          >
+            <path
+              d="M4 7L10 13L16 7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ))}
+      </a>
+      </HeroParallax>
+    </section>
+
+    <section id="selected-work" className="px-6 py-20 md:px-16">
+      <div className="max-w-[66ch]">
         <p className="text-[1.0625rem] leading-[1.6]">
           I build the software that keeps automated manufacturing lines
           talking to each other — device drivers, message-passing services,
@@ -115,6 +145,7 @@ export default function Home() {
           ))}
         </ul>
       </div>
-    </div>
+    </section>
+    </>
   );
 }

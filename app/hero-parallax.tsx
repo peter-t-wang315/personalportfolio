@@ -13,7 +13,13 @@ const SPRING = { stiffness: 120, damping: 20, mass: 0.6 };
  * with high damping so it reads as weighted rather than floaty. Fully inert
  * under prefers-reduced-motion.
  */
-export function HeroParallax({ children }: { children: React.ReactNode }) {
+export function HeroParallax({
+  children,
+  className,
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   const pointer = useSceneStore((s) => s.pointer);
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
 
@@ -32,5 +38,9 @@ export function HeroParallax({ children }: { children: React.ReactNode }) {
     y.set(pointer.y * MAX_OFFSET_PX);
   }, [pointer, reducedMotion, x, y]);
 
-  return <motion.div style={{ x: springX, y: springY }}>{children}</motion.div>;
+  return (
+    <motion.div className={className} style={{ x: springX, y: springY }}>
+      {children}
+    </motion.div>
+  );
 }
