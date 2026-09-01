@@ -6,6 +6,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { usePathname } from "next/navigation";
 import { useSceneStore } from "@/lib/scene-store";
 import { makeRng } from "@/lib/seeded-random";
+import { palette } from "@/lib/palette";
 
 /**
  * Phase 1 version: a static-feeling drifting cluster, not the real graph.
@@ -56,7 +57,7 @@ function useFresnelMaterial() {
     () =>
       new THREE.ShaderMaterial({
         uniforms: {
-          color: { value: new THREE.Color("#1f4a3a") },
+          color: { value: new THREE.Color(palette.mask) },
           opacity: { value: 0.9 },
         },
         vertexShader: `
@@ -77,8 +78,8 @@ function useFresnelMaterial() {
           void main() {
             vec3 viewDir = normalize(vViewPosition);
             float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.2);
-            float core = 0.12;
-            gl_FragColor = vec4(color, (fresnel * 0.8 + core) * opacity);
+            float core = 0.16;
+            gl_FragColor = vec4(color, (fresnel * 0.9 + core) * opacity);
           }
         `,
         transparent: true,

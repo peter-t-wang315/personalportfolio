@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { site } from "@/content";
+import { palette } from "@/lib/palette";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -15,11 +16,11 @@ export default function OpengraphImage() {
           flexDirection: "column",
           justifyContent: "center",
           padding: "80px",
-          backgroundColor: "#F7F5F0",
-          color: "#171614",
+          backgroundColor: palette.paper,
+          color: palette.ink,
         }}
       >
-        <div style={{ fontSize: 28, color: "#5C5A54" }}>{site.role}</div>
+        <div style={{ fontSize: 28, color: palette.inkMuted }}>{site.role}</div>
         <div style={{ fontSize: 64, marginTop: 24, maxWidth: 900 }}>
           {site.positioning}
         </div>

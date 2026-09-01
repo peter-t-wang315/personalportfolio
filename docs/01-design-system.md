@@ -9,21 +9,24 @@ The material reference is a printed circuit board on a warm paper background —
 ## Palette
 
 ```
---paper        #F7F5F0   page background
---paper-sunk   #F1EEE7   recessed surfaces, code blocks, table stripes
---ink          #171614   primary text
---ink-muted    #5C5A54   secondary text, captions
---ink-faint    #9B9890   hairlines, disabled, tertiary
---mask         #1F4A3A   accent — solder-mask green. Links, focus rings, active nav, node cores.
---mask-tint    #E4EBE7   accent wash for backgrounds
---lamp         #C88A2E   status amber. ONLY for live data flow on Nebula edges and "currently running" indicators. Never decorative.
+--paper        #F4EEE0   page background
+--paper-raised #FAF7EF   elevated surfaces: cards, panels, node interiors. Lighter than --paper — on a warm mid-tone ground, sinking reads muddy, so elevation floats toward white.
+--paper-sunk   #EAE2D0   genuinely recessed wells only: code blocks, table stripes. Not for elevated surfaces.
+--ink          #1C1917   primary text
+--ink-muted    #5F5A4E   secondary text, captions
+--ink-faint    #A8A08C   hairlines, disabled, tertiary
+--mask         #1F4A3A   accent, solder-mask green. Links, focus rings, active nav, node cores.
+--mask-tint    #E2E7DC   accent wash for backgrounds
+--lamp         #C8862A   status amber. ONLY for live data flow on Nebula edges and "currently running" indicators. Never decorative.
 ```
+
+Canonical values live in `lib/palette.ts` for the few places that can't read CSS variables (next/og image generation, R3F shader uniforms). Keep that file and this table in sync by hand when the palette changes.
 
 Rules:
 - No gradients anywhere except the node glass shader.
 - No drop shadows. Depth comes from hairlines (`1px solid --ink-faint` at 30% opacity) and from the 3D layer.
 - `--lamp` must never be used for a hover state, a link, or a button. It means "signal is moving." Diluting it kills the one place the site uses color semantically.
-- Contrast: `--ink` on `--paper` is 14.8:1. `--mask` on `--paper` is 8.9:1. Both pass AAA.
+- Contrast: `--ink` on `--paper` is 15.1:1. `--mask` on `--paper` is 8.65:1. Both clear 7:1 (AAA).
 
 ## Typography
 
