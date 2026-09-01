@@ -48,6 +48,34 @@ export interface ProjectNode {
   size: NodeSize;
 }
 
+/** Resume-only content. Terse, resume-style phrasing, distinct from the prose in ProjectNode.body. */
+export interface ResumeExperience {
+  title: string;
+  org: string;
+  location: string;
+  start: string;
+  end: string;
+  bullets: string[];
+}
+
+export interface ResumeProject {
+  title: string;
+  link?: ProjectLink;
+  stack: string;
+  start: string;
+  end: string;
+  bullets: string[];
+}
+
+export interface ResumeEducation {
+  school: string;
+  location: string;
+  degree: string;
+  gpa: string;
+  start: string;
+  end: string;
+}
+
 export interface Edge {
   id: string;
   from: string;

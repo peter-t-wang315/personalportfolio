@@ -8,14 +8,14 @@ import type { Cluster } from './types';
  */
 export const clusters: Cluster[] = [
   {
-    id: 'throughhole',
-    label: 'Through-hole automation platform',
+    id: 'solder',
+    label: 'Selective solder line',
     context: 'Schweitzer Engineering Laboratories',
     order: 0,
   },
   {
-    id: 'solder',
-    label: 'Selective solder line',
+    id: 'throughhole',
+    label: 'Through-hole automation platform',
     context: 'Schweitzer Engineering Laboratories',
     order: 1,
   },

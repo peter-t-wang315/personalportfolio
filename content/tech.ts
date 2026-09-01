@@ -4,13 +4,13 @@ import type { TechNode } from './types';
  * 25 nodes. Curated down from a 57-item skill list.
  *
  * Deliberately excluded and why:
- *  - Assumed (HTML, CSS, Git, Agile, code review) — listing them is a negative signal.
- *  - Too thin to advertise (Java, C/C++, SQL Server, stored procedures, xUnit) —
+ *  - Assumed (HTML, CSS, Git, Agile, code review): listing them is a negative signal.
+ *  - Too thin to advertise (Java, C/C++, SQL Server, stored procedures, xUnit):
  *    a node implies proficiency and invites a question the depth won't survive.
  *  - Concepts, not technologies (microservices, event-driven architecture,
- *    distributed systems, message queues, API design, caching) — these live on
+ *    distributed systems, message queues, API design, caching): these live on
  *    edges as `protocol` and `detail`, which is the point of the edge model.
- *  - Not graph material (Claude Code, mentoring, on-call, LaTeX, MUI, Radix, WPF) —
+ *  - Not graph material (Claude Code, mentoring, on-call, LaTeX, MUI, Radix, WPF):
  *    these belong on /about and the resume.
  */
 export const tech: TechNode[] = [

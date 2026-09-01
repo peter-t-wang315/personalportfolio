@@ -5,7 +5,7 @@ import { projects } from './projects';
  * RUNTIME EDGES.
  *
  * These are real message paths between services in production. This is the
- * claim that makes the whole site work — a visitor tracing these is reading an
+ * claim that makes the whole site work: a visitor tracing these is reading an
  * accurate architecture diagram, not a metaphor.
  *
  * `detail` is where architectural concepts live. They were deliberately kept
@@ -29,7 +29,7 @@ export const runtimeEdges: Edge[] = [
     kind: 'runtime',
     protocol: 'RabbitMQ / IPC-CFX',
     detail:
-      'Resolved board identity arrives normalised to IPC-CFX. The driver never learns how the data was fetched — only what came back — which keeps external API changes out of protocol code.',
+      'Resolved board identity arrives normalised to IPC-CFX. The driver never learns how the data was fetched, only what came back, which keeps external API changes out of protocol code.',
   },
   {
     id: 'e-solder-console',
@@ -38,7 +38,7 @@ export const runtimeEdges: Edge[] = [
     kind: 'runtime',
     protocol: 'RabbitMQ',
     detail:
-      'Structured error events go to a dedicated exchange so an operator sees the specific failure reason. The console can inject a manual scan and restart the driver, but the driver does not depend on it — if the console is down, production is not.',
+      'Structured error events go to a dedicated exchange so an operator sees the specific failure reason. The console can inject a manual scan and restart the driver, but the driver does not depend on it: if the console is down, production is not.',
   },
 
   // --- Through-hole automation platform ---------------------------
@@ -71,17 +71,6 @@ export const runtimeEdges: Edge[] = [
     detail:
       'The client cache is the working copy. Edits across the machine → checklist → section → task hierarchy accumulate locally and reconcile on commit, which is what makes multi-level revert possible.',
   },
-
-  // --- Flying probe ------------------------------------------------
-  {
-    id: 'e-flying-probe-internal',
-    from: 'flying-probe',
-    to: 'flying-probe',
-    kind: 'runtime',
-    protocol: 'REST (polling)',
-    detail:
-      'Operator input goes to a backend that speaks to the machine; responses return by polling. No message bus here — this system is deliberately self-contained so one operator and one instance can run a machine end to end.',
-  },
 ];
 
 /**
@@ -112,11 +101,11 @@ export const devTimeEdges: Edge[] = [
 ];
 
 /**
- * SHARED-TECH EDGES — derived, never hand-written.
+ * SHARED-TECH EDGES: derived, never hand-written.
  *
  * A project connects to each technology it uses. Rendered as hairlines with no
  * animation. If these ever compete visually with runtime edges, drop their
- * opacity — the asymmetry is the entire point.
+ * opacity. The asymmetry is the entire point.
  */
 export function deriveSharedTechEdges(): Edge[] {
   return projects.flatMap((p) =>

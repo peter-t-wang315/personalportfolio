@@ -3,7 +3,7 @@ import { projects } from './projects';
 import { tech } from './tech';
 
 /**
- * Deterministic layout. Positions MUST be identical on every load — a
+ * Deterministic layout. Positions MUST be identical on every load. A
  * constellation that rearranges itself between visits feels random rather
  * than designed, and deep links stop making spatial sense.
  *
@@ -28,7 +28,7 @@ const CLUSTER_RADIUS = 14;
 const CLUSTER_SPREAD = 3;
 const TECH_SHELL_RADIUS = 20;
 
-/** Fibonacci sphere — even distribution, no clumping. */
+/** Fibonacci sphere: even distribution, no clumping. */
 function fibonacciSphere(count: number, radius: number): Vec3[] {
   const points: Vec3[] = [];
   const phi = Math.PI * (3 - Math.sqrt(5));

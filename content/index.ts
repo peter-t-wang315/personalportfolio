@@ -4,6 +4,7 @@ export { tech } from './tech';
 export { projects } from './projects';
 export { edges, runtimeEdges, devTimeEdges } from './edges';
 export { layout, clusterCentroid, type Vec3 } from './layout';
+export { resumeExperience, resumeEducation, resumeProjects } from './resume';
 
 import { projects } from './projects';
 import { tech } from './tech';
@@ -20,14 +21,14 @@ export const site = {
 
 /**
  * Hero metrics. The preventive maintenance adoption figure lives on its own
- * node instead, where it has context — three headline numbers get scrutinised
- * hardest and that one is the softest of the set.
+ * node instead, where it has context. Three headline numbers get scrutinised
+ * hardest, and that one is the softest of the set.
  */
 export const heroMetrics = [
   { value: '18%', label: 'cycle time reduction', note: '+60 boards per day' },
   {
     value: '30+',
-    label: 'machines and devices across 6 vendors',
+    label: 'machines and devices across 6+ vendors',
     note: 'machines, conveyors, cameras, SMEMA controllers',
   },
   { value: '2 sites', label: '6 production lines, running continuously' },
