@@ -1,0 +1,105 @@
+@import "tailwindcss";
+
+/*
+ * Palette source of truth is lib/palette.ts — CSS can't import from TS, so
+ * these values are kept in sync by hand. Update both when the palette
+ * changes.
+ */
+@theme {
+  --color-paper: #f4eee0;
+  --color-paper-raised: #faf7ef;
+  --color-paper-sunk: #eae2d0;
+  --color-ink: #1c1917;
+  --color-ink-muted: #5f5a4e;
+  --color-ink-faint: #a8a08c;
+  --color-mask: #1f4a3a;
+  --color-mask-tint: #e2e7dc;
+  --color-lamp: #c8862a;
+
+  --font-display: var(--font-geist-mono), ui-monospace, monospace;
+  --font-body: var(--font-geist-sans), ui-sans-serif, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-mask);
+  outline-offset: 2px;
+}
+
+/* Third sitewide idle-motion exception, alongside cursor parallax and
+   Nebula edge pulses, see 01-design-system.md's Motion section. Three
+   carets side by side, each double-bobbing then holding still for most of
+   a 3.6s cycle, staggered slightly so they ripple rather than move as one. */
+@keyframes scroll-cue-bob {
+  0%,
+  38%,
+  100% {
+    transform: translateY(0);
+  }
+  9%,
+  28% {
+    transform: translateY(5px);
+  }
+  19% {
+    transform: translateY(0);
+  }
+}
+
+.scroll-cue-caret {
+  animation: scroll-cue-bob 3.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue-caret {
+    animation: none;
+  }
+}
+
+* {
+  border-color: var(--color-ink-faint);
+}
+
+/*
+ * Underline that grows in from the left on hover/focus instead of
+ * appearing instantly. A ::after bar positioned off the element's own box
+ * edge (not font metrics). A background-image line positioned in em units
+ * landed inconsistently across inline/inline-flex/inline-block contexts,
+ * sitting too close to the text in some of them. `.group:hover` covers the
+ * "hover anywhere in the block" list-item pattern (see /work and the
+ * landing page project lists).
+ */
+.link-underline {
+  position: relative;
+}
+
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 0%;
+  height: 1px;
+  background-color: currentColor;
+  transition: width 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.link-underline:hover::after,
+.link-underline:focus-visible::after,
+.group:hover .link-underline::after,
+.group:focus-visible .link-underline::after {
+  width: 100%;
+}
