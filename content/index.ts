@@ -43,6 +43,16 @@ export const tourOrder = [
   'timesense',
 ] as const;
 
+/**
+ * SEL production clusters. In the Nebula their project nodes carry the solid
+ * --mask core; personal, client, and internship work renders hollow.
+ */
+export const selClusterIds = new Set(
+  clusters
+    .filter((c) => c.context === 'Schweitzer Engineering Laboratories')
+    .map((c) => c.id),
+);
+
 export const projectBySlug = (slug: string) =>
   projects.find((p) => p.slug === slug);
 
