@@ -93,9 +93,9 @@ Only runtime edges get motion. This is what makes the SEL region visibly the den
 - **Concepts, not technologies:** microservices, event-driven architecture, distributed systems, message queues, data modeling, API design, machine integration, industrial protocol integration, manufacturing automation, caching, relational schema design. These become edge `protocol`/`detail` text and body prose.
 - **Not graph material:** Claude Code, AI-assisted development, mentoring, on-call support, LaTeX, Material UI, Radix UI, WPF. These belong on `/about` and the resume. Claude Code in particular should be prominent on `/about` — it was named in eight of sixteen job postings reviewed.
 
-## Naming — unresolved, blocks content freeze
+## Naming — resolved
 
-SEL-internal tool names must not ship. Descriptive replacements to use unless Peter confirms otherwise with his manager:
+Internal tool names are cleared for public use. The constraint is narrower than originally scoped: no screenshots or logs, not the names themselves. Project titles stay descriptive; the internal name renders as a secondary `aka` subtitle on `/work/[slug]` only.
 
 | Internal | Public name |
 |---|---|
@@ -151,7 +151,11 @@ Tech: SQL, REST APIs, C#/.NET.
 
 ### Needs content from Peter (see `content-intake.md`)
 
-`flying-probe` · `meter-zentra` · `meter-pipeline` · `vgclite` · `pokemon-team-builder` · `timesense` · `sonder-barber` · `thai-ginger` · `cartpole` · `hackathon-2023` · `this-site`
+`flying-probe` · `meter-zentra` · `meter-pipeline` · `vgclite` · `pokemon-team-builder` · `timesense` · `sonder-barber` · `thai-ginger` · `hackathon-2023` · `this-site`
+
+## Project decisions
+
+**CartPole, cut.** A tutorial follow-along in a Gym environment, not original work. Deliberately excluded from the portfolio; do not add it back.
 
 ## Hero metrics
 
