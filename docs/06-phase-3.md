@@ -29,7 +29,7 @@ Worth building carefully. It is the only place on the site where the interaction
 
 ## 4. Particle field
 
-One `InstancedMesh`, ~600 tiny drifting points in the deep background for parallax depth. Drift in the vertex shader.
+Counts and implementation approach are governed by `02-architecture.md`'s Performance budget and Responsive tiers table — this section doesn't restate them.
 
 **Watch the contrast.** Dark dots at low opacity on cream read as dust or dead pixels. Use `--ink-faint` at very low opacity and test on a real display before committing. If it looks like dirt, cut it — this is the most expendable item here.
 
@@ -37,7 +37,7 @@ One `InstancedMesh`, ~600 tiny drifting points in the deep background for parall
 
 Only if measured framerate allows. `@react-three/postprocessing` DOF on the background during focus.
 
-Be skeptical. On a low-contrast cream scene the effect is barely legible, and it costs a full pass on top of the focused node's transmission. The cheaper alternative already specified in Phase 2 — fading and desaturating unfocused nodes — may read better. **Prototype both and compare before keeping this.**
+Be skeptical. On a low-contrast cream scene the effect is barely legible, and it costs a full pass on top of the focused node's transmission — desktop only, per `02-architecture.md`'s Responsive tiers table. The cheaper alternative already specified in Phase 2 — fading and desaturating unfocused nodes — may read better. **Prototype both and compare before keeping this.**
 
 ## 6. Audio
 

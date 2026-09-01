@@ -39,9 +39,11 @@ Faint Geist Sans labels at each cluster centroid, `--ink-faint`, opacity scaling
 
 **Fly-in.** Clicking a node interpolates the camera to a position offset along the vector from the constellation center through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through the geometry.
 
-Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, idle rotation pauses, unrelated nodes drop to 25% opacity, the focused node's material switches to real transmission.
+Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, idle rotation pauses, unrelated nodes drop to 25% opacity. Whether the focused node's material switches to real transmission is tier-dependent — see `02-architecture.md`'s Responsive tiers table. Desktop only; tablet and mobile keep the fresnel shader throughout.
 
-**The interior panel.** The node's shell expands to occupy ~70% of the viewport and drops toward near-full transparency. The silhouette morphs from a wobbling sphere toward a rounded rectangle as it opens — the rim stays curved and glassy, but the content area becomes honest about being a panel, because circular content areas fight lists, code, and links.
+**The interior panel.** The node's shell expands and drops toward near-full transparency; see `02-architecture.md`'s Responsive tiers table for exact panel size per device. The silhouette morphs from a wobbling sphere toward a rounded rectangle as it opens — the rim stays curved and glassy, but the content area becomes honest about being a panel, because circular content areas fight lists, code, and links.
+
+Under 500px of viewport height, in any tier, this morph doesn't happen at all: the panel is a full-height sheet instead, with no circular-to-rounded-rect transition. See `02-architecture.md`'s Orientation and short viewports.
 
 DOM content fades in inside the shell's screen-space bounds, rendered with `motion`. Real HTML: selectable, scrollable, keyboard-accessible, crawlable. Contains exactly what `/work/[slug]` contains, from the same content object.
 
@@ -53,9 +55,9 @@ Connected nodes remain visible past the panel edges and stay hoverable and click
 
 `/nebula/[slug]` entered directly starts the camera outside the constellation and plays the full approach before opening the node. Never cut straight in.
 
-## Mobile
+## Device tiers
 
-Per `02-architecture.md`. Technology nodes hidden by default. No transmission. 200 particles. Persistent bottom sheet listing all nodes is the primary navigation; the 3D is ambient. Tap to select, tap again to open.
+Tier-specific behavior (particle counts, transmission policy, tech node visibility, navigation model, panel sizing) is defined once, in `02-architecture.md`'s Responsive tiers table. This section doesn't restate it.
 
 ## Accessibility
 
