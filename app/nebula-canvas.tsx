@@ -50,7 +50,7 @@ function generateNodes(): NodeDatum[] {
   return nodes;
 }
 
-/** Rim-lit translucent sphere with a soft inner core — the default node material. */
+/** Rim-lit translucent sphere with a soft inner core, the default node material. */
 function useFresnelMaterial() {
   return useMemo(
     () =>

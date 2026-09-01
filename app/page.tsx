@@ -101,7 +101,7 @@ export default function Home() {
       <PointerParallax className="max-w-[66ch]">
         <p className="text-[1.0625rem] leading-[1.6]">
           I build the software that keeps automated manufacturing lines
-          talking to each other — device drivers, message-passing services,
+          talking to each other: device drivers, message-passing services,
           and the tools operators and engineers use to see what those
           services are doing. Below are a handful of the pieces of that work
           I can talk about in detail; the full list is on the work page.

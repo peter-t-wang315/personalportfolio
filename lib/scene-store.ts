@@ -4,7 +4,7 @@ import { create } from "zustand";
 
 /**
  * Single cross-boundary store. The DOM overlay and the R3F scene both read
- * from this — context doesn't cross the R3F reconciler boundary reliably,
+ * from this. Context doesn't cross the R3F reconciler boundary reliably,
  * so this is the standard answer. See docs/02-architecture.md.
  *
  * `mode` tracks the constellation/inside states Phase 2 needs; Phase 1 never

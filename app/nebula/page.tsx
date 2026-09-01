@@ -15,7 +15,7 @@ export default function NebulaComingSoon() {
       <div className="flex-1 flex items-center justify-center text-center">
         <div className="max-w-[44ch]">
           <p className="text-[1.0625rem] leading-[1.6]">
-            An interactive version of this graph is being built — the same
+            An interactive version of this graph is being built: the same
             projects and technologies, connected as a 3D constellation.
           </p>
           <Link

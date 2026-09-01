@@ -12,7 +12,7 @@ const links = [
 
 /**
  * Persistent way back to the rest of the site from anywhere except the
- * landing page — which already carries the full link row in its hero.
+ * landing page, which already carries the full link row in its hero.
  */
 export function SiteHeader() {
   const pathname = usePathname();

@@ -52,6 +52,12 @@ export default async function ProjectPage({
           {project.title}
         </h1>
 
+        {project.aka ? (
+          <p className="text-[0.875rem] text-ink-muted mt-2">
+            Known internally as {project.aka}.
+          </p>
+        ) : null}
+
         <p className="text-[0.875rem] text-ink-muted mt-3">
           {project.ownershipNote}
         </p>

@@ -1,13 +1,17 @@
 import type { Metadata } from "next";
-import { site, clusters, tech, projectsInCluster } from "@/content";
+import {
+  site,
+  tech,
+  resumeExperience,
+  resumeEducation,
+  resumeProjects,
+} from "@/content";
 import { HomeLink } from "../home-link";
 
 export const metadata: Metadata = {
   title: "Resume | Peter Wang",
   description: site.role,
 };
-
-const orderedClusters = [...clusters].sort((a, b) => a.order - b.order);
 
 export default function Resume() {
   return (
@@ -31,7 +35,7 @@ export default function Resume() {
             <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
           </div>
           <a
-            href="/resume.pdf"
+            href="/Peter_Wang_Resume.pdf"
             download
             className="text-[0.875rem] text-mask link-underline"
           >
@@ -64,43 +68,55 @@ export default function Resume() {
           </a>
         </div>
 
-        {orderedClusters.map((cluster) => {
-          const clusterProjects = projectsInCluster(cluster.id);
-          if (clusterProjects.length === 0) return null;
+        <section className="mt-10 md:mt-14">
+          <h2 className="text-[1.0625rem] font-medium">Experience</h2>
 
-          return (
-            <section key={cluster.id} className="mt-10 md:mt-14">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-4">
-                <h2 className="text-[1.0625rem] font-medium">
-                  {cluster.label}
-                </h2>
-                {cluster.context ? (
+          <div className="mt-3 space-y-8">
+            {resumeExperience.map((job) => (
+              <div key={job.title + job.org}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                  <p className="text-[0.9375rem] font-medium">{job.title}</p>
                   <p className="text-[0.8125rem] text-ink-muted">
-                    {cluster.context}
+                    {job.start} - {job.end}
                   </p>
-                ) : null}
-              </div>
+                </div>
+                <p className="text-[0.8125rem] text-ink-muted mt-1">
+                  {job.org}
+                </p>
+                <p className="text-[0.8125rem] text-ink-faint">
+                  {job.location}
+                </p>
 
-              <ul className="mt-3 space-y-3">
-                {clusterProjects.map((project) => (
-                  <li key={project.id}>
-                    <p className="text-[0.9375rem] font-medium">
-                      {project.title}
-                    </p>
-                    <p className="text-[0.8125rem] text-ink-muted">
-                      {project.ownershipNote} {project.oneLine}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          );
-        })}
+                <ul className="mt-3 space-y-2 list-disc pl-5">
+                  {job.bullets.map((bullet) => (
+                    <li
+                      key={bullet}
+                      className="text-[0.875rem] text-ink-muted leading-[1.55]"
+                    >
+                      {bullet}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section className="mt-10 md:mt-14">
           <h2 className="text-[1.0625rem] font-medium">Education</h2>
-          <p className="mt-3 text-[0.9375rem] text-ink-muted">
-            Washington State University
+          <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-4">
+            <p className="text-[0.9375rem] font-medium">
+              {resumeEducation.school}
+            </p>
+            <p className="text-[0.8125rem] text-ink-muted">
+              {resumeEducation.start} - {resumeEducation.end}
+            </p>
+          </div>
+          <p className="text-[0.8125rem] text-ink-muted mt-1">
+            {resumeEducation.degree}, GPA {resumeEducation.gpa}
+          </p>
+          <p className="text-[0.8125rem] text-ink-faint">
+            {resumeEducation.location}
           </p>
         </section>
 
@@ -109,6 +125,49 @@ export default function Resume() {
           <p className="mt-3 text-[0.9375rem] text-ink-muted">
             {tech.map((t) => t.label).join(", ")}.
           </p>
+        </section>
+
+        <section className="mt-10 md:mt-14">
+          <h2 className="text-[1.0625rem] font-medium">Projects</h2>
+
+          <div className="mt-3 space-y-8">
+            {resumeProjects.map((project) => (
+              <div key={project.title}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                  <p className="text-[0.9375rem] font-medium">
+                    {project.title}
+                  </p>
+                  <p className="text-[0.8125rem] text-ink-muted">
+                    {project.start} - {project.end}
+                  </p>
+                </div>
+                <p className="text-[0.8125rem] text-ink-faint">
+                  {project.stack}
+                </p>
+                {project.link ? (
+                  <a
+                    href={project.link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[0.8125rem] text-mask link-underline mt-1 inline-block"
+                  >
+                    {project.link.label}
+                  </a>
+                ) : null}
+
+                <ul className="mt-3 space-y-2 list-disc pl-5">
+                  {project.bullets.map((bullet) => (
+                    <li
+                      key={bullet}
+                      className="text-[0.875rem] text-ink-muted leading-[1.55]"
+                    >
+                      {bullet}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </section>
       </div>
     </div>

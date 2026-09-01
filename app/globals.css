@@ -35,7 +35,7 @@ body {
 }
 
 /* Third sitewide idle-motion exception, alongside cursor parallax and
-   Nebula edge pulses — see 01-design-system.md's Motion section. Three
+   Nebula edge pulses, see 01-design-system.md's Motion section. Three
    carets side by side, each double-bobbing then holding still for most of
    a 3.6s cycle, staggered slightly so they ripple rather than move as one. */
 @keyframes scroll-cue-bob {
@@ -70,7 +70,7 @@ body {
 /*
  * Underline that grows in from the left on hover/focus instead of
  * appearing instantly. A ::after bar positioned off the element's own box
- * edge (not font metrics) — a background-image line positioned in em units
+ * edge (not font metrics). A background-image line positioned in em units
  * landed inconsistently across inline/inline-flex/inline-block contexts,
  * sitting too close to the text in some of them. `.group:hover` covers the
  * "hover anywhere in the block" list-item pattern (see /work and the
