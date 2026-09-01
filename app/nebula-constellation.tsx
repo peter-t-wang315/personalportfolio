@@ -3,29 +3,26 @@
 import { useEffect } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
-import { projects, tech, layout, selClusterIds } from "@/content";
-import { palette } from "@/lib/palette";
 import { makeRng } from "@/lib/seeded-random";
+import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import { useSceneStore } from "@/lib/scene-store";
+import { nodeList, type NodeGeometry } from "@/lib/node-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
+import { Edges } from "./nebula-edges";
 
 /**
  * Step 2.2 — materials. Node typing (solid --mask core on SEL project nodes,
  * everything else hollow), low-frequency vertex displacement so silhouettes
  * breathe, and the device-tier switch threaded through material selection.
- * Still no edges, motion simulation, or interaction; those are 2.3 onward.
- * See docs/05a-phase-2-sequence.md.
+ * Step 2.3 adds edges (see ./nebula-edges.tsx). Still no motion simulation
+ * or interaction; those are 2.3a onward. See docs/05a-phase-2-sequence.md.
  *
  * Everything here is a static singleton — content is fixed at build time and
  * this file is client-only — so geometry, materials, and node data live at
  * module scope. The frame loop then mutates plain module objects, never
  * values owned by hooks.
  */
-const MAJOR_RADIUS = 0.85;
-const STANDARD_RADIUS = 0.6;
-const TECH_RADIUS = 0.34;
-
 const PROJECT_OPACITY = 0.9;
 // Tech nodes read as a supporting layer around their clusters, not a
 // population of their own — recessed to ~55% of project node opacity.
@@ -67,40 +64,21 @@ const coreMaterial = new THREE.MeshBasicMaterial({ color: palette.mask });
 // stillness helps the hierarchy read), and dim as a group per tier.
 const techMaterial = createFresnelMaterial({ opacity: TECH_OPACITY });
 
-interface NodeDatum {
-  id: string;
-  position: [number, number, number];
-  radius: number;
-  kind: "project" | "tech";
-  /** SEL project nodes only — the solid core the shell reveals. */
-  hasCore: boolean;
-  material: THREE.ShaderMaterial;
-}
-
-const nodes: NodeDatum[] = (() => {
+const materialByNodeId: Record<string, THREE.ShaderMaterial> = (() => {
   const rng = makeRng(BREATHE_SEED);
-  const projectNodes: NodeDatum[] = projects.map((p) => ({
-    id: p.id,
-    position: layout[p.id],
-    radius: p.size === "major" ? MAJOR_RADIUS : STANDARD_RADIUS,
-    kind: "project",
-    hasCore: selClusterIds.has(p.clusterId),
-    material: createFresnelMaterial({
-      opacity: PROJECT_OPACITY,
-      displacementAmplitude: BREATHE_AMPLITUDE,
-      seed: rng() * Math.PI * 2 * 10,
-      timeUniform: breatheTime,
-    }),
-  }));
-  const techNodes: NodeDatum[] = tech.map((t) => ({
-    id: t.id,
-    position: layout[t.id],
-    radius: TECH_RADIUS,
-    kind: "tech",
-    hasCore: false,
-    material: techMaterial,
-  }));
-  return [...projectNodes, ...techNodes];
+  const map: Record<string, THREE.ShaderMaterial> = {};
+  for (const node of nodeList) {
+    map[node.id] =
+      node.kind === "project"
+        ? createFresnelMaterial({
+            opacity: PROJECT_OPACITY,
+            displacementAmplitude: BREATHE_AMPLITUDE,
+            seed: rng() * Math.PI * 2 * 10,
+            timeUniform: breatheTime,
+          })
+        : techMaterial;
+  }
+  return map;
 })();
 
 /**
@@ -109,15 +87,9 @@ const nodes: NodeDatum[] = (() => {
  * Transmission policy per tier lives in 02-architecture.md's Responsive
  * tiers table; nothing is focusable yet, so today every path is fresnel.
  */
-function shellMaterial(node: NodeDatum, tier: DeviceTier): THREE.Material {
-  switch (tier) {
-    case "desktop":
-      // 2.5 adds: focused node, after fly-in completes -> real transmission.
-      return node.material;
-    case "tablet":
-    case "mobile":
-      return node.material;
-  }
+function shellMaterial(node: NodeGeometry, _tier: DeviceTier): THREE.Material {
+  // 2.5 adds: desktop + focused + fly-in complete -> real transmission.
+  return materialByNodeId[node.id];
 }
 
 export function Constellation() {
@@ -143,7 +115,8 @@ export function Constellation() {
     <>
       <fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />
       <group>
-        {nodes.map((node) => {
+        <Edges showTech={showTech} />
+        {nodeList.map((node) => {
           if (node.kind === "tech" && !showTech) return null;
           return (
             <mesh
