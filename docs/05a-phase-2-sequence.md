@@ -1,6 +1,6 @@
 # Phase 2 — build sequence
 
-Eight steps. Each one ends with something visible in the browser and something specific to verify. Build them in order; each depends on the one before.
+Nine steps. Each one ends with something visible in the browser and something specific to verify. Build them in order; each depends on the one before.
 
 Commit after every step. Deploy a preview after 2.2, 2.6, and 2.8.
 
@@ -16,13 +16,13 @@ Build `layout.ts` into the scene. The shared fresnel node material and `--paper`
 
 Verify the seeded generator produces identical positions across reloads — reload ten times and confirm nothing moves.
 
-**Done when:** the constellation reads as seven distinct clusters, nothing overlaps or occludes badly from the default heading, and the SEL clusters occupy the front hemisphere.
+**Done when:** nothing overlaps or occludes badly from the default heading, and the SEL clusters occupy the front hemisphere. Full legibility as distinct clusters depends on the edge hierarchy, not this static view — re-evaluate that at 2.3.
 
 **This is the highest-risk step.** If the graph doesn't look good as plain grey spheres, no material work will save it. Tune `CLUSTER_RADIUS`, `CLUSTER_SPREAD`, and `TECH_SHELL_RADIUS` here until the composition is right, before anything else is built on top.
 
 ---
 
-## 2.2 — Materials and idle motion
+## 2.2 — Materials
 
 **Goal:** it looks like the finished thing, standing still.
 
@@ -30,11 +30,11 @@ The fresnel base landed in 2.1; this step extends it — low-frequency vertex di
 
 Node typing: SEL project nodes carry a solid `--mask` core visible through the shell; personal and client work is hollow; tech nodes are hollow, smaller, lower opacity.
 
-Idle: constellation rotates on Y at ~0.02 rad/s, individual nodes drift slightly.
+Do not build rotation, drift, or the force simulation here — that's 2.3a, after edges exist to spring against.
 
 **Write the material with a tier switch from the start.** Transmission is desktop-only and arrives in 2.5 — the branch should exist now so it isn't retrofitted into a shader later.
 
-**Done when:** it holds up as a still image, and `prefers-reduced-motion` stops all rotation and drift.
+**Done when:** it holds up as a still image, and it holds framerate with every node's vertex displacement running.
 
 Deploy a preview. This is the first version worth looking at on a phone.
 
@@ -50,11 +50,23 @@ Runtime edges as `QuadraticBezierLine`, `--ink` at 40%, amber `--lamp` pulse on 
 
 ---
 
+## 2.3a — Force simulation
+
+**Goal:** the constellation floats instead of sitting still.
+
+Nodes stop being static after `layout.ts` places them. A lightweight runtime force simulation takes over: weak springs hold runtime-edge-connected pairs loosely together, everything else wanders freely. Build the attraction mechanic here too — given a node id, pull everything it's connected to toward it, release on request — but leave it unwired to pointer events; 2.4 is where hover actually calls it. Also build the freeze/resume hook now, even though nothing calls it until fly-in lands in 2.5: the simulation must be able to stop completely and hold position during any programmatic camera movement.
+
+This step needs edges (2.3) to exist first, since the springs attach to runtime-edge pairs.
+
+**Done when:** the constellation reads as alive rather than posed, spring-held runtime-edge pairs stay loosely together while everything else wanders without drifting apart or off-screen, and `prefers-reduced-motion` renders the whole thing frozen at the seeded initial layout.
+
+---
+
 ## 2.4 — Camera control and hover
 
 **Goal:** first real interaction.
 
-`CameraControls` with drag-to-rotate and clamped dolly. `onPointerOver` scales the node to 1.15, raises opacity, brightens every connected edge, and shows a projected DOM label with `title` and `oneLine`. One node hovered at a time.
+`CameraControls` with drag-to-rotate and clamped dolly. `onPointerOver` scales the node to 1.15, raises opacity, brightens every connected edge, shows a projected DOM label with `title` and `oneLine`, and attracts connected nodes per 2.3a. One node hovered at a time.
 
 **Done when:** hovering any node makes its neighbourhood obvious, and the dolly clamp prevents both flying outside the constellation and clipping through it.
 
@@ -66,11 +78,11 @@ Runtime edges as `QuadraticBezierLine`, `--ink` at 40%, amber `--lamp` pulse on 
 
 Camera interpolates to a position offset along the vector from constellation centre through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through geometry.
 
-On focus: idle rotation pauses, unrelated nodes drop to 25% opacity, and on desktop only the focused node's material switches to real transmission.
+On focus: the float simulation freezes (per the hook built in 2.3a), unrelated nodes drop to 25% opacity, and on desktop only the focused node's material switches to real transmission.
 
 Escape and a close control both return to the constellation.
 
-**Done when:** the flight feels weighted rather than snappy or floaty, rotation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
+**Done when:** the flight feels weighted rather than snappy or floaty, the simulation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
 
 ---
 
@@ -80,13 +92,13 @@ Escape and a close control both return to the constellation.
 
 Shell expands per the tier table and drops toward near-full transparency, morphing from wobbling sphere toward rounded rectangle. DOM content fades in within the shell's screen-space bounds using `motion`. Real HTML — selectable, scrollable, keyboard-accessible. Content comes from the same object `/work/[slug]` renders. Never duplicate the prose.
 
-Routing: node clicks push `/nebula/[slug]` with `{ scroll: false }`. Direct entry to `/nebula/[slug]` starts outside the constellation and plays the full approach — never cut in.
+Routing: node clicks push `/nebula/[slug]` with `{ scroll: false }` and play the full approach flight. Cold entry — a direct link or a reload — is different: land already inside the node with no approach flight, shell expanded and content visible at first paint; exiting plays the arrival in reverse (camera pulls back, shell contracts). See `05-phase-2.md`'s Deep linking section for the full split, the canonical-tag pairing with `/work/[slug]`, and the no-WebGL/reduced-motion redirect to it.
 
 Sideways navigation: connected nodes stay visible past the panel edges, hoverable and clickable. Clicking one flies directly there without returning to the constellation.
 
 Under 500px viewport height, the panel becomes a full-height sheet with no morph.
 
-**Done when:** every project is readable inside its node, browser back and forward work correctly, and a pasted `/nebula/[slug]` link lands on the right node having played the approach.
+**Done when:** every project is readable inside its node, browser back and forward work correctly, a pasted `/nebula/[slug]` link lands already inside the right node with no flight, and clicking that same node from within the graph does play the flight.
 
 Deploy a preview. This is the first genuinely complete version.
 
@@ -122,8 +134,8 @@ Deploy to production.
 
 ## Notes
 
-**Reduced motion is not a step.** Handle it inline at 2.2, 2.5, and 2.6. If it reaches 2.8 unhandled, it means motion was written in a way that assumes it's always on, and that's harder to unpick than to prevent.
+**Reduced motion is not a step.** Handle it inline at 2.2, 2.3a, 2.5, and 2.6. If it reaches 2.8 unhandled, it means motion was written in a way that assumes it's always on, and that's harder to unpick than to prevent.
 
-**Performance is measured, not assumed.** Check framerate at 2.2, 2.3, and 2.6 — the three steps that add real GPU cost. Do not wait until 2.8 to discover the particle field or the edge pulses are too expensive.
+**Performance is measured, not assumed.** Check framerate at 2.2, 2.3, 2.3a, and 2.6 — the steps that add real GPU or CPU cost. Do not wait until 2.8 to discover the particle field, the edge pulses, or the force simulation are too expensive.
 
 **If a step reveals the design is wrong, stop and say so** rather than building the next step on top of it. 2.1 and 2.3 are the two most likely to surface that.

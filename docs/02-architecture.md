@@ -40,13 +40,13 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/about` | Bio, photo, skills prose, mentoring, on-call, Claude Code | Far, slightly offset |
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
-| `/work/[slug]` | Full project page | Far, dimmed |
+| `/work/[slug]` | Full project page | Far, dimmed; the project's connected subgraph gathers toward a focal point, then the simulation stops |
 | `/nebula` | The graph | Inside the constellation |
-| `/nebula/[slug]` | Graph with node open | Flown into that node |
+| `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
 
-`/work/[slug]` and `/nebula/[slug]` render the **same content object**. One is a document, one is a node interior. Never duplicate the prose.
+`/work/[slug]` and `/nebula/[slug]` render the **same content object**. One is a document, one is a node interior. Never duplicate the prose. `/nebula/[slug]` sets a canonical link tag pointing to `/work/[slug]` to avoid duplicate-content SEO; there's no visitor-facing redirect between them under normal conditions.
 
-Deep links to `/nebula/[slug]` play the fly-in from the outside rather than cutting in.
+**`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
 Graph state resets on each visit. No persistence.
 
@@ -84,9 +84,17 @@ content/
   layout.ts       // computed 3D positions (deterministic, seeded)
 ```
 
-`layout.ts` runs a deterministic seeded layout at build time, not at runtime. Positions must be stable across reloads or the graph feels random. Use a Fibonacci sphere for cluster centroids, then a small local force relaxation within each cluster, seeded from a constant.
+`layout.ts` runs a deterministic seeded layout at build time, not at runtime, and produces the **initial arrangement only**. Same seed, same starting positions, every load — use a Fibonacci sphere for cluster centroids, then a small local force relaxation within each cluster, seeded from a constant.
 
 Never use `Math.random()` in layout. Use a seeded PRNG.
+
+**Positions diverge after that, on purpose.** Once mounted, a runtime force simulation takes over: nodes float freely, held only by weak springs between runtime-edge pairs, so the constellation is never at rest reload-to-reload the way `layout.ts`'s output alone would be. This is a deliberate tradeoff — floating nodes read as alive in a way fixed idle-drift positions didn't — traded against the earlier "stable across reloads" goal, which no longer holds past first paint. The seeded layout still guarantees the composition that matters (SEL clusters in the front hemisphere, nothing overlapping at the default heading); only the fine position of each node past that point is allowed to vary. See `05-phase-2.md`'s Nodes section for the simulation's mechanics and freeze rule.
+
+## Scene fog
+
+Fog matched to `--paper` is the primary depth cue in the constellation — it's what makes distant clusters recede instead of just getting smaller. `<fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />`, wired into the fresnel shader by hand (`ShaderMaterial` doesn't pick up scene fog automatically — the fog chunks and uniforms have to be included explicitly).
+
+**`FOG_FAR` must track real measured scene depth, not an estimate.** Depth varies with the camera heading and the actual computed layout, not some assumed constellation radius — measure per-node camera-space depth from the real camera position against the real `layout.ts` output, then set `FOG_FAR` just past the true max. Guessing too far means the falloff curve never gets close to completing and the farthest cluster barely fades; guessing too near erases nodes that should still read. `FOG_NEAR` can stay conservative — it only has to sit in front of the nearest node.
 
 ## Performance budget
 
