@@ -125,11 +125,14 @@ export function computeLayout(): Record<string, Vec3> {
     );
     const n = users.length;
     const bias: Vec3 = [avg[0] / n, avg[1] / n, avg[2] / n];
-    // 65% shell, 35% pull toward the projects using it.
+    // 30% shell, 70% pull toward the projects using it — tech nodes read
+    // as satellites of their clusters, not an independent scattered
+    // population. A technology shared across many clusters averages
+    // toward the origin; that's correct, not a bug.
     positions[t.id] = [
-      shell[i][0] * 0.65 + bias[0] * 0.35,
-      shell[i][1] * 0.65 + bias[1] * 0.35,
-      shell[i][2] * 0.65 + bias[2] * 0.35,
+      shell[i][0] * 0.3 + bias[0] * 0.7,
+      shell[i][1] * 0.3 + bias[1] * 0.7,
+      shell[i][2] * 0.3 + bias[2] * 0.7,
     ];
   });
 

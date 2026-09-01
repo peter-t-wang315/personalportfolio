@@ -16,19 +16,28 @@ const MAJOR_RADIUS = 0.85;
 const STANDARD_RADIUS = 0.6;
 const TECH_RADIUS = 0.34;
 
+const PROJECT_OPACITY = 0.9;
+// Tech nodes read as a supporting layer around their clusters, not a
+// population of their own — recessed to ~55% of project node opacity.
+const TECH_OPACITY = PROJECT_OPACITY * 0.55;
+
 /**
- * Fog band chosen against the actual scene depths: camera sits ~41.6 units
- * from the origin, so nodes span roughly 24–60 units of view depth. Near at
- * 30 leaves the front of the constellation untouched; far at 90 lands the
- * far side at ~50% faded — receded, still countable.
+ * Fog band, re-measured against actual per-node camera-space depth (not
+ * guessed): nodes span depth 28.6–60.5 from this camera. Far was originally
+ * 90, well past the real max depth of 60.5, so the falloff curve never got
+ * close to completing — the farthest node only reached 51% fade, not
+ * enough to read as recession. Far now sits just past the true max depth,
+ * so the farthest cluster reaches ~90% fade (visibly receded, not erased)
+ * while the nearest nodes stay untouched.
  */
 const FOG_NEAR = 30;
-const FOG_FAR = 90;
+const FOG_FAR = 68;
 
 interface NodeDatum {
   id: string;
   position: [number, number, number];
   radius: number;
+  kind: "project" | "tech";
 }
 
 function useConstellationNodes(): NodeDatum[] {
@@ -37,11 +46,13 @@ function useConstellationNodes(): NodeDatum[] {
       id: p.id,
       position: layout[p.id],
       radius: p.size === "major" ? MAJOR_RADIUS : STANDARD_RADIUS,
+      kind: "project",
     }));
     const techNodes: NodeDatum[] = tech.map((t) => ({
       id: t.id,
       position: layout[t.id],
       radius: TECH_RADIUS,
+      kind: "tech",
     }));
     return [...projectNodes, ...techNodes];
   }, []);
@@ -50,7 +61,11 @@ function useConstellationNodes(): NodeDatum[] {
 export function Constellation() {
   const nodes = useConstellationNodes();
   const geometry = useMemo(() => new THREE.SphereGeometry(1, 32, 32), []);
-  const material = useMemo(() => createFresnelMaterial(), []);
+  const projectMaterial = useMemo(
+    () => createFresnelMaterial(PROJECT_OPACITY),
+    [],
+  );
+  const techMaterial = useMemo(() => createFresnelMaterial(TECH_OPACITY), []);
 
   return (
     <>
@@ -62,7 +77,7 @@ export function Constellation() {
             position={node.position}
             scale={node.radius}
             geometry={geometry}
-            material={material}
+            material={node.kind === "project" ? projectMaterial : techMaterial}
           />
         ))}
       </group>
