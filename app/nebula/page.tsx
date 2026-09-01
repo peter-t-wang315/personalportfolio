@@ -1,31 +1,22 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { HomeLink } from "../home-link";
 
 export const metadata: Metadata = {
-  title: "Coming soon | The Nebula",
+  title: "Nebula | Peter Wang",
   description:
-    "An interactive 3D graph of the same projects and technologies, in progress.",
+    "The same projects and technologies, connected as a 3D constellation.",
 };
 
-export default function NebulaComingSoon() {
+/**
+ * Under construction, build-sequence step 2.1: layout and static geometry
+ * only. The constellation itself is the canvas persisted in the root
+ * layout (see nebula-canvas.tsx) — this page is just the DOM chrome around
+ * it. No hover, no click, no edges yet. See docs/05a-phase-2-sequence.md.
+ */
+export default function Nebula() {
   return (
-    <div className="min-h-[70vh] flex flex-col px-6 pt-8 pb-10 md:px-16 md:pt-10">
+    <div className="min-h-dvh px-6 pt-8 md:px-16 md:pt-10">
       <HomeLink />
-      <div className="flex-1 flex items-center justify-center text-center">
-        <div className="max-w-[44ch]">
-          <p className="text-[1.0625rem] leading-[1.6]">
-            An interactive version of this graph is being built: the same
-            projects and technologies, connected as a 3D constellation.
-          </p>
-          <Link
-            href="/work"
-            className="mt-6 inline-block text-mask link-underline"
-          >
-            See the full list of work
-          </Link>
-        </div>
-      </div>
     </div>
   );
 }

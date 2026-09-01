@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { usePathname } from "next/navigation";
 import { useSceneStore } from "@/lib/scene-store";
 import { makeRng } from "@/lib/seeded-random";
-import { palette } from "@/lib/palette";
+import { createFresnelMaterial } from "./fresnel-material";
+import { Constellation } from "./nebula-constellation";
 
 /**
  * Phase 1 version: a static-feeling drifting cluster, not the real graph.
@@ -51,42 +52,8 @@ function generateNodes(): NodeDatum[] {
   return nodes;
 }
 
-/** Rim-lit translucent sphere with a soft inner core, the default node material. */
 function useFresnelMaterial() {
-  return useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        uniforms: {
-          color: { value: new THREE.Color(palette.mask) },
-          opacity: { value: 0.9 },
-        },
-        vertexShader: `
-          varying vec3 vNormal;
-          varying vec3 vViewPosition;
-          void main() {
-            vNormal = normalize(normalMatrix * normal);
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            vViewPosition = -mvPosition.xyz;
-            gl_Position = projectionMatrix * mvPosition;
-          }
-        `,
-        fragmentShader: `
-          uniform vec3 color;
-          uniform float opacity;
-          varying vec3 vNormal;
-          varying vec3 vViewPosition;
-          void main() {
-            vec3 viewDir = normalize(vViewPosition);
-            float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.2);
-            float core = 0.16;
-            gl_FragColor = vec4(color, (fresnel * 0.9 + core) * opacity);
-          }
-        `,
-        transparent: true,
-        depthWrite: false,
-      }),
-    [],
-  );
+  return useMemo(() => createFresnelMaterial(), []);
 }
 
 function Cluster() {
@@ -171,15 +138,73 @@ function Cluster() {
   );
 }
 
+const HOME_CAMERA_POSITION: [number, number, number] = [0, 0, 9];
+const HOME_CAMERA_FOV = 45;
+
+/**
+ * Elevated, near-top-down heading, tilted slightly off pure vertical.
+ * Cluster.order maps monotonically onto Y in layout.ts's Fibonacci sphere,
+ * so "front hemisphere" for the low-order SEL clusters means looking down
+ * from above, not straight ahead along Z. A pure top-down heading was tried
+ * first and rejected: solder and personal sit at opposite Y poles but
+ * nearly identical X/Z, so they collided in screen space (~3.6 units apart
+ * vs. ~8 achievable elsewhere). This heading was chosen by searching
+ * viewing directions for one that keeps all four SEL centroids comfortably
+ * front-facing while maximizing the closest pairwise screen-space distance
+ * between all seven cluster centroids — verified against the actual
+ * computed layout, not eyeballed.
+ */
+const CONSTELLATION_CAMERA_POSITION: [number, number, number] = [11.9, 42.8, -3.1];
+const CONSTELLATION_CAMERA_FOV = 50;
+
+/**
+ * Aimed slightly above the origin: the oblique heading projects the nearest
+ * (solder) cluster high in the frame, and the sticky header eats the top
+ * ~62px, so aiming at y=0 left the constellation riding up under the header
+ * and off-center. Raising the target pushes the whole composition down into
+ * the usable area.
+ */
+const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 3.5, 0];
+
+/**
+ * Step 2.1: an instant, fixed camera swap between the Phase 1 decorative
+ * cluster and the Phase 2 constellation. The canvas never unmounts across
+ * routes (see docs/02-architecture.md), so <Canvas>'s camera prop only sets
+ * the very first position — this is what actually moves it afterward. No
+ * interpolation yet; that's fly-in, step 2.5.
+ */
+function CameraRig({ isNebula }: { isNebula: boolean }) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    const [x, y, z] = isNebula
+      ? CONSTELLATION_CAMERA_POSITION
+      : HOME_CAMERA_POSITION;
+    const [tx, ty, tz] = isNebula ? CONSTELLATION_CAMERA_TARGET : [0, 0, 0];
+    camera.position.set(x, y, z);
+    camera.lookAt(tx, ty, tz);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = isNebula ? CONSTELLATION_CAMERA_FOV : HOME_CAMERA_FOV;
+      camera.updateProjectionMatrix();
+    }
+  }, [isNebula, camera]);
+
+  return null;
+}
+
 export function NebulaCanvas() {
+  const pathname = usePathname();
+  const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
+
   return (
     <Canvas
       className="!fixed inset-0 z-0"
       gl={{ alpha: true }}
       dpr={[1, 2]}
-      camera={{ position: [0, 0, 9], fov: 45 }}
+      camera={{ position: HOME_CAMERA_POSITION, fov: HOME_CAMERA_FOV }}
     >
-      <Cluster />
+      <CameraRig isNebula={isNebula} />
+      {isNebula ? <Constellation /> : <Cluster />}
     </Canvas>
   );
 }

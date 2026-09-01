@@ -8,6 +8,8 @@ The highest-value feature for the recruiter audience and the cheapest thing in t
 
 A control in the corner of `/nebula`: **"Take the tour."** Auto-flies through five nodes in sequence, opening each panel, pausing ~8 seconds, then moving to the next. Progress indicator. Any interaction cancels it and hands control back.
 
+The float simulation freezes for the full duration of every flight in the sequence, per `05-phase-2.md`'s Nodes section — nodes hold still while the camera is doing the moving. It stays frozen through each ~8s pause too, same as any other focused node, and only resumes once the tour ends or is cancelled and the camera returns to the constellation.
+
 Suggested order — strongest first, and it tells a coherent story:
 1. Through-hole automation platform (built alone, real topology)
 2. Selective solder driver (the 18% number, the failure path)
@@ -20,6 +22,8 @@ Fires the `tour_started` and `tour_completed` analytics events.
 ## 2. ⌘K search
 
 Command palette over every node. Fuzzy match on title, one-liner, and technology. Enter flies to the result. Also reachable by a visible control, since not everyone knows the shortcut.
+
+Same freeze rule as the guided tour: the float simulation freezes for the full duration of the flight to the selected result.
 
 ## 3. Edge detail on hover
 
@@ -57,4 +61,3 @@ After a few weeks of applications, check `node_opened` and `tour_completed`. If 
 - Dark mode.
 - Contact form.
 - Blog.
-- A physics simulation for node motion. Seeded deterministic drift looks the same and costs nothing.

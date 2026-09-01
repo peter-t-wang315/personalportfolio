@@ -76,11 +76,14 @@ These read as generated. Do not use any of them:
 
 ## Motion
 
-Non-user-triggered motion is limited to **three** things sitewide:
+Non-user-triggered motion is limited to **four** things sitewide:
 
 1. **Cursor parallax on the landing page.** The background cluster and every text block on `/` — hero and the section below it alike — translate in opposite directions at different rates as the pointer moves. Max displacement: 12px for text, 28px for the cluster. Eased with a spring, damping high enough that it feels weighted rather than floaty. Pointer-only: on touch devices the hero is static, with no parallax substitute. Do not implement device-orientation tilt as one — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff.
 2. **Data flow along Nebula production edges.** Amber pulses traveling the line, ~4s period.
-3. **The scroll cue on the landing page.** Three chevrons side by side at the base of the hero, each double-bobbing a few pixels then holding still for most of a ~3.6s cycle before repeating — a periodic nudge rather than continuous idle motion. Slightly staggered so they ripple rather than move as one. Part of the same parallax-transformed group as the hero text. Fades out over the first ~240px of scroll — a response to the user's own scroll input, not an idle loop, so it isn't gated by reduced motion.
+3. **The free-floating node simulation on `/nebula`.** Nodes drift continuously in a lightweight force simulation rather than sitting still — weak springs hold runtime-edge-connected pairs loosely together, everything else wanders freely. Hovering a node attracts its connected neighbours toward it; hover-out releases them. See `02-architecture.md` for the model and its freeze rule.
+4. **The work-page subgraph gathering on `/work/[slug]`.** The project's connected subgraph (runtime-edge neighbours plus its tech nodes) gathers toward a focal point using the same attraction mechanic as hover, viewed from outside the constellation. It settles once and the simulation loop stops — no ongoing motion afterward.
+
+The landing-page scroll cue is a separate, fifth motion, not counted above because it's a response to the user's own scroll position rather than an idle loop: three chevrons side by side at the base of the hero, each double-bobbing a few pixels then holding still for most of a ~3.6s cycle before repeating. Slightly staggered so they ripple rather than move as one. Part of the same parallax-transformed group as the hero text. Fades out over the first ~240px of scroll — that fade is scroll-linked and isn't gated by reduced motion, but the idle ripple itself is (see below).
 
 Everything else is response to action: fly-in, panel open, hover.
 
@@ -88,7 +91,7 @@ No fade-and-slide-up entrance on every section. No hover transition on every car
 
 Standard easing: `cubic-bezier(0.32, 0.72, 0, 1)`. Standard duration: 240ms for UI, 1400ms for camera flights.
 
-`prefers-reduced-motion: reduce` disables cursor parallax, edge pulses, the scroll-cue ripple, node drift, and camera interpolation (flights become instant cuts). The site must be fully usable with all motion off.
+`prefers-reduced-motion: reduce` disables cursor parallax, edge pulses, the float simulation (nodes render frozen at their seeded initial layout position), the work-page gathering (renders already-settled, no animation), the scroll-cue ripple, and camera interpolation (flights become instant cuts). The site must be fully usable with all motion off.
 
 ## Accessibility floor
 
