@@ -53,6 +53,7 @@ Rendered as a real page from the content files. `Download PDF` serves a **pre-bu
 
 ### Quality floor
 - Responsive to 360px.
+- Verify every route at 360px, 768px, 1024px, and 1440px, plus landscape phone at 844×390, before Phase 1 is considered done.
 - Visible keyboard focus everywhere.
 - `prefers-reduced-motion` fully respected.
 - Works with WebGL unavailable — the canvas fails silently to nothing.

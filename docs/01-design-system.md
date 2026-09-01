@@ -78,7 +78,7 @@ These read as generated. Do not use any of them:
 
 Non-user-triggered motion is limited to **three** things sitewide:
 
-1. **Cursor parallax on the landing page.** The background cluster and every text block on `/` — hero and the section below it alike — translate in opposite directions at different rates as the pointer moves. Max displacement: 12px for text, 28px for the cluster. Eased with a spring, damping high enough that it feels weighted rather than floaty.
+1. **Cursor parallax on the landing page.** The background cluster and every text block on `/` — hero and the section below it alike — translate in opposite directions at different rates as the pointer moves. Max displacement: 12px for text, 28px for the cluster. Eased with a spring, damping high enough that it feels weighted rather than floaty. Pointer-only: on touch devices the hero is static, with no parallax substitute. Do not implement device-orientation tilt as one — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff.
 2. **Data flow along Nebula production edges.** Amber pulses traveling the line, ~4s period.
 3. **The scroll cue on the landing page.** Three chevrons side by side at the base of the hero, each double-bobbing a few pixels then holding still for most of a ~3.6s cycle before repeating — a periodic nudge rather than continuous idle motion. Slightly staggered so they ripple rather than move as one. Part of the same parallax-transformed group as the hero text. Fades out over the first ~240px of scroll — a response to the user's own scroll input, not an idle loop, so it isn't gated by reduced motion.
 

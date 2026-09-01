@@ -90,21 +90,31 @@ Never use `Math.random()` in layout. Use a seeded PRNG.
 
 ## Performance budget
 
-- **Do not use `MeshPhysicalMaterial` with `transmission` on more than 2 nodes.** Each transmissive mesh triggers an additional scene render pass. Default node material is a custom fresnel shader — a rim-lit translucent sphere with a soft inner core. Real transmission is reserved for the focused node only, after the fly-in completes.
-- Background particles: one `InstancedMesh`, ~600 instances, positions computed once, drift applied in the vertex shader — not per-instance on the CPU.
+- **Do not use `MeshPhysicalMaterial` with `transmission` on more than 2 nodes.** Each transmissive mesh triggers an additional scene render pass. Default node material is a custom fresnel shader — a rim-lit translucent sphere with a soft inner core. Real transmission is reserved for the focused node only, on desktop, after the fly-in completes. See Responsive tiers below — tablet and mobile never use it.
+- Background particles: one `InstancedMesh` per tier, positions computed once, drift applied in the vertex shader — not per-instance on the CPU. Instance count varies by device tier — see Responsive tiers below, not a fixed number here.
 - Edges: batch into as few draw calls as possible. Drei's `QuadraticBezierLine` is fine for the ~40 production edges; technology edges (potentially 100+) should be a single `LineSegments` with a custom shader.
 - Target: 60fps desktop, 30fps mid-range mobile. Measure before adding postprocessing.
 - Cap `dpr` at `[1, 2]`.
 
-## Mobile
+## Responsive tiers
 
 `/nebula` is a fixed, non-scrolling, full-viewport canvas, so drag-to-rotate has no page scroll to conflict with. Scrolling happens only inside an opened node panel.
 
-On viewports under 768px:
-- Technology nodes hidden by default, toggleable.
-- No transmission at all, ever.
-- Particle count reduced to 200.
-- A persistent bottom sheet lists all nodes and is the primary navigation. The 3D becomes ambient.
+**This table is the single authority for tier-specific behavior.** Particle counts, transmission policy, tech node visibility, navigation model, and panel sizing are defined here once. Other docs (`05-phase-2.md`, `06-phase-3.md`) reference it by tier name rather than restating values — if a tier value needs to change, this is the only table to edit.
+
+| | Desktop — 1024px+ | Tablet — 768–1024px | Mobile — under 768px |
+|---|---|---|---|
+| Tech nodes | Always visible | Visible, reduced opacity, toggleable | Hidden by default, toggleable |
+| Transmission | Focused node only, real transmission, after the fly-in completes | None. Fresnel shader throughout, including the focused node | None. Fresnel shader throughout, including the focused node |
+| Particle count | ~600 | 350 | 200 |
+| Interaction | `CameraControls`: drag to rotate, scroll to dolly. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | Persistent bottom sheet is the primary navigation; the 3D is ambient. Tap to select, tap again to open. |
+| Interior panel size | 70% of viewport | 85% of viewport | 85% of viewport — no separate mobile value has been specified; inherits the tablet override |
+
+### Orientation and short viewports
+
+Under 500px of viewport height, in any tier: the node interior panel becomes a full-height sheet instead of a centered masked panel, with no circular-to-rounded-rect morph. There's no room for the morph to read at that height.
+
+Height, not width, is the trigger — this covers landscape phones (e.g. 844×390) as much as any tier boundary above.
 
 ## Analytics
 
