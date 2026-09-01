@@ -15,7 +15,7 @@ Deterministic and seeded. Positions must be identical across reloads.
 
 **Project nodes.** `major` radius 0.85, `standard` radius 0.6. Fresnel glass shader — translucent rim, soft falloff, subtly non-spherical (low-frequency vertex displacement so the silhouette breathes). SEL work carries a small solid core in `--mask` visible through the shell; personal and client work is hollow. That reads as "this one has something inside it" without a label doing credibility hierarchy explicitly.
 
-**Technology nodes.** Radius 0.22. Hollow, no core, lower opacity.
+**Technology nodes.** Radius 0.34. Hollow, no core, lower opacity.
 
 **Hover.** Scale to 1.15, raise opacity, brighten every connected edge, and show a DOM label with `title` and `oneLine` projected to screen space. One node at a time.
 

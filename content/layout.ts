@@ -25,7 +25,7 @@ function makeRng(seed: number) {
 export type Vec3 = [number, number, number];
 
 const CLUSTER_RADIUS = 14;
-const CLUSTER_SPREAD = 3;
+const CLUSTER_SPREAD = 2.5;
 const TECH_SHELL_RADIUS = 20;
 
 /** Fibonacci sphere: even distribution, no clumping. */
