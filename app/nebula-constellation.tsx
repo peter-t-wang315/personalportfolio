@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
@@ -10,7 +10,12 @@ import { useSceneStore } from "@/lib/scene-store";
 import { nodeList, type NodeGeometry } from "@/lib/node-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
-import { stepSimulation, getLivePosition } from "./nebula-simulation";
+import {
+  stepSimulation,
+  getLivePosition,
+  attractNeighbors,
+  releaseAttraction,
+} from "./nebula-simulation";
 
 /**
  * Step 2.2 — materials. Node typing (solid --mask core on SEL project nodes,
@@ -43,6 +48,15 @@ const BREATHE_SEED = 0xb4ea7e;
 // the shell so it survives the radius difference between major and standard.
 const CORE_SCALE = 0.38;
 
+// Step 2.4 — hover. Scale and opacity lerp toward these on hover, back to
+// their per-node/per-tier base otherwise. Under reduced motion the lerp
+// factor becomes 1 (an instant snap rather than an eased transition) — the
+// same idiom the Phase 1 cluster already uses — so hover still highlights
+// and scales, it just doesn't animate into place.
+const HOVER_SCALE_FACTOR = 1.15;
+const HOVER_OPACITY = 1;
+const HOVER_EASE = 0.2;
+
 /**
  * Fog band, re-measured against actual per-node camera-space depth (not
  * guessed): nodes span depth 28.6–60.5 from this camera. Far was originally
@@ -61,11 +75,11 @@ const breatheTime = { value: 0 };
 const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
 const coreMaterial = new THREE.MeshBasicMaterial({ color: palette.mask });
 
-// One material for all tech nodes: they share opacity, don't breathe
+// Every node gets its own material instance — tech nodes don't breathe
 // (displacement is a project-node trait — 05-phase-2.md, Nodes — and the
-// stillness helps the hierarchy read), and dim as a group per tier.
-const techMaterial = createFresnelMaterial({ opacity: TECH_OPACITY });
-
+// stillness helps the hierarchy read) and share one opacity formula, but
+// each needs an independently mutable opacity uniform so hover (2.4) can
+// raise one node's without affecting the rest of the tech population.
 const materialByNodeId: Record<string, THREE.ShaderMaterial> = (() => {
   const rng = makeRng(BREATHE_SEED);
   const map: Record<string, THREE.ShaderMaterial> = {};
@@ -78,10 +92,16 @@ const materialByNodeId: Record<string, THREE.ShaderMaterial> = (() => {
             seed: rng() * Math.PI * 2 * 10,
             timeUniform: breatheTime,
           })
-        : techMaterial;
+        : createFresnelMaterial({ opacity: TECH_OPACITY });
   }
   return map;
 })();
+
+/** A node's opacity absent hover: fixed for project nodes, tier-dimmed for tech. */
+function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
+  if (node.kind === "project") return PROJECT_OPACITY;
+  return TECH_OPACITY * (tier === "tablet" ? TABLET_TECH_FACTOR : 1);
+}
 
 /**
  * The tier-dependent material branch, in place from the start so 2.5's
@@ -94,32 +114,80 @@ function shellMaterial(node: NodeGeometry, _tier: DeviceTier): THREE.Material {
   return materialByNodeId[node.id];
 }
 
+/**
+ * Hovering a node sets the single global hoveredNodeId and attracts its
+ * neighbours (2.3a's mechanic, wired up here); leaving it clears both — but
+ * only if this node is still the one the store thinks is hovered, guarding
+ * against a stale pointerout firing after the pointer has already moved on
+ * to another node (standard pointer-event ordering fires the old node's
+ * "out" before the new node's "over", but this makes the handler correct
+ * either way rather than depending on that ordering).
+ */
+function handlePointerOver(e: ThreeEvent<PointerEvent>, nodeId: string) {
+  e.stopPropagation();
+  useSceneStore.getState().setHoveredNodeId(nodeId);
+  attractNeighbors(nodeId);
+}
+
+function handlePointerOut(e: ThreeEvent<PointerEvent>, nodeId: string) {
+  e.stopPropagation();
+  if (useSceneStore.getState().hoveredNodeId === nodeId) {
+    useSceneStore.getState().setHoveredNodeId(null);
+    releaseAttraction();
+  }
+}
+
 export function Constellation() {
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
 
-  // Tech node visibility and opacity are tier-dependent — see
-  // 02-architecture.md's Responsive tiers. The mobile/tablet toggle arrives
-  // in 2.8; these are the defaults it will toggle from.
+  // Tech node visibility is tier-dependent — see 02-architecture.md's
+  // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
+  // default it will toggle from. Tech opacity's tier-dimming is folded into
+  // the per-frame hover loop below (baseOpacity reads `tier` directly), so
+  // it doesn't need its own effect.
   const showTech = tier !== "mobile";
-  useEffect(() => {
-    techMaterial.uniforms.opacity.value =
-      TECH_OPACITY * (tier === "tablet" ? TABLET_TECH_FACTOR : 1);
-  }, [tier]);
 
   useFrame((state, delta) => {
-    // Reduced motion: stop advancing the clock and the displacement freezes
-    // in place — silhouettes stay organic but hold still. Skipping
-    // stepSimulation the same way leaves every node at its seeded layout
-    // position, since livePositions starts there and nothing ever moves it.
-    if (useSceneStore.getState().reducedMotion) return;
-    breatheTime.value = state.clock.elapsedTime;
+    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    // Reduced motion: an instant snap to target instead of an eased lerp —
+    // hover still highlights and scales, it just doesn't animate into place
+    // (same idiom the Phase 1 cluster uses for its own opacity/scale lerp).
+    const ease = reducedMotion ? 1 : HOVER_EASE;
 
-    stepSimulation(state.clock.elapsedTime, delta);
+    // Stop advancing the clock and the breathing displacement freezes in
+    // place. Skipping stepSimulation the same way leaves every node at its
+    // seeded layout position, since livePositions starts there and nothing
+    // ever moves it — attractNeighbors/releaseAttraction (below) still get
+    // called on hover, but with stepSimulation never running, that state
+    // never gets read, so it can't reintroduce drift.
+    if (!reducedMotion) {
+      breatheTime.value = state.clock.elapsedTime;
+      stepSimulation(state.clock.elapsedTime, delta);
+    }
+
     for (const node of nodeList) {
       const mesh = meshRefs.current[node.id];
-      const live = getLivePosition(node.id);
-      if (mesh && live) mesh.position.copy(live);
+      if (!mesh) continue;
+
+      if (!reducedMotion) {
+        const live = getLivePosition(node.id);
+        if (live) mesh.position.copy(live);
+      }
+
+      const hovered = hoveredNodeId === node.id;
+      const targetScale = node.radius * (hovered ? HOVER_SCALE_FACTOR : 1);
+      mesh.scale.setScalar(
+        THREE.MathUtils.lerp(mesh.scale.x, targetScale, ease),
+      );
+
+      const material = materialByNodeId[node.id];
+      const targetOpacity = hovered ? HOVER_OPACITY : baseOpacity(node, tier);
+      material.uniforms.opacity.value = THREE.MathUtils.lerp(
+        material.uniforms.opacity.value,
+        targetOpacity,
+        ease,
+      );
     }
   });
 
@@ -140,6 +208,8 @@ export function Constellation() {
               scale={node.radius}
               geometry={sphereGeometry}
               material={shellMaterial(node, tier)}
+              onPointerOver={(e) => handlePointerOver(e, node.id)}
+              onPointerOut={(e) => handlePointerOut(e, node.id)}
             >
               {node.hasCore && (
                 <mesh

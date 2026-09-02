@@ -37,6 +37,20 @@ const PULSE_OPACITY = 0.95;
 const TECH_COLOR = palette.inkFaint;
 const TECH_OPACITY = 0.2;
 
+// Step 2.4 — hover brightens every edge connected to the hovered node. Tech
+// hairlines stay one batched draw call for the other ~100+, so their
+// highlight is a tiny second overlay covering just the connected few rather
+// than a per-vertex shader — see TechEdgeHighlights. Deliberately short of
+// RUNTIME_OPACITY/RUNTIME_COLOR's strength even when highlighted: a
+// brightened hairline still reads as "shares a technology," never as a
+// message path — that asymmetry is the point of the edge model (05-phase-2.md).
+const RUNTIME_HIGHLIGHT_OPACITY = 0.85;
+const TECH_HIGHLIGHT_COLOR = palette.inkMuted;
+const TECH_HIGHLIGHT_OPACITY = 0.6;
+// Same instant-snap-under-reduced-motion idiom as the node hover lerp in
+// nebula-constellation.tsx.
+const HOVER_EASE = 0.2;
+
 const RUNTIME_PULSE_PERIOD = 4; // seconds for one full traversal
 const DEVTIME_PULSE_PERIOD = 7; // "a slower pulse" — 05-phase-2.md, Edges
 
@@ -158,7 +172,24 @@ function RuntimeEdgeLine({
   const speed = geo && period > 0 ? geo.length / period : 0;
 
   useFrame((_state, delta) => {
-    if (useSceneStore.getState().reducedMotion) return;
+    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    const connected =
+      hoveredNodeId !== null &&
+      (edge.from === hoveredNodeId || edge.to === hoveredNodeId);
+
+    // Brightening runs regardless of reduced motion — hover still
+    // highlights, it just snaps instead of easing (same idiom as the node
+    // hover lerp).
+    const baseMaterial = baseRef.current?.material;
+    if (baseMaterial) {
+      baseMaterial.opacity = THREE.MathUtils.lerp(
+        baseMaterial.opacity,
+        connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
+        reducedMotion ? 1 : HOVER_EASE,
+      );
+    }
+
+    if (reducedMotion) return;
 
     const live = computeCurveGeometry(edge, true);
     if (live) {
@@ -166,10 +197,10 @@ function RuntimeEdgeLine({
       pulseRef.current?.setPoints(live.start, live.end, live.mid);
     }
 
-    const material = pulseRef.current?.material;
-    if (!material || dashSize + gapSize <= 0) return;
-    material.dashOffset = THREE.MathUtils.euclideanModulo(
-      material.dashOffset - speed * delta,
+    const pulseMaterial = pulseRef.current?.material;
+    if (!pulseMaterial || dashSize + gapSize <= 0) return;
+    pulseMaterial.dashOffset = THREE.MathUtils.euclideanModulo(
+      pulseMaterial.dashOffset - speed * delta,
       dashSize + gapSize,
     );
   });
@@ -254,6 +285,70 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
   return <lineSegments geometry={geometry} material={material} />;
 }
 
+/**
+ * The handful of shared-tech edges touching the currently hovered node,
+ * rendered as a tiny second batch on top of TechEdges' static one so hover
+ * can brighten just those without a per-vertex-color shader or splitting
+ * the main 100+-edge draw call. Rebuilt only when hoveredNodeId changes
+ * (a React re-render, not a per-frame cost); positions still track drift
+ * every frame while it's non-empty.
+ */
+function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
+  const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
+  const connected = useMemo(
+    () =>
+      hoveredNodeId === null
+        ? []
+        : edgeList.filter(
+            (e) => e.from === hoveredNodeId || e.to === hoveredNodeId,
+          ),
+    [edgeList, hoveredNodeId],
+  );
+
+  const { geometry, positions } = useMemo(() => {
+    const positions = new Float32Array(connected.length * 6);
+    connected.forEach((edge, i) => {
+      const geo = computeStraightGeometry(edge, false);
+      if (!geo) return;
+      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
+      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
+    });
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    return { geometry: geom, positions };
+  }, [connected]);
+
+  const material = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: TECH_HIGHLIGHT_COLOR,
+        transparent: true,
+        opacity: TECH_HIGHLIGHT_OPACITY,
+        fog: true,
+      }),
+    [],
+  );
+
+  useFrame(() => {
+    if (connected.length === 0 || useSceneStore.getState().reducedMotion) {
+      return;
+    }
+    connected.forEach((edge, i) => {
+      const geo = computeStraightGeometry(edge, true);
+      if (!geo) return;
+      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
+      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
+    });
+    (geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+  });
+
+  if (connected.length === 0) return null;
+  return <lineSegments geometry={geometry} material={material} />;
+}
+
 export function Edges({ showTech }: { showTech: boolean }) {
   const runtimeEdges = useMemo(
     () => edges.filter((e) => e.kind === "runtime"),
@@ -277,6 +372,7 @@ export function Edges({ showTech }: { showTech: boolean }) {
         <RuntimeEdgeLine key={edge.id} edge={edge} devTime />
       ))}
       {showTech && <TechEdges edgeList={techEdges} />}
+      {showTech && <TechEdgeHighlights edgeList={techEdges} />}
     </>
   );
 }
