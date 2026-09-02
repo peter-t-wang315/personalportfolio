@@ -59,32 +59,41 @@ const RAMP_SECONDS = 2.5;
 // runaway motion — it only sets how correlated vs. independent the pair's
 // drift looks.
 const PAIR_BLEND = 0.35;
-// Hover attraction is a real damped spring per target (value + velocity,
-// integrated every frame), not a curve over normalised progress — a spring
-// is what makes retargeting (pointer moving from one node straight to
-// another) fall out for free: the integrator just keeps going from
-// whatever position and velocity it already has when the target flips
+// Hover attraction is a real damped spring per PULLED NEIGHBOUR (value +
+// velocity, integrated every frame), not a curve over normalised progress —
+// a spring is what makes retargeting (pointer moving from one node straight
+// to another) fall out for free: the integrator just keeps going from
+// whatever position and velocity it already has when its target flips
 // between 1 (attracting) and 0 (released), so there's never a pop, and
 // pulling away *before* it's settled naturally cuts the motion short
 // instead of restarting a timer.
 //
-// Underdamped (damping ratio ζ = damping / (2·√stiffness) ≈ 0.4) so it
-// overshoots once, past the attracted position, before settling — the
-// "slingshot catch and wobble" rather than a smooth glide to a stop.
-// Release uses the same spring with the target flipped to 0, which is
-// simpler than a special-cased ease-out and reads as an honest recoil
-// when a node is let go, not just a fade.
-const ATTRACT_STIFFNESS = 100;
-const ATTRACT_DAMPING = 8;
+// Each neighbour's damping ratio, natural frequency, and pull strength are
+// seeded from its own node id (see attractionParams below) — not shared
+// constants — so when several neighbours of a hovered node all start
+// attracting in the same instant, they don't execute the same curve at the
+// same speed. Some barely overshoot at all; others ring visibly. That's
+// deliberate: real things being pulled toward the same point don't arrive
+// in lockstep. Distance to whatever they're being pulled toward plays no
+// part in which personality a node gets — the seed is keyed on the node's
+// own id, fixed at module load, before any target is known.
+const ATTRACT_ZETA_MIN = 0.25; // clearly rings — one strong overshoot, a visible correction wobble
+const ATTRACT_ZETA_MAX = 0.9; // critically-damped-ish — smooth slide, no ring
+const ATTRACT_OMEGA_MIN = 7; // rad/s — slower to arrive
+const ATTRACT_OMEGA_MAX = 14; // rad/s — snappier to arrive
+// How far a fully-attracted node moves from its own home toward the
+// attractor's home, at the spring's rest value (1) — before its own
+// overshoot, which pushes past this. Kept low enough (combined with the max
+// zeta-driven overshoot, ~44% at ATTRACT_ZETA_MIN) that even the bounciest,
+// strongest-pulling node peaks under 90% of the full separation and never
+// reaches — let alone passes through — the attractor itself.
+const ATTRACT_PULL_MIN = 0.3;
+const ATTRACT_PULL_MAX = 0.6;
 // Spring integration sub-step: keeps the integrator stable and the curve
 // shaped correctly even if a frame's delta is unusually large (a slow
 // device, a backgrounded-tab hiccup) — those just get consumed as several
 // small, stable steps instead of one big unstable one.
 const ATTRACT_SUBSTEP_SECONDS = 1 / 60;
-// How far an attracted node moves from its own home toward the attractor's
-// home, at the spring's rest value (1). The spring overshoots past this
-// and (on release) recoils slightly past 0, both expected.
-const ATTRACT_PULL = 0.6;
 
 function smoothstep(t: number): number {
   const c = THREE.MathUtils.clamp(t, 0, 1);
@@ -153,6 +162,36 @@ const wanderParams: Record<string, WanderParams> = (() => {
   return map;
 })();
 
+const ATTRACT_SEED = 0x0a771ac7;
+
+interface AttractionParams {
+  zeta: number;
+  omegaN: number;
+  pull: number;
+}
+
+/**
+ * Each node's own attraction "personality" — how it arrives when pulled,
+ * regardless of what it's being pulled toward or from how far. Seeded once
+ * from the node's id, independent of wanderParams' own seed stream (a
+ * separate makeRng call) and computed before any hover ever happens, so
+ * there's no way for distance-to-target to factor into which zeta/omegaN/
+ * pull a node gets.
+ */
+const attractionParams: Record<string, AttractionParams> = (() => {
+  const rng = makeRng(ATTRACT_SEED);
+  const map: Record<string, AttractionParams> = {};
+  for (const node of nodeList) {
+    map[node.id] = {
+      zeta: ATTRACT_ZETA_MIN + rng() * (ATTRACT_ZETA_MAX - ATTRACT_ZETA_MIN),
+      omegaN:
+        ATTRACT_OMEGA_MIN + rng() * (ATTRACT_OMEGA_MAX - ATTRACT_OMEGA_MIN),
+      pull: ATTRACT_PULL_MIN + rng() * (ATTRACT_PULL_MAX - ATTRACT_PULL_MIN),
+    };
+  }
+  return map;
+})();
+
 // Every message edge (runtime + dev-time), never shared-tech — the spring
 // carries the same hierarchy the edge rendering already draws.
 const springPairs: [string, string][] = edges
@@ -183,26 +222,50 @@ function neighborsOf(id: string): string[] {
   })());
 }
 
-interface AttractionSpring {
+interface NeighborSpring {
   value: number;
   velocity: number;
+  /** Whichever node this one is currently being pulled toward. */
+  targetId: string;
   active: boolean;
 }
 
-/** One entry per node currently pulling (or still springing back from release). */
-const attractions = new Map<string, AttractionSpring>();
+/**
+ * One entry per NEIGHBOUR currently being pulled (or still springing back
+ * from release) — keyed by the neighbour, not by the hovered target, since
+ * each neighbour runs its own spring with its own attractionParams. When
+ * several neighbours of a hovered node all activate at once, each is a
+ * fully independent integration from that same instant.
+ */
+const neighborSprings = new Map<string, NeighborSpring>();
 
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
 export function attractNeighbors(nodeId: string) {
-  for (const entry of attractions.values()) entry.active = false;
-  const existing = attractions.get(nodeId);
-  if (existing) existing.active = true;
-  else attractions.set(nodeId, { value: 0, velocity: 0, active: true });
+  const neighbors = new Set(neighborsOf(nodeId));
+
+  // Anything currently active that isn't a neighbour of the new target
+  // releases — its own spring, at its own pace, same as letting go.
+  for (const [id, spring] of neighborSprings) {
+    if (spring.active && !neighbors.has(id)) spring.active = false;
+  }
+
+  for (const id of neighbors) {
+    const existing = neighborSprings.get(id);
+    if (existing) {
+      // Retarget in place — the spring's current value/velocity carry over,
+      // so a node that's a neighbour of both the old and new hovered node
+      // never pops, it just continues toward the new direction.
+      existing.targetId = nodeId;
+      existing.active = true;
+    } else {
+      neighborSprings.set(id, { value: 0, velocity: 0, targetId: nodeId, active: true });
+    }
+  }
 }
 
-/** Releases whatever attraction is active, easing out rather than snapping. */
+/** Releases whatever attraction is active, each neighbour easing out on its own spring. */
 export function releaseAttraction() {
-  for (const entry of attractions.values()) entry.active = false;
+  for (const spring of neighborSprings.values()) spring.active = false;
 }
 
 let frozenAt: number | null = null;
@@ -268,40 +331,41 @@ export function stepSimulation(clockTime: number, delta: number) {
     ob.lerp(_pairAvg, PAIR_BLEND);
   }
 
-  for (const [targetId, entry] of attractions) {
-    const restValue = entry.active ? 1 : 0;
+  for (const [neighborId, spring] of neighborSprings) {
+    const params = attractionParams[neighborId];
+    const stiffness = params.omegaN * params.omegaN;
+    const damping = 2 * params.zeta * params.omegaN;
+    const restValue = spring.active ? 1 : 0;
+
     const steps = Math.max(1, Math.ceil(delta / ATTRACT_SUBSTEP_SECONDS));
     const stepDt = delta / steps;
     for (let s = 0; s < steps; s++) {
       const force =
-        -ATTRACT_STIFFNESS * (entry.value - restValue) -
-        ATTRACT_DAMPING * entry.velocity;
-      entry.velocity += force * stepDt;
-      entry.value += entry.velocity * stepDt;
+        -stiffness * (spring.value - restValue) - damping * spring.velocity;
+      spring.velocity += force * stepDt;
+      spring.value += spring.velocity * stepDt;
     }
 
     if (
-      !entry.active &&
-      Math.abs(entry.value) < 0.001 &&
-      Math.abs(entry.velocity) < 0.001
+      !spring.active &&
+      Math.abs(spring.value) < 0.001 &&
+      Math.abs(spring.velocity) < 0.001
     ) {
-      attractions.delete(targetId);
+      neighborSprings.delete(neighborId);
       continue;
     }
 
-    const targetHome = nodeGeometry[targetId]?.position;
-    if (!targetHome) continue;
-    for (const id of neighborsOf(targetId)) {
-      const home = nodeGeometry[id].position;
-      _pull
-        .set(
-          targetHome[0] - home[0],
-          targetHome[1] - home[1],
-          targetHome[2] - home[2],
-        )
-        .multiplyScalar(ATTRACT_PULL * entry.value);
-      offsets[id].add(_pull);
-    }
+    const targetHome = nodeGeometry[spring.targetId]?.position;
+    const home = nodeGeometry[neighborId]?.position;
+    if (!targetHome || !home) continue;
+    _pull
+      .set(
+        targetHome[0] - home[0],
+        targetHome[1] - home[1],
+        targetHome[2] - home[2],
+      )
+      .multiplyScalar(params.pull * spring.value);
+    offsets[neighborId].add(_pull);
   }
 
   for (const node of nodeList) {
