@@ -2,7 +2,7 @@ export * from './types';
 export { clusters } from './clusters';
 export { tech } from './tech';
 export { projects } from './projects';
-export { edges, runtimeEdges, devTimeEdges } from './edges';
+export { edges } from './edges';
 export { layout, clusterCentroid, type Vec3 } from './layout';
 export { resumeExperience, resumeEducation, resumeProjects } from './resume';
 
@@ -59,11 +59,6 @@ export const projectBySlug = (slug: string) =>
 export const projectById = (id: string) => projects.find((p) => p.id === id);
 
 export const techById = (id: string) => tech.find((t) => t.id === id);
-
-export const clusterById = (id: string) => clusters.find((c) => c.id === id);
-
-export const projectsUsingTech = (techId: string) =>
-  projects.filter((p) => p.techIds.includes(techId));
 
 export const projectsInCluster = (clusterId: string) =>
   projects.filter((p) => p.clusterId === clusterId);
