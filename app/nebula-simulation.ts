@@ -4,13 +4,16 @@ import { nodeList, nodeGeometry } from "@/lib/node-geometry";
 import { makeRng } from "@/lib/seeded-random";
 
 /**
- * Step 2.3a — force simulation. Live position is a pure function of a
- * shared clock, not integrated velocity state: each node's position is its
- * seeded `layout.ts` position (`home`) plus a small bounded wander offset.
+ * Step 2.3a — force simulation. A node's base position is its seeded
+ * `layout.ts` position (`home`) plus a small bounded wander offset that is
+ * a pure function of a shared clock, not integrated velocity state.
  * Message-edge-connected pairs (every runtime/dev-time edge — never
  * shared-tech, same asymmetry as the edge hierarchy itself) blend their
  * offsets toward a shared average each frame, so they drift loosely
- * together; everything else wanders independently.
+ * together; everything else wanders independently. Hover attraction (2.4)
+ * is the one part of this file that IS integrated state — see the
+ * ATTRACT_* constants below — because a real spring is what makes
+ * retargeting between nodes fall out for free.
  *
  * The wander is smooth value noise, not summed sines. Sines — even several
  * desynced ones per axis — are periodic, and a viewer picks up the repeat
@@ -20,11 +23,13 @@ import { makeRng } from "@/lib/seeded-random";
  * looks like. Each node also runs on its own time scale so the population
  * doesn't share one underlying clock.
  *
- * Being a pure function of time means freezing is just holding `t` still
- * (freezeSimulation captures the last clock value; resumeSimulation lets it
- * advance again), and reduced motion is just never calling stepSimulation —
- * offsets are 0 at t=0 (the ramp), so livePositions sit exactly at the
- * seeded layout from the moment the module loads.
+ * Wander being a pure function of time means freezing it is just holding
+ * `t` still (freezeSimulation captures the last clock value;
+ * resumeSimulation lets it advance again), and reduced motion is just
+ * never calling stepSimulation at all — wander offsets are 0 at t=0 (the
+ * ramp), so livePositions sit exactly at the seeded layout from the moment
+ * the module loads, and the attraction spring never gets stepped either,
+ * so it can't reintroduce motion while reduced motion is set.
  */
 
 const SIM_SEED = 0x51a7e5;
@@ -54,14 +59,31 @@ const RAMP_SECONDS = 2.5;
 // runaway motion — it only sets how correlated vs. independent the pair's
 // drift looks.
 const PAIR_BLEND = 0.35;
-// Hover attraction: seconds for a pull to ramp fully in or out. Each target
-// keeps its own strength and cross-fades, so moving the pointer from one
-// node straight to another never snaps — the old neighbourhood eases back
-// while the new one eases in. The pull applied is smoothstep(strength).
-const ATTRACT_IN_SECONDS = 0.7;
-const ATTRACT_OUT_SECONDS = 0.9;
+// Hover attraction is a real damped spring per target (value + velocity,
+// integrated every frame), not a curve over normalised progress — a spring
+// is what makes retargeting (pointer moving from one node straight to
+// another) fall out for free: the integrator just keeps going from
+// whatever position and velocity it already has when the target flips
+// between 1 (attracting) and 0 (released), so there's never a pop, and
+// pulling away *before* it's settled naturally cuts the motion short
+// instead of restarting a timer.
+//
+// Underdamped (damping ratio ζ = damping / (2·√stiffness) ≈ 0.4) so it
+// overshoots once, past the attracted position, before settling — the
+// "slingshot catch and wobble" rather than a smooth glide to a stop.
+// Release uses the same spring with the target flipped to 0, which is
+// simpler than a special-cased ease-out and reads as an honest recoil
+// when a node is let go, not just a fade.
+const ATTRACT_STIFFNESS = 100;
+const ATTRACT_DAMPING = 8;
+// Spring integration sub-step: keeps the integrator stable and the curve
+// shaped correctly even if a frame's delta is unusually large (a slow
+// device, a backgrounded-tab hiccup) — those just get consumed as several
+// small, stable steps instead of one big unstable one.
+const ATTRACT_SUBSTEP_SECONDS = 1 / 60;
 // How far an attracted node moves from its own home toward the attractor's
-// home, at full strength.
+// home, at the spring's rest value (1). The spring overshoots past this
+// and (on release) recoils slightly past 0, both expected.
 const ATTRACT_PULL = 0.6;
 
 function smoothstep(t: number): number {
@@ -161,15 +183,21 @@ function neighborsOf(id: string): string[] {
   })());
 }
 
-/** One entry per node currently pulling (or still easing out). */
-const attractions = new Map<string, { strength: number; active: boolean }>();
+interface AttractionSpring {
+  value: number;
+  velocity: number;
+  active: boolean;
+}
+
+/** One entry per node currently pulling (or still springing back from release). */
+const attractions = new Map<string, AttractionSpring>();
 
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
 export function attractNeighbors(nodeId: string) {
   for (const entry of attractions.values()) entry.active = false;
   const existing = attractions.get(nodeId);
   if (existing) existing.active = true;
-  else attractions.set(nodeId, { strength: 0, active: true });
+  else attractions.set(nodeId, { value: 0, velocity: 0, active: true });
 }
 
 /** Releases whatever attraction is active, easing out rather than snapping. */
@@ -241,15 +269,28 @@ export function stepSimulation(clockTime: number, delta: number) {
   }
 
   for (const [targetId, entry] of attractions) {
-    const rate = entry.active ? 1 / ATTRACT_IN_SECONDS : -1 / ATTRACT_OUT_SECONDS;
-    entry.strength = THREE.MathUtils.clamp(entry.strength + rate * delta, 0, 1);
-    if (entry.strength === 0 && !entry.active) {
+    const restValue = entry.active ? 1 : 0;
+    const steps = Math.max(1, Math.ceil(delta / ATTRACT_SUBSTEP_SECONDS));
+    const stepDt = delta / steps;
+    for (let s = 0; s < steps; s++) {
+      const force =
+        -ATTRACT_STIFFNESS * (entry.value - restValue) -
+        ATTRACT_DAMPING * entry.velocity;
+      entry.velocity += force * stepDt;
+      entry.value += entry.velocity * stepDt;
+    }
+
+    if (
+      !entry.active &&
+      Math.abs(entry.value) < 0.001 &&
+      Math.abs(entry.velocity) < 0.001
+    ) {
       attractions.delete(targetId);
       continue;
     }
+
     const targetHome = nodeGeometry[targetId]?.position;
     if (!targetHome) continue;
-    const eased = smoothstep(entry.strength);
     for (const id of neighborsOf(targetId)) {
       const home = nodeGeometry[id].position;
       _pull
@@ -258,7 +299,7 @@ export function stepSimulation(clockTime: number, delta: number) {
           targetHome[1] - home[1],
           targetHome[2] - home[2],
         )
-        .multiplyScalar(ATTRACT_PULL * eased);
+        .multiplyScalar(ATTRACT_PULL * entry.value);
       offsets[id].add(_pull);
     }
   }
