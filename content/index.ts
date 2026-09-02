@@ -8,7 +8,6 @@ export { resumeExperience, resumeEducation, resumeProjects } from './resume';
 
 import { projects } from './projects';
 import { tech } from './tech';
-import { clusters } from './clusters';
 
 export const site = {
   name: 'Peter Wang',
@@ -44,14 +43,23 @@ export const tourOrder = [
 ] as const;
 
 /**
- * SEL production clusters. In the Nebula their project nodes carry the solid
- * --mask core; personal, client, and internship work renders hollow.
+ * Node category, not an ownership signal — professional vs. personal, plus
+ * tech nodes as their own population (categorized directly in
+ * lib/node-geometry.ts, not here, since they're never clustered). In the
+ * Nebula this drives the translucent inner core: professional project
+ * nodes carry one, personal ones render fully hollow. "Professional" is the
+ * four SEL clusters plus the METER internship; "personal" is the personal
+ * and client-work clusters. Exhaustive over content/clusters.ts's current
+ * seven clusters — solder, throughhole, maintenance, tools, meter here;
+ * client and personal the only two left out.
  */
-export const selClusterIds = new Set(
-  clusters
-    .filter((c) => c.context === 'Schweitzer Engineering Laboratories')
-    .map((c) => c.id),
-);
+export const professionalClusterIds = new Set([
+  'solder',
+  'throughhole',
+  'maintenance',
+  'tools',
+  'meter',
+]);
 
 export const projectBySlug = (slug: string) =>
   projects.find((p) => p.slug === slug);
