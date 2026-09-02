@@ -241,23 +241,54 @@ function RuntimeEdgeLine({
   );
 }
 
+/**
+ * Writes every edge's live (or seeded) endpoints into a flat xyz buffer,
+ * two vertices per edge, and flags the attribute for re-upload.
+ */
+function writeStraightEndpoints(
+  edgeList: Edge[],
+  attribute: THREE.BufferAttribute,
+  live: boolean,
+) {
+  const array = attribute.array as Float32Array;
+  edgeList.forEach((edge, i) => {
+    const geo = computeStraightGeometry(edge, live);
+    if (!geo) return;
+    array[i * 6] = geo.start.x;
+    array[i * 6 + 1] = geo.start.y;
+    array[i * 6 + 2] = geo.start.z;
+    array[i * 6 + 3] = geo.end.x;
+    array[i * 6 + 4] = geo.end.y;
+    array[i * 6 + 5] = geo.end.z;
+  });
+  attribute.needsUpdate = true;
+}
+
+/**
+ * Builds a batched LineSegments geometry for a list of straight edges. The
+ * position attribute is a plain BufferAttribute over the array we keep
+ * writing into every frame — NOT Float32BufferAttribute, whose constructor
+ * copies its input (`new Float32Array(array)`), which would leave the
+ * geometry holding a private snapshot that per-frame writes never reach.
+ * That exact mistake left the tech hairlines static from 2.3a to 2.4.
+ */
+function createStraightBatchGeometry(edgeList: Edge[]) {
+  const attribute = new THREE.BufferAttribute(
+    new Float32Array(edgeList.length * 6),
+    3,
+  );
+  writeStraightEndpoints(edgeList, attribute, false);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", attribute);
+  return { geometry, attribute };
+}
+
 /** All shared-tech edges batched into a single LineSegments draw call. */
 function TechEdges({ edgeList }: { edgeList: Edge[] }) {
-  const { geometry, positions } = useMemo(() => {
-    const positions = new Float32Array(edgeList.length * 6);
-    edgeList.forEach((edge, i) => {
-      const geo = computeStraightGeometry(edge, false);
-      if (!geo) return;
-      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
-      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
-    });
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
-    );
-    return { geometry: geom, positions };
-  }, [edgeList]);
+  const { geometry, attribute } = useMemo(
+    () => createStraightBatchGeometry(edgeList),
+    [edgeList],
+  );
 
   const material = useMemo(
     () =>
@@ -272,17 +303,15 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
 
   useFrame(() => {
     if (useSceneStore.getState().reducedMotion) return;
-    edgeList.forEach((edge, i) => {
-      const geo = computeStraightGeometry(edge, true);
-      if (!geo) return;
-      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
-      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
-    });
-    const attr = geometry.attributes.position as THREE.BufferAttribute;
-    attr.needsUpdate = true;
+    writeStraightEndpoints(edgeList, attribute, true);
   });
 
-  return <lineSegments geometry={geometry} material={material} />;
+  // The batch spans the whole constellation and its endpoints move every
+  // frame; skipping frustum culling is cheaper than recomputing a bounding
+  // sphere per frame just to keep the culler honest.
+  return (
+    <lineSegments geometry={geometry} material={material} frustumCulled={false} />
+  );
 }
 
 /**
@@ -305,21 +334,10 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
     [edgeList, hoveredNodeId],
   );
 
-  const { geometry, positions } = useMemo(() => {
-    const positions = new Float32Array(connected.length * 6);
-    connected.forEach((edge, i) => {
-      const geo = computeStraightGeometry(edge, false);
-      if (!geo) return;
-      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
-      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
-    });
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(positions, 3),
-    );
-    return { geometry: geom, positions };
-  }, [connected]);
+  const { geometry, attribute } = useMemo(
+    () => createStraightBatchGeometry(connected),
+    [connected],
+  );
 
   const material = useMemo(
     () =>
@@ -336,17 +354,13 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
     if (connected.length === 0 || useSceneStore.getState().reducedMotion) {
       return;
     }
-    connected.forEach((edge, i) => {
-      const geo = computeStraightGeometry(edge, true);
-      if (!geo) return;
-      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
-      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
-    });
-    (geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    writeStraightEndpoints(connected, attribute, true);
   });
 
   if (connected.length === 0) return null;
-  return <lineSegments geometry={geometry} material={material} />;
+  return (
+    <lineSegments geometry={geometry} material={material} frustumCulled={false} />
+  );
 }
 
 export function Edges({ showTech }: { showTech: boolean }) {
