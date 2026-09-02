@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { makeRng } from "@/lib/seeded-random";
@@ -10,13 +10,15 @@ import { useSceneStore } from "@/lib/scene-store";
 import { nodeList, type NodeGeometry } from "@/lib/node-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
+import { stepSimulation, getLivePosition } from "./nebula-simulation";
 
 /**
  * Step 2.2 — materials. Node typing (solid --mask core on SEL project nodes,
  * everything else hollow), low-frequency vertex displacement so silhouettes
  * breathe, and the device-tier switch threaded through material selection.
- * Step 2.3 adds edges (see ./nebula-edges.tsx). Still no motion simulation
- * or interaction; those are 2.3a onward. See docs/05a-phase-2-sequence.md.
+ * Step 2.3 adds edges (see ./nebula-edges.tsx). Step 2.3a adds the force
+ * simulation (see ./nebula-simulation.ts) that drives node positions here.
+ * See docs/05a-phase-2-sequence.md.
  *
  * Everything here is a static singleton — content is fixed at build time and
  * this file is client-only — so geometry, materials, and node data live at
@@ -94,6 +96,7 @@ function shellMaterial(node: NodeGeometry, _tier: DeviceTier): THREE.Material {
 
 export function Constellation() {
   const tier = useDeviceTier();
+  const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
 
   // Tech node visibility and opacity are tier-dependent — see
   // 02-architecture.md's Responsive tiers. The mobile/tablet toggle arrives
@@ -104,11 +107,20 @@ export function Constellation() {
       TECH_OPACITY * (tier === "tablet" ? TABLET_TECH_FACTOR : 1);
   }, [tier]);
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     // Reduced motion: stop advancing the clock and the displacement freezes
-    // in place — silhouettes stay organic but hold still.
+    // in place — silhouettes stay organic but hold still. Skipping
+    // stepSimulation the same way leaves every node at its seeded layout
+    // position, since livePositions starts there and nothing ever moves it.
     if (useSceneStore.getState().reducedMotion) return;
     breatheTime.value = state.clock.elapsedTime;
+
+    stepSimulation(state.clock.elapsedTime, delta);
+    for (const node of nodeList) {
+      const mesh = meshRefs.current[node.id];
+      const live = getLivePosition(node.id);
+      if (mesh && live) mesh.position.copy(live);
+    }
   });
 
   return (
@@ -121,6 +133,9 @@ export function Constellation() {
           return (
             <mesh
               key={node.id}
+              ref={(el) => {
+                meshRefs.current[node.id] = el;
+              }}
               position={node.position}
               scale={node.radius}
               geometry={sphereGeometry}

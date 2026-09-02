@@ -11,6 +11,7 @@ import { edges, type Edge } from "@/content";
 import { palette } from "@/lib/palette";
 import { nodeGeometry } from "@/lib/node-geometry";
 import { useSceneStore } from "@/lib/scene-store";
+import { getLivePosition } from "./nebula-simulation";
 
 /**
  * Step 2.3 — edges. Runtime and dev-time edges get the drei
@@ -21,6 +22,13 @@ import { useSceneStore } from "@/lib/scene-store";
  * The runtime/dev-time asymmetry — solid + fast pulse vs. dashed + slow
  * pulse vs. static hairline — is the entire point of the design
  * (05-phase-2.md, Edges) and must read with no legend.
+ *
+ * Step 2.3a: nodes now drift (see ./nebula-simulation.ts), so endpoints are
+ * recomputed every frame from live positions rather than once at mount.
+ * Dash/gap/pulse-speed sizing stays pinned to the geometry computed from the
+ * seeded (non-live) positions, computed once — wander is small enough
+ * relative to edge length that re-deriving those every frame would only
+ * introduce jitter into the pulse rhythm for no visible benefit.
  */
 const RUNTIME_COLOR = palette.ink;
 const RUNTIME_OPACITY = 0.4;
@@ -55,6 +63,20 @@ interface EdgeGeometry {
 }
 
 /**
+ * A node's position — live (current, drifting) or the static seeded
+ * position from layout.ts. Falls back to the static position if the
+ * simulation hasn't produced a live one yet (e.g. the very first frame).
+ */
+function nodePosition(id: string, live: boolean): THREE.Vector3 | null {
+  if (live) {
+    const p = getLivePosition(id);
+    if (p) return p;
+  }
+  const g = nodeGeometry[id];
+  return g ? new THREE.Vector3(...g.position) : null;
+}
+
+/**
  * Curved (runtime / dev-time) edges. The rendered curve is a quadratic
  * Bezier through start/mid/end, so its initial direction at each endpoint
  * points toward `mid`, not toward the other node's center — trimming along
@@ -63,13 +85,14 @@ interface EdgeGeometry {
  * back through it. Trimming along the direction to `mid` instead matches
  * the curve's real tangent, so it leaves the surface cleanly.
  */
-function computeCurveGeometry(edge: Edge): EdgeGeometry | null {
+function computeCurveGeometry(edge: Edge, live: boolean): EdgeGeometry | null {
   const from = nodeGeometry[edge.from];
   const to = nodeGeometry[edge.to];
   if (!from || !to) return null;
 
-  const a = new THREE.Vector3(...from.position);
-  const b = new THREE.Vector3(...to.position);
+  const a = nodePosition(edge.from, live);
+  const b = nodePosition(edge.to, live);
+  if (!a || !b) return null;
 
   const straightMid = a.clone().add(b).multiplyScalar(0.5);
   const outward =
@@ -100,13 +123,15 @@ function computeCurveGeometry(edge: Edge): EdgeGeometry | null {
  */
 function computeStraightGeometry(
   edge: Edge,
+  live: boolean,
 ): { start: THREE.Vector3; end: THREE.Vector3 } | null {
   const from = nodeGeometry[edge.from];
   const to = nodeGeometry[edge.to];
   if (!from || !to) return null;
 
-  const a = new THREE.Vector3(...from.position);
-  const b = new THREE.Vector3(...to.position);
+  const a = nodePosition(edge.from, live);
+  const b = nodePosition(edge.to, live);
+  if (!a || !b) return null;
   const dir = b.clone().sub(a).normalize();
 
   const start = a.clone().addScaledVector(dir, from.radius * 1.05);
@@ -123,7 +148,8 @@ function RuntimeEdgeLine({
   edge: Edge;
   devTime: boolean;
 }) {
-  const geo = useMemo(() => computeCurveGeometry(edge), [edge]);
+  const geo = useMemo(() => computeCurveGeometry(edge, false), [edge]);
+  const baseRef = useRef<QuadraticBezierLineRef>(null);
   const pulseRef = useRef<QuadraticBezierLineRef>(null);
 
   const dashSize = geo ? geo.length * PULSE_DASH_FRACTION : 0;
@@ -133,6 +159,13 @@ function RuntimeEdgeLine({
 
   useFrame((_state, delta) => {
     if (useSceneStore.getState().reducedMotion) return;
+
+    const live = computeCurveGeometry(edge, true);
+    if (live) {
+      baseRef.current?.setPoints(live.start, live.end, live.mid);
+      pulseRef.current?.setPoints(live.start, live.end, live.mid);
+    }
+
     const material = pulseRef.current?.material;
     if (!material || dashSize + gapSize <= 0) return;
     material.dashOffset = THREE.MathUtils.euclideanModulo(
@@ -146,6 +179,7 @@ function RuntimeEdgeLine({
   return (
     <group>
       <QuadraticBezierLine
+        ref={baseRef}
         start={geo.start}
         mid={geo.mid}
         end={geo.end}
@@ -178,20 +212,20 @@ function RuntimeEdgeLine({
 
 /** All shared-tech edges batched into a single LineSegments draw call. */
 function TechEdges({ edgeList }: { edgeList: Edge[] }) {
-  const geometry = useMemo(() => {
-    const positions: number[] = [];
-    for (const edge of edgeList) {
-      const geo = computeStraightGeometry(edge);
-      if (!geo) continue;
-      positions.push(geo.start.x, geo.start.y, geo.start.z);
-      positions.push(geo.end.x, geo.end.y, geo.end.z);
-    }
+  const { geometry, positions } = useMemo(() => {
+    const positions = new Float32Array(edgeList.length * 6);
+    edgeList.forEach((edge, i) => {
+      const geo = computeStraightGeometry(edge, false);
+      if (!geo) return;
+      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
+      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
+    });
     const geom = new THREE.BufferGeometry();
     geom.setAttribute(
       "position",
       new THREE.Float32BufferAttribute(positions, 3),
     );
-    return geom;
+    return { geometry: geom, positions };
   }, [edgeList]);
 
   const material = useMemo(
@@ -204,6 +238,18 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
       }),
     [],
   );
+
+  useFrame(() => {
+    if (useSceneStore.getState().reducedMotion) return;
+    edgeList.forEach((edge, i) => {
+      const geo = computeStraightGeometry(edge, true);
+      if (!geo) return;
+      positions.set([geo.start.x, geo.start.y, geo.start.z], i * 6);
+      positions.set([geo.end.x, geo.end.y, geo.end.z], i * 6 + 3);
+    });
+    const attr = geometry.attributes.position as THREE.BufferAttribute;
+    attr.needsUpdate = true;
+  });
 
   return <lineSegments geometry={geometry} material={material} />;
 }

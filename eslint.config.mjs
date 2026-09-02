@@ -11,7 +11,7 @@ const eslintConfig = defineConfig([
   // instead of triggering React re-renders. That's the correct pattern here,
   // not a bug, so it's scoped off for files that drive the 3D scene.
   {
-    files: ["app/**/*canvas*.{ts,tsx}"],
+    files: ["app/nebula-*.{ts,tsx}"],
     rules: {
       "react-hooks/immutability": "off",
     },
