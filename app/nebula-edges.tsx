@@ -54,7 +54,53 @@ interface EdgeGeometry {
   length: number;
 }
 
-function computeEdgeGeometry(edge: Edge): EdgeGeometry | null {
+/**
+ * Curved (runtime / dev-time) edges. The rendered curve is a quadratic
+ * Bezier through start/mid/end, so its initial direction at each endpoint
+ * points toward `mid`, not toward the other node's center — trimming along
+ * the straight a-to-b direction leaves a start point that's technically
+ * outside the sphere, but the curve's actual tangent can immediately bend
+ * back through it. Trimming along the direction to `mid` instead matches
+ * the curve's real tangent, so it leaves the surface cleanly.
+ */
+function computeCurveGeometry(edge: Edge): EdgeGeometry | null {
+  const from = nodeGeometry[edge.from];
+  const to = nodeGeometry[edge.to];
+  if (!from || !to) return null;
+
+  const a = new THREE.Vector3(...from.position);
+  const b = new THREE.Vector3(...to.position);
+
+  const straightMid = a.clone().add(b).multiplyScalar(0.5);
+  const outward =
+    straightMid.distanceTo(ORIGIN) > 0.001
+      ? straightMid.clone().normalize()
+      : b.clone().sub(a).normalize();
+  const mid = straightMid.addScaledVector(
+    outward,
+    a.distanceTo(b) * ARC_BULGE,
+  );
+
+  const start = a.clone().addScaledVector(
+    mid.clone().sub(a).normalize(),
+    from.radius * 1.05,
+  );
+  const end = b.clone().addScaledVector(
+    mid.clone().sub(b).normalize(),
+    to.radius * 1.05,
+  );
+
+  return { start, mid, end, length: start.distanceTo(mid) + mid.distanceTo(end) };
+}
+
+/**
+ * Straight (shared-tech) edges. The rendered line is literally start-to-end,
+ * so trimming along the direct a-to-b direction is exact — no tangent
+ * mismatch to account for.
+ */
+function computeStraightGeometry(
+  edge: Edge,
+): { start: THREE.Vector3; end: THREE.Vector3 } | null {
   const from = nodeGeometry[edge.from];
   const to = nodeGeometry[edge.to];
   if (!from || !to) return null;
@@ -63,22 +109,10 @@ function computeEdgeGeometry(edge: Edge): EdgeGeometry | null {
   const b = new THREE.Vector3(...to.position);
   const dir = b.clone().sub(a).normalize();
 
-  // Trim endpoints to just outside each node's surface so lines don't cut
-  // through the shell — or the solid SEL core inside it.
   const start = a.clone().addScaledVector(dir, from.radius * 1.05);
   const end = b.clone().addScaledVector(dir, -to.radius * 1.05);
 
-  const straightMid = a.clone().add(b).multiplyScalar(0.5);
-  const outward =
-    straightMid.distanceTo(ORIGIN) > 0.001
-      ? straightMid.clone().normalize()
-      : dir;
-  const mid = straightMid.addScaledVector(
-    outward,
-    a.distanceTo(b) * ARC_BULGE,
-  );
-
-  return { start, mid, end, length: start.distanceTo(mid) + mid.distanceTo(end) };
+  return { start, end };
 }
 
 /** One runtime or dev-time edge: a static base line plus a traveling amber pulse. */
@@ -89,7 +123,7 @@ function RuntimeEdgeLine({
   edge: Edge;
   devTime: boolean;
 }) {
-  const geo = useMemo(() => computeEdgeGeometry(edge), [edge]);
+  const geo = useMemo(() => computeCurveGeometry(edge), [edge]);
   const pulseRef = useRef<QuadraticBezierLineRef>(null);
 
   const dashSize = geo ? geo.length * PULSE_DASH_FRACTION : 0;
@@ -147,7 +181,7 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
   const geometry = useMemo(() => {
     const positions: number[] = [];
     for (const edge of edgeList) {
-      const geo = computeEdgeGeometry(edge);
+      const geo = computeStraightGeometry(edge);
       if (!geo) continue;
       positions.push(geo.start.x, geo.start.y, geo.start.z);
       positions.push(geo.end.x, geo.end.y, geo.end.z);
