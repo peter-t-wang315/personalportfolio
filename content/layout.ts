@@ -1,6 +1,7 @@
 import { clusters } from './clusters';
 import { projects } from './projects';
 import { tech } from './tech';
+import { makeRng } from '@/lib/seeded-random';
 
 /**
  * Deterministic layout. Positions MUST be identical on every load. A
@@ -11,16 +12,6 @@ import { tech } from './tech';
  */
 
 const SEED = 0x5eed_1e55;
-
-function makeRng(seed: number) {
-  let s = seed >>> 0;
-  return () => {
-    s ^= s << 13;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    return ((s >>> 0) % 100000) / 100000;
-  };
-}
 
 export type Vec3 = [number, number, number];
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { usePathname } from "next/navigation";
+import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
 import { makeRng } from "@/lib/seeded-random";
 import { createFresnelMaterial } from "./fresnel-material";
@@ -192,6 +193,44 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
   return null;
 }
 
+// Distance-from-target clamp for the nebula dolly. Min sits just inside the
+// project-cluster radius (CLUSTER_RADIUS 14, content/layout.ts) so zooming in
+// reads as "flying toward a cluster," not literally passing through node
+// geometry; max keeps the whole seven-cluster composition on screen rather
+// than shrinking to a speck. Verified visually, not just computed.
+const DOLLY_MIN_DISTANCE = 10;
+const DOLLY_MAX_DISTANCE = 58;
+
+/**
+ * Step 2.4: drag-to-rotate, scroll-to-dolly, clamped. Only mounted for the
+ * nebula view — the Phase 1 cluster stays a fixed, parallax-only camera per
+ * 01-design-system.md. Only the position/target need setting here; FOV isn't
+ * something camera-controls owns, so CameraRig above still handles that.
+ */
+function NebulaCameraRig() {
+  const controlsRef = useRef<CameraControlsImpl>(null);
+
+  useEffect(() => {
+    controlsRef.current?.setLookAt(
+      ...CONSTELLATION_CAMERA_POSITION,
+      ...CONSTELLATION_CAMERA_TARGET,
+      false,
+    );
+  }, []);
+
+  return (
+    <CameraControls
+      ref={controlsRef}
+      minDistance={DOLLY_MIN_DISTANCE}
+      maxDistance={DOLLY_MAX_DISTANCE}
+      mouseButtons-left={CameraControlsImpl.ACTION.ROTATE}
+      mouseButtons-right={CameraControlsImpl.ACTION.NONE}
+      mouseButtons-middle={CameraControlsImpl.ACTION.NONE}
+      mouseButtons-wheel={CameraControlsImpl.ACTION.DOLLY}
+    />
+  );
+}
+
 export function NebulaCanvas() {
   const pathname = usePathname();
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
@@ -204,7 +243,14 @@ export function NebulaCanvas() {
       camera={{ position: HOME_CAMERA_POSITION, fov: HOME_CAMERA_FOV }}
     >
       <CameraRig isNebula={isNebula} />
-      {isNebula ? <Constellation /> : <Cluster />}
+      {isNebula ? (
+        <>
+          <NebulaCameraRig />
+          <Constellation />
+        </>
+      ) : (
+        <Cluster />
+      )}
     </Canvas>
   );
 }

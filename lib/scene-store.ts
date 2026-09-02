@@ -16,16 +16,21 @@ interface SceneState {
   mode: SceneMode;
   pointer: { x: number; y: number };
   reducedMotion: boolean;
+  /** Step 2.4: the single hovered node, if any. One node hovered at a time. */
+  hoveredNodeId: string | null;
   setMode: (mode: SceneMode) => void;
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
+  setHoveredNodeId: (id: string | null) => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
   mode: "distant",
   pointer: { x: 0, y: 0 },
   reducedMotion: false,
+  hoveredNodeId: null,
   setMode: (mode) => set({ mode }),
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
+  setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
 }));
