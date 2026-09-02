@@ -1,10 +1,23 @@
 import Link from "next/link";
 
-/** Sits in the gap between the sticky header and each page's own content. */
-export function HomeLink() {
+/**
+ * The back-link every page carries — "Home" / "/" by default. Not a general
+ * "return to previous route" system: browser back already covers that, and
+ * a fixed, predictable target avoids the unpredictability of tracking
+ * navigation history. /work/[slug] is the one deliberate exception, since
+ * /work is its natural parent, not the landing page — it overrides both
+ * props; every other route uses the default.
+ */
+export function HomeLink({
+  label = "Home",
+  href = "/",
+}: {
+  label?: string;
+  href?: string;
+}) {
   return (
     <Link
-      href="/"
+      href={href}
       className="inline-flex items-center gap-1.5 text-[0.875rem] text-ink-muted link-underline"
     >
       <svg
@@ -22,7 +35,7 @@ export function HomeLink() {
           strokeLinejoin="round"
         />
       </svg>
-      Home
+      {label}
     </Link>
   );
 }
