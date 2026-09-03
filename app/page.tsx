@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { site, projectById } from "@/content";
+import { HeroNav } from "./hero-nav";
 import { HeroStats } from "./hero-stats";
 import { PointerParallax } from "./pointer-parallax";
 import { ScrollCue } from "./scroll-cue";
@@ -49,23 +50,7 @@ export default function Home() {
 
         <HeroStats />
 
-        <nav
-          aria-label="Primary"
-          className="mt-16 md:mt-20 flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem]"
-        >
-          {navLinks.map((link) => (
-            <Link
-              key={link.label}
-              href={link.href}
-              className="text-mask link-underline"
-              {...(link.external
-                ? { target: "_blank", rel: "noopener noreferrer" }
-                : {})}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        <HeroNav links={navLinks} />
       </div>
 
       <ScrollCue />

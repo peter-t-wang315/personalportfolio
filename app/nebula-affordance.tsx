@@ -6,12 +6,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDeviceTier } from "@/lib/device-tier";
 import { useSceneStore } from "@/lib/scene-store";
-import {
-  CLUSTER_BOUNDING_RADIUS,
-  CLUSTER_DEPTH,
-  HOME_CAMERA_FOV,
-  HOME_CAMERA_POSITION,
-} from "@/lib/cluster-geometry";
+import { useClusterHitRadiusPx } from "@/lib/use-cluster-hit-radius";
+import { CLUSTER_RADIUS } from "@/lib/cluster-geometry";
 import { FADE_DISTANCE_PX } from "./scroll-cue";
 
 /**
@@ -50,36 +46,25 @@ const PHRASES = [
 ];
 
 const CURSOR_OFFSET = { x: 18, y: 18 };
-const LABEL_TRANSITION = { duration: 0.28, ease: [0.32, 0.72, 0, 1] as const };
+// Opacity is linear, not eased — the site's standard ease-out curve front-
+// loads the opacity change into the first ~100ms (fine for a 240ms UI
+// transition, but on this longer entrance it meant the fade was basically
+// finished before it was noticed), and a plain ease-in front-loads the
+// *invisible* part instead, so most of the duration reads as nothing
+// happening before a late, sudden pop. Linear opacity guarantees the eye
+// catches a visibly partial state throughout. The y-drift keeps the site's
+// standard easing so the *position* still settles rather than moving at a
+// constant rate — only opacity needed the fix. Exit is quicker and smaller,
+// a softer motion than the arrival.
+const LABEL_TRANSITION_IN = {
+  opacity: { duration: 0.42, ease: "linear" as const },
+  y: { duration: 0.42, ease: [0.32, 0.72, 0, 1] as const },
+};
+const LABEL_TRANSITION_OUT = {
+  opacity: { duration: 0.26, ease: "linear" as const },
+  y: { duration: 0.26, ease: [0.32, 0.72, 0, 1] as const },
+};
 const LABEL_TRANSITION_INSTANT = { duration: 0 };
-
-/**
- * World (0,0) always projects to the exact viewport center regardless of FOV
- * or aspect ratio, since the home camera looks straight down -z at the
- * origin (see CameraRig in nebula-canvas.tsx) — the cluster's parallax drift
- * is small enough (max 1.4 world units) to ignore for centering purposes.
- * Only the hover region's radius needs real trig, from the actual camera
- * distance and vertical FOV, so it tracks the cluster's true on-screen size
- * rather than a guessed pixel value.
- */
-function useClusterHitRadiusPx() {
-  const [radiusPx, setRadiusPx] = useState(0);
-
-  useEffect(() => {
-    function recompute() {
-      const verticalFovRad = (HOME_CAMERA_FOV * Math.PI) / 180;
-      const distance = HOME_CAMERA_POSITION[2] - CLUSTER_DEPTH;
-      const halfHeightWorld = distance * Math.tan(verticalFovRad / 2);
-      const pxPerWorldUnit = window.innerHeight / 2 / halfHeightWorld;
-      setRadiusPx(CLUSTER_BOUNDING_RADIUS * pxPerWorldUnit);
-    }
-    recompute();
-    window.addEventListener("resize", recompute);
-    return () => window.removeEventListener("resize", recompute);
-  }, []);
-
-  return radiusPx;
-}
 
 /**
  * The cluster (nebula-canvas.tsx) renders on a `position: fixed` canvas, so
@@ -116,11 +101,13 @@ function usePastHero() {
 /**
  * Replaces the Phase 1 placeholder link per 04-phase-1.md's updated spec.
  * Desktop gets a proximity-hover reveal sized to the real cluster; mobile
- * and tablet (no hover state to reveal anything) get a static always-visible
- * label instead. Desktop and tablet also get a slow idle pulse ring inviting
- * a second look at the cluster (see ClusterPulse). Everything here is
- * `position: fixed`, matching the cluster it's paired with — see usePastHero
- * above for why that's correct rather than a bug.
+ * and tablet (no hover state to gate a reveal on) get an always-present
+ * label instead, cycling through the same phrase pool on a timer rather
+ * than following a cursor that doesn't exist there. Desktop and tablet also
+ * get a slow idle pulse ring inviting a second look at the cluster (see
+ * ClusterPulse). Everything here is `position: fixed`, matching the cluster
+ * it's paired with — see usePastHero above for why that's correct rather
+ * than a bug.
  *
  * Mounted from the root layout, not from `/`'s page component, and
  * self-gates on pathname — the same pattern SiteHeader and NebulaCanvasLoader
@@ -156,29 +143,77 @@ export function NebulaAffordance() {
           onHoverChange={setDesktopHoverActive}
         />
       ) : (
-        <StaticAffordanceLabel radiusPx={radiusPx} />
+        <MobileAffordanceLabel radiusPx={radiusPx} />
       )}
       {tier !== "mobile" ? (
-        <ClusterPulse
-          radiusPx={radiusPx}
-          paused={tier === "desktop" && desktopHoverActive}
-        />
+        <ClusterPulse paused={tier === "desktop" && desktopHoverActive} />
       ) : null}
     </>
   );
 }
 
-function StaticAffordanceLabel({ radiusPx }: { radiusPx: number }) {
+const MOBILE_CYCLE_MS = 4000;
+
+/**
+ * Mobile and tablet have no hover state to gate a reveal on, so the label is
+ * always present — but it still cycles through the phrase pool with the
+ * same fade treatment as desktop, just without cursor-following (there's no
+ * cursor). Disabled under reduced motion: one phrase, chosen once, with no
+ * timer and no entrance animation.
+ */
+function MobileAffordanceLabel({ radiusPx }: { radiusPx: number }) {
+  const reducedMotion = useSceneStore((s) => s.reducedMotion);
+  const [phrase, setPhrase] = useState(
+    () => PHRASES[Math.floor(Math.random() * PHRASES.length)],
+  );
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    const id = setInterval(() => {
+      setPhrase((previous) => {
+        let next = previous;
+        while (next === previous) {
+          next = PHRASES[Math.floor(Math.random() * PHRASES.length)];
+        }
+        return next;
+      });
+    }, MOBILE_CYCLE_MS);
+    return () => clearInterval(id);
+  }, [reducedMotion]);
+
   return (
     <Link
       href="/nebula"
-      className="fixed z-20 left-1/2 font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-ink-faint"
+      aria-label="What's this? Explore the graph."
+      className="fixed z-20 left-1/2"
       style={{
         top: "50%",
         transform: `translate(-50%, calc(-50% + ${radiusPx + 16}px))`,
       }}
     >
-      what&apos;s this?
+      <AnimatePresence mode="wait">
+        <motion.span
+          key={phrase}
+          initial={reducedMotion ? false : { opacity: 0, y: 12 }}
+          animate={{
+            opacity: 1,
+            y: 0,
+            transition: reducedMotion
+              ? LABEL_TRANSITION_INSTANT
+              : LABEL_TRANSITION_IN,
+          }}
+          exit={{
+            opacity: 0,
+            y: 6,
+            transition: reducedMotion
+              ? LABEL_TRANSITION_INSTANT
+              : LABEL_TRANSITION_OUT,
+          }}
+          className="block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-ink-faint"
+        >
+          {phrase}
+        </motion.span>
+      </AnimatePresence>
     </Link>
   );
 }
@@ -195,6 +230,12 @@ function DesktopAffordance({
   const [focusActive, setFocusActive] = useState(false);
   const [cursor, setCursor] = useState({ x: 0, y: 0 });
   const [phrase, setPhrase] = useState(() => PHRASES[0]);
+  // Locked at the moment a reveal *starts*, not read live off pointerActive
+  // — see the wrapperStyle comment below for why that distinction is the
+  // whole fix for the hover-out teleport bug.
+  const [revealMode, setRevealMode] = useState<"pointer" | "focus">(
+    "pointer",
+  );
   const wasShowing = useRef(false);
 
   const showing = pointerActive || focusActive;
@@ -203,32 +244,44 @@ function DesktopAffordance({
     onHoverChange(showing);
   }, [showing, onHoverChange]);
 
-  // A fresh random phrase each time a hover session *starts*, not a cycle
-  // through the list while it's held — picking on the false→true edge means
-  // the phrase stays put for the duration of one hover/focus and only
-  // changes on the next one.
+  // A fresh random phrase, and a locked-in reveal mode, each time a hover
+  // session *starts* — picking on the false→true edge means both stay put
+  // for the duration of one hover/focus and only change on the next one.
   useEffect(() => {
     if (showing && !wasShowing.current) {
       setPhrase(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
+      setRevealMode(pointerActive ? "pointer" : "focus");
     }
     wasShowing.current = showing;
-  }, [showing]);
+  }, [showing, pointerActive]);
 
   // Keyboard focus has no cursor position to follow, so the label sits just
   // below the hit region instead, statically — the wrapper here only ever
   // sets a static left/top/transform for positioning; the animated
   // enter/exit (opacity + drift) lives entirely on the inner motion.span
   // below, so the two never fight over the `transform` property.
-  const wrapperStyle: CSSProperties = pointerActive
-    ? {
-        left: cursor.x + CURSOR_OFFSET.x,
-        top: cursor.y + CURSOR_OFFSET.y,
-      }
-    : {
-        left: "50%",
-        top: "50%",
-        transform: `translate(-50%, calc(-50% + ${radiusPx + 16}px))`,
-      };
+  //
+  // Branching on `revealMode` (locked at reveal start) rather than the live
+  // `pointerActive` is load-bearing: `pointerActive` flips false the instant
+  // the pointer leaves, which is exactly when the exit animation begins — if
+  // this branched on it directly, the wrapper would snap to the static
+  // focus-fallback position (bottom of the hit region) the same frame the
+  // fade-out starts, so the exit played out in the wrong place instead of
+  // from wherever the cursor actually was. `cursor` itself keeps its last
+  // value once the pointer leaves (nothing resets it), so continuing to use
+  // it through the exit is exactly "fade out from the last tracked
+  // position."
+  const wrapperStyle: CSSProperties =
+    revealMode === "pointer"
+      ? {
+          left: cursor.x + CURSOR_OFFSET.x,
+          top: cursor.y + CURSOR_OFFSET.y,
+        }
+      : {
+          left: "50%",
+          top: "50%",
+          transform: `translate(-50%, calc(-50% + ${radiusPx + 16}px))`,
+        };
 
   return (
     <>
@@ -256,16 +309,25 @@ function DesktopAffordance({
           {showing ? (
             <motion.span
               key={phrase}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={
-                reducedMotion ? LABEL_TRANSITION_INSTANT : LABEL_TRANSITION
-              }
+              initial={reducedMotion ? false : { opacity: 0, y: 12 }}
+              animate={{
+                opacity: 1,
+                y: 0,
+                transition: reducedMotion
+                  ? LABEL_TRANSITION_INSTANT
+                  : LABEL_TRANSITION_IN,
+              }}
+              exit={{
+                opacity: 0,
+                y: 6,
+                transition: reducedMotion
+                  ? LABEL_TRANSITION_INSTANT
+                  : LABEL_TRANSITION_OUT,
+              }}
               className={
-                "block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-mask bg-mask-tint rounded px-2 py-1" +
+                "block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-mask" +
                 (focusActive && !pointerActive
-                  ? " outline-2 outline-mask outline-offset-2"
+                  ? " underline decoration-mask underline-offset-4"
                   : "")
               }
             >
@@ -279,23 +341,23 @@ function DesktopAffordance({
 }
 
 /**
- * A slow, low-amplitude "look inward" cue: a faint hairline ring at the
- * cluster's boundary that contracts and fades on a long, several-second-gap
- * loop (see the `cluster-pulse` keyframes in globals.css) — an invitation,
- * not an attention-grab. Desktop and tablet only, paused entirely on desktop
- * while the hover affordance is showing so the two never compete, and
- * unmounted outright under reduced motion rather than merely paused.
+ * A slow, low-amplitude "look inward" cue: a faint hairline ring that
+ * contracts and fades on a long, several-second-gap loop (see the
+ * `cluster-pulse` keyframes in globals.css) — an invitation, not an
+ * attention-grab. Desktop and tablet only, paused entirely on desktop while
+ * the hover affordance is showing so the two never compete, and unmounted
+ * outright under reduced motion rather than merely paused.
+ *
+ * Sized off CLUSTER_RADIUS, not the hit-region's CLUSTER_BOUNDING_RADIUS —
+ * that extra margin is deliberately generous for an *invisible* click
+ * target, but drawn as an actual visible ring it read as a plain circle
+ * sitting outside the cluster rather than hugging it.
  */
-function ClusterPulse({
-  radiusPx,
-  paused,
-}: {
-  radiusPx: number;
-  paused: boolean;
-}) {
+function ClusterPulse({ paused }: { paused: boolean }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
+  const radiusPx = useClusterHitRadiusPx(CLUSTER_RADIUS);
 
-  if (reducedMotion || paused) return null;
+  if (reducedMotion || paused || radiusPx <= 0) return null;
 
   return (
     <div
