@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { site, heroMetrics, projectById } from "@/content";
+import { site, projectById } from "@/content";
+import { HeroStats } from "./hero-stats";
 import { PointerParallax } from "./pointer-parallax";
 import { ScrollCue } from "./scroll-cue";
 
@@ -46,26 +47,7 @@ export default function Home() {
           {site.positioning}
         </h1>
 
-        <dl className="mt-20 md:mt-24 flex flex-wrap gap-10">
-          {heroMetrics.map((metric) => (
-            <div key={metric.label}>
-              <dd
-                className="font-display"
-                style={{ fontSize: "2.25rem", letterSpacing: "-0.02em" }}
-              >
-                {metric.value}
-              </dd>
-              <dt className="text-[0.8125rem] text-ink-muted mt-1">
-                {metric.label}
-              </dt>
-              {"note" in metric && metric.note ? (
-                <p className="text-[0.8125rem] text-ink-faint">
-                  {metric.note}
-                </p>
-              ) : null}
-            </div>
-          ))}
-        </dl>
+        <HeroStats />
 
         <nav
           aria-label="Primary"
@@ -84,13 +66,6 @@ export default function Home() {
             </Link>
           ))}
         </nav>
-
-        <Link
-          href="/nebula"
-          className="mt-24 md:mt-28 inline-block text-[0.8125rem] text-ink-faint hover:text-ink-muted"
-        >
-          Explore this as a graph
-        </Link>
       </div>
 
       <ScrollCue />

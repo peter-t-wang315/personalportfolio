@@ -7,17 +7,23 @@ import { usePathname } from "next/navigation";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
 import { makeRng } from "@/lib/seeded-random";
+import {
+  CLUSTER_DEPTH,
+  CLUSTER_RADIUS,
+  HOME_CAMERA_FOV,
+  HOME_CAMERA_POSITION,
+} from "@/lib/cluster-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Constellation } from "./nebula-constellation";
 
 /**
  * Phase 1 version: a static-feeling drifting cluster, not the real graph.
- * No hover, no click, no edges. See docs/04-phase-1.md.
+ * No hover, no click, no edges. See docs/04-phase-1.md. CLUSTER_RADIUS,
+ * CLUSTER_DEPTH, and the home camera constants live in lib/cluster-geometry.ts
+ * — nebula-affordance.tsx needs those same numbers without pulling in three.js.
  */
 const CLUSTER_SEED = 0xc105a7;
 const NODE_COUNT = 40;
-const CLUSTER_RADIUS = 3;
-const CLUSTER_DEPTH = -14;
 const PARALLAX_MAX = 1.4;
 
 interface NodeDatum {
@@ -138,9 +144,6 @@ function Cluster() {
     </group>
   );
 }
-
-const HOME_CAMERA_POSITION: [number, number, number] = [0, 0, 9];
-const HOME_CAMERA_FOV = 45;
 
 /**
  * Elevated, near-top-down heading, tilted slightly off pure vertical.

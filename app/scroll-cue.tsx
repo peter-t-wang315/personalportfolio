@@ -2,8 +2,15 @@
 
 import { motion, useScroll, useTransform } from "motion/react";
 
-/** How far the user has to scroll before the cue is fully gone. */
-const FADE_DISTANCE_PX = 240;
+/**
+ * How far the user has to scroll before the cue is fully gone. Also reused
+ * by nebula-affordance.tsx: the cluster it hovers-reveal-triggers off of is
+ * a `position: fixed` canvas layer, glued to the viewport rather than
+ * scrolling with the page (see nebula-canvas.tsx), so its hover region uses
+ * the same threshold to stop being interactive once the user has committed
+ * to scrolling past the hero, rather than lingering over unrelated content.
+ */
+export const FADE_DISTANCE_PX = 240;
 
 export function ScrollCue() {
   const { scrollY } = useScroll();
