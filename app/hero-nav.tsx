@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { useLayoutEffect, useRef } from "react";
-import { useDeviceTier } from "@/lib/device-tier";
-import { useClusterHitRadiusPx } from "@/lib/use-cluster-hit-radius";
+import { useClusterScreen } from "@/lib/use-cluster-screen";
 
 interface NavLink {
   label: string;
@@ -12,70 +11,106 @@ interface NavLink {
 }
 
 /**
- * Clearance below the cluster's radius on mobile/tablet: covers the
- * "what's this?" label sitting right under the cluster (nebula-affordance.tsx
- * positions it at radius + 16px, roughly 20px tall) plus real breathing room,
- * so nav reads as a separate group below both rather than colliding with
- * either. One tuned constant, not a re-derivation of the label's own layout.
+ * Clearance below the cluster's edge on mobile/tablet — enough for the
+ * "what's this?" label that spawns around it (nebula-affordance.tsx, up to
+ * ~26px past the edge plus a line of text) with real breathing room after,
+ * so nav reads as its own group rather than crowding either.
  */
-const CLEARANCE_BELOW_CLUSTER_PX = 56;
+const CLEARANCE_BELOW_CLUSTER_PX = 64;
+const DESKTOP_QUERY = "(min-width: 1024px)";
 
 /**
- * Desktop keeps its original `mt-16 md:mt-20` gap under the full stats
- * block — the cluster sits to the right of a left-aligned column there and
- * never competes with nav. Mobile and tablet need real clearance instead: the
- * cluster is a `position: fixed` layer glued to the viewport center
- * regardless of document flow (nebula-canvas.tsx), and nothing about nav's
- * normal flow position knows where that fixed layer's edge actually is.
+ * Two `<nav>`s, with Tailwind's `lg:` breakpoint (1024px, matching
+ * useDeviceTier's desktop threshold) picking which is visible in CSS. The
+ * mobile/tablet one drops Email, which was wrapping onto a second line in
+ * the compact row — it stays reachable on /resume, and via the full nav at
+ * desktop width.
  *
- * A flat Tailwind margin can't fix this correctly — tried it, and it broke
- * again at iPad width: the cluster's on-screen radius is a fixed *fraction*
- * of viewport height (see useClusterHitRadiusPx), so it's a different pixel
- * size at 390×844 than at 768×1024, and a constant margin tuned for one
- * doesn't track the other. This measures nav's actual natural position after
- * layout and applies exactly the margin needed to clear the real,
- * currently-computed cluster radius — reset-then-remeasure on every change
- * so repeated resizes don't compound a stale margin into the measurement.
+ * Deliberately not one `<nav>` branching on useDeviceTier(): that hook
+ * reports "desktop" for its SSR/first-paint snapshot, so a JS branch shows
+ * the desktop nav — with its small, uncleared margin — on every mobile load
+ * until hydration corrects it, which is exactly when it collides with the
+ * fixed-position cluster. Same reasoning as hero-stats.tsx.
+ *
+ * The one thing that genuinely can't be CSS is the mobile margin: the
+ * cluster is a `position: fixed` layer whose on-screen size derives from
+ * viewport height and its own scale factor, and nothing about nav's normal
+ * flow position knows where that layer's edge is. A flat Tailwind margin was
+ * tried and broke at iPad width for exactly that reason. So this measures
+ * nav's natural position after layout and applies the difference. It reads
+ * `window.matchMedia` directly rather than a tier value, because a layout
+ * effect only ever runs client-side, where matchMedia is already accurate —
+ * no hydration window to be wrong in.
  */
 export function HeroNav({ links }: { links: NavLink[] }) {
-  const tier = useDeviceTier();
-  const radiusPx = useClusterHitRadiusPx();
+  const compactLinks = links.filter((link) => link.label !== "Email");
+  const cluster = useClusterScreen();
   const navRef = useRef<HTMLElement>(null);
 
   useLayoutEffect(() => {
     const el = navRef.current;
     if (!el) return;
 
-    if (tier === "desktop" || radiusPx <= 0) {
-      el.style.marginTop = "";
-      return;
+    function recompute() {
+      if (!el) return;
+      if (window.matchMedia(DESKTOP_QUERY).matches || !cluster.ready) {
+        el.style.marginTop = "";
+        return;
+      }
+      el.style.marginTop = "0px";
+      const naturalTop = el.getBoundingClientRect().top;
+      const targetTop =
+        cluster.centerY + cluster.radiusPx + CLEARANCE_BELOW_CLUSTER_PX;
+      el.style.marginTop = `${Math.max(0, targetTop - naturalTop)}px`;
     }
 
-    el.style.marginTop = "0px";
-    const naturalTop = el.getBoundingClientRect().top;
-    const targetTop =
-      window.innerHeight / 2 + radiusPx + CLEARANCE_BELOW_CLUSTER_PX;
-    el.style.marginTop = `${Math.max(0, targetTop - naturalTop)}px`;
-  }, [tier, radiusPx]);
+    recompute();
+    // The cluster's size tracks viewport *height*, so a width-only resize
+    // across the breakpoint wouldn't otherwise recompute, leaving a stale
+    // margin on a nav that just became visible.
+    const query = window.matchMedia(DESKTOP_QUERY);
+    query.addEventListener("change", recompute);
+    return () => query.removeEventListener("change", recompute);
+  }, [cluster.ready, cluster.centerY, cluster.radiusPx]);
 
   return (
-    <nav
-      ref={navRef}
-      aria-label="Primary"
-      className="flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-16 md:mt-20"
-    >
-      {links.map((link) => (
-        <Link
-          key={link.label}
-          href={link.href}
-          className="text-mask link-underline"
-          {...(link.external
-            ? { target: "_blank", rel: "noopener noreferrer" }
-            : {})}
-        >
-          {link.label}
-        </Link>
-      ))}
-    </nav>
+    <>
+      <nav
+        aria-label="Primary"
+        className="hidden lg:flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-16 md:mt-20"
+      >
+        {links.map((link) => (
+          <Link
+            key={link.label}
+            href={link.href}
+            className="text-mask link-underline"
+            {...(link.external
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {})}
+          >
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+
+      <nav
+        ref={navRef}
+        aria-label="Primary"
+        className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 text-[0.875rem]"
+      >
+        {compactLinks.map((link) => (
+          <Link
+            key={link.label}
+            href={link.href}
+            className="text-mask link-underline"
+            {...(link.external
+              ? { target: "_blank", rel: "noopener noreferrer" }
+              : {})}
+          >
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+    </>
   );
 }

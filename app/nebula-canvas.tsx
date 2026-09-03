@@ -12,6 +12,9 @@ import {
   CLUSTER_RADIUS,
   HOME_CAMERA_FOV,
   HOME_CAMERA_POSITION,
+  clusterCenterYFraction,
+  clusterScaleForViewport,
+  pxPerWorldUnitFor,
 } from "@/lib/cluster-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Constellation } from "./nebula-constellation";
@@ -86,7 +89,13 @@ function Cluster() {
     const elapsed = state.clock.elapsedTime;
 
     const targetOpacity = isHome ? 0.9 : 0.35;
-    const targetScale = isHome ? 1 : 0.7;
+    // Narrow viewports shrink the whole cluster so it doesn't fill the width
+    // edge to edge — see clusterScaleForViewport. No-op on desktop/tablet.
+    // Every DOM overlay measured against the cluster applies the same factor
+    // (lib/use-cluster-screen.ts), so they can't drift apart.
+    const targetScale =
+      (isHome ? 1 : 0.7) *
+      clusterScaleForViewport(state.size.width, state.size.height);
     const ease = reducedMotion ? 1 : 0.06;
 
     material.uniforms.opacity.value = THREE.MathUtils.lerp(
@@ -117,8 +126,20 @@ function Cluster() {
         0.05,
       );
     }
+    // On narrow viewports the cluster drops below the hero text rather than
+    // sitting centred behind it — see clusterCenterYFraction. Converted from
+    // the px fraction into world units here; use-cluster-screen.ts applies
+    // the identical shift on the DOM side, so overlays stay locked to it.
+    const centerYFraction = clusterCenterYFraction(
+      state.size.width,
+      state.size.height,
+    );
+    const centerOffsetWorldY =
+      -(state.size.height * (centerYFraction - 0.5)) /
+      pxPerWorldUnitFor(state.size.height);
+
     groupRef.current.position.x = parallax.current.x;
-    groupRef.current.position.y = parallax.current.y;
+    groupRef.current.position.y = parallax.current.y + centerOffsetWorldY;
 
     // Written when it's moved meaningfully, not every frame — a plain
     // per-frame write, even after the lerp has visually settled, still
