@@ -36,7 +36,11 @@ Below: a short paragraph of orientation and a compact list of the six or seven m
 
 **Cursor parallax:** foreground text and background cluster translate in opposite directions, 12px and 28px max respectively, spring-eased. Disabled under `prefers-reduced-motion`.
 
-**The "What's this?" affordance:** sits near the cluster, low contrast, revealing itself on pointer proximity. Clicking navigates to `/nebula`, which in Phase 1 renders a coming-soon state — a centered line explaining that an interactive version of the graph is being built, with a link back to `/work`. It should not look broken or unfinished; it should read as deliberate.
+**The "What's this?" affordance — not yet implemented, next session.** Current spec, to replace whatever placeholder exists now:
+
+- **Desktop (pointer-capable, per `useDeviceTier()`):** no static label. A short line of casual text — "oh?", "what's this?", and a small rotating set of similar phrases — follows the cursor at a fixed offset, revealed only on proximity hover to the cluster (not present otherwise) and cycling between phrases while the hover holds. Low contrast, Geist Mono, matching the positioning line's register.
+- **Mobile/touch (per the same `useDeviceTier()` gate):** no hover state to reveal it, so no proximity trigger — instead a single static, always-visible, low-contrast label near the cluster. No cycling text, no pre-tap reveal.
+- **Either way:** clicking/tapping navigates to `/nebula`, which in Phase 1 renders a coming-soon state — a centered line explaining that an interactive version of the graph is being built, with a link back to `/work`. It should not look broken or unfinished; it should read as deliberate.
 
 ### `/about`
 Bio, photo, how Peter works. This is where the non-graph material lives: mentoring, on-call, code review, Claude Code and AI-assisted development, education (WSU), and the honest skill list including the things deliberately kept off the graph.

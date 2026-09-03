@@ -1,5 +1,20 @@
 # Phase 2 — build sequence
 
+## Session status (update each session)
+Last completed: 2.4 (camera controls + hover), including all follow-on fixes
+(pointer-events bug, edge live-tracking, organic drift noise, spring attraction,
+per-node personality variation, three-way node category visuals, hover title).
+Committed and stable.
+
+Not yet started: landing-page affordance fix (see 04-phase-1.md for updated spec),
+then 2.5 (fly-in + focus state).
+
+Next session should: read this file plus 00, 01, 02, 04, 05 in full before
+continuing, then confirm current git state matches this summary before
+proceeding with either the affordance fix or 2.5.
+
+---
+
 Nine steps. Each one ends with something visible in the browser and something specific to verify. Build them in order; each depends on the one before.
 
 Commit after every step. Deploy a preview after 2.2, 2.6, and 2.8.
@@ -28,7 +43,7 @@ Verify the seeded generator produces identical positions across reloads — relo
 
 The fresnel base landed in 2.1; this step extends it — low-frequency vertex displacement so silhouettes breathe. No `MeshPhysicalMaterial` transmission anywhere yet.
 
-Node typing: SEL project nodes carry a solid `--mask` core visible through the shell; personal and client work is hollow; tech nodes are hollow, smaller, lower opacity.
+Node typing: a three-way category — professional / personal / tech, not an ownership signal — drives an inner core. Professional project nodes (the four SEL clusters plus METER) carry a large translucent `--mask` core (~80% of shell radius, ~20–25% opacity) visible through the shell; personal and client work is fully hollow at the same shell size; tech nodes are hollow, smaller, lower opacity.
 
 Do not build rotation, drift, or the force simulation here — that's 2.3a, after edges exist to spring against.
 
