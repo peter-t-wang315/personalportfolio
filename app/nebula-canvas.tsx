@@ -25,6 +25,10 @@ import { Constellation } from "./nebula-constellation";
 const CLUSTER_SEED = 0xc105a7;
 const NODE_COUNT = 40;
 const PARALLAX_MAX = 1.4;
+// World units — far below anything visible (radiusPx conversion is roughly
+// 40-70px per world unit depending on viewport height), just enough to
+// collapse the tail of the lerp's asymptotic approach into a single write.
+const PARALLAX_WRITE_EPSILON = 0.0005;
 
 interface NodeDatum {
   base: THREE.Vector3;
@@ -75,6 +79,7 @@ function Cluster() {
   const meshRefs = useRef<(THREE.Mesh | null)[]>([]);
   const parallax = useRef(new THREE.Vector2());
   const currentScale = useRef(1);
+  const lastWrittenParallax = useRef({ x: 0, y: 0 });
 
   useFrame((state) => {
     const { pointer, reducedMotion } = useSceneStore.getState();
@@ -114,6 +119,26 @@ function Cluster() {
     }
     groupRef.current.position.x = parallax.current.x;
     groupRef.current.position.y = parallax.current.y;
+
+    // Written when it's moved meaningfully, not every frame — a plain
+    // per-frame write, even after the lerp has visually settled, still
+    // produces a new object each time (floating-point lerp toward a fixed
+    // target never exactly reaches it), which would re-render every
+    // subscribed DOM component in nebula-affordance.tsx at 60fps forever,
+    // on every non-nebula route, even at rest. Not subscribed to here —
+    // this component doesn't need to react to its own write.
+    if (
+      Math.abs(parallax.current.x - lastWrittenParallax.current.x) >
+        PARALLAX_WRITE_EPSILON ||
+      Math.abs(parallax.current.y - lastWrittenParallax.current.y) >
+        PARALLAX_WRITE_EPSILON
+    ) {
+      lastWrittenParallax.current.x = parallax.current.x;
+      lastWrittenParallax.current.y = parallax.current.y;
+      useSceneStore
+        .getState()
+        .setClusterParallax({ x: parallax.current.x, y: parallax.current.y });
+    }
 
     if (!reducedMotion) {
       nodes.forEach((node, i) => {

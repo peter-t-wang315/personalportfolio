@@ -6,7 +6,10 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useDeviceTier } from "@/lib/device-tier";
 import { useSceneStore } from "@/lib/scene-store";
-import { useClusterHitRadiusPx } from "@/lib/use-cluster-hit-radius";
+import {
+  useClusterHitRadiusPx,
+  useClusterOffsetPx,
+} from "@/lib/use-cluster-hit-radius";
 import { CLUSTER_RADIUS } from "@/lib/cluster-geometry";
 import { FADE_DISTANCE_PX } from "./scroll-cue";
 
@@ -99,6 +102,38 @@ function usePastHero() {
 }
 
 /**
+ * Raw pixel cursor position, tracked continuously for the whole page — not
+ * scoped to the hover region's own pointermove. Scoping it to the region
+ * meant `cursor` only started updating the instant the pointer crossed in,
+ * so the label's first render used a stale (usually {0,0}-derived) position
+ * and visibly snapped to the real one a frame later. Tracking globally means
+ * position is already current the moment proximity reveals it — rAF-
+ * throttled to match PointerTracker's own pattern (pointer-tracker.tsx)
+ * rather than firing a state update per raw pointermove event.
+ */
+function useCursorPx() {
+  const [cursor, setCursor] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    let frame = 0;
+    function handlePointerMove(event: PointerEvent) {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setCursor({ x: event.clientX, y: event.clientY });
+      });
+    }
+    window.addEventListener("pointermove", handlePointerMove);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return cursor;
+}
+
+/**
  * Replaces the Phase 1 placeholder link per 04-phase-1.md's updated spec.
  * Desktop gets a proximity-hover reveal sized to the real cluster; mobile
  * and tablet (no hover state to gate a reveal on) get an always-present
@@ -108,6 +143,14 @@ function usePastHero() {
  * ClusterPulse). Everything here is `position: fixed`, matching the cluster
  * it's paired with — see usePastHero above for why that's correct rather
  * than a bug.
+ *
+ * Every element here anchors to the cluster's *live* screen position — see
+ * useClusterOffsetPx (lib/use-cluster-hit-radius.ts) — not a hardcoded
+ * viewport-center assumption. World (0,0) only projects to viewport center
+ * when the cluster's parallax offset happens to be zero; the rest of the
+ * time (nebula-canvas.tsx drifts it up to ±1.4 world units, eased toward the
+ * pointer) a fixed 50%/50% anchor visibly desyncs from the real, currently-
+ * rendered cluster.
  *
  * Mounted from the root layout, not from `/`'s page component, and
  * self-gates on pathname — the same pattern SiteHeader and NebulaCanvasLoader
@@ -131,6 +174,7 @@ export function NebulaAffordance() {
   const tier = useDeviceTier();
   const pastHero = usePastHero();
   const radiusPx = useClusterHitRadiusPx();
+  const clusterOffsetPx = useClusterOffsetPx();
   const [desktopHoverActive, setDesktopHoverActive] = useState(false);
 
   if (pathname !== "/" || pastHero || radiusPx <= 0) return null;
@@ -140,32 +184,93 @@ export function NebulaAffordance() {
       {tier === "desktop" ? (
         <DesktopAffordance
           radiusPx={radiusPx}
+          clusterOffsetPx={clusterOffsetPx}
           onHoverChange={setDesktopHoverActive}
         />
       ) : (
-        <MobileAffordanceLabel radiusPx={radiusPx} />
+        <MobileAffordanceLabel
+          radiusPx={radiusPx}
+          clusterOffsetPx={clusterOffsetPx}
+        />
       )}
       {tier !== "mobile" ? (
-        <ClusterPulse paused={tier === "desktop" && desktopHoverActive} />
+        <ClusterPulse
+          clusterOffsetPx={clusterOffsetPx}
+          paused={tier === "desktop" && desktopHoverActive}
+        />
       ) : null}
     </>
   );
 }
 
 const MOBILE_CYCLE_MS = 4000;
+/** Radial distance range from cluster center for the mobile label's
+ * randomized position, in px beyond the cluster's own radius — an area
+ * around the cluster, not a ring pinned to one exact edge distance. */
+const MOBILE_LABEL_GAP_MIN = 16;
+const MOBILE_LABEL_GAP_MAX = 56;
+/** Rough half-width safety margin for the longest phrase in the pool, so a
+ * position near the left/right side of the circle can't clip text off a
+ * narrow viewport — the label is centered on its target point (see the
+ * transform below), so it needs clearance on both sides of that point, not
+ * just one. */
+const MOBILE_LABEL_SAFE_MARGIN_PX = 90;
+
+function randomLabelOffset(
+  radiusPx: number,
+  clusterOffsetXPx: number,
+  viewportWidth: number,
+) {
+  const angle = Math.random() * Math.PI * 2;
+  const gap =
+    MOBILE_LABEL_GAP_MIN +
+    Math.random() * (MOBILE_LABEL_GAP_MAX - MOBILE_LABEL_GAP_MIN);
+  const dist = radiusPx + gap;
+  let x = Math.cos(angle) * dist;
+  const y = Math.sin(angle) * dist;
+
+  const halfWidth = viewportWidth / 2 - MOBILE_LABEL_SAFE_MARGIN_PX;
+  const targetX = clusterOffsetXPx + x;
+  if (targetX > halfWidth) x -= targetX - halfWidth;
+  else if (targetX < -halfWidth) x -= targetX + halfWidth;
+
+  return { x, y };
+}
 
 /**
  * Mobile and tablet have no hover state to gate a reveal on, so the label is
  * always present — but it still cycles through the phrase pool with the
  * same fade treatment as desktop, just without cursor-following (there's no
- * cursor). Disabled under reduced motion: one phrase, chosen once, with no
- * timer and no entrance animation.
+ * cursor). Each cycle also picks a new randomized point around the
+ * cluster's actual bounds (not a fixed slot below it), so the label reads as
+ * appearing from different points around the graph rather than repeating in
+ * the same spot. Disabled under reduced motion: one phrase, one position,
+ * chosen once, with no timer and no entrance animation.
  */
-function MobileAffordanceLabel({ radiusPx }: { radiusPx: number }) {
+function MobileAffordanceLabel({
+  radiusPx,
+  clusterOffsetPx,
+}: {
+  radiusPx: number;
+  clusterOffsetPx: { xPx: number; yPx: number };
+}) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const [phrase, setPhrase] = useState(
     () => PHRASES[Math.floor(Math.random() * PHRASES.length)],
   );
+  const [labelOffset, setLabelOffset] = useState(() =>
+    randomLabelOffset(radiusPx, clusterOffsetPx.xPx, window.innerWidth),
+  );
+  // clusterOffsetPx updates whenever the cluster's parallax moves — the
+  // interval below only needs its *latest* value at the moment a cycle
+  // fires, not a reason to restart the 4s timer every time the cluster
+  // drifts a little. Reading it via a ref (kept current every render,
+  // deliberately not a dependency) keeps the cycle running on its own
+  // schedule regardless.
+  const clusterOffsetXRef = useRef(clusterOffsetPx.xPx);
+  useEffect(() => {
+    clusterOffsetXRef.current = clusterOffsetPx.xPx;
+  }, [clusterOffsetPx.xPx]);
 
   useEffect(() => {
     if (reducedMotion) return;
@@ -177,18 +282,24 @@ function MobileAffordanceLabel({ radiusPx }: { radiusPx: number }) {
         }
         return next;
       });
+      setLabelOffset(
+        randomLabelOffset(
+          radiusPx,
+          clusterOffsetXRef.current,
+          window.innerWidth,
+        ),
+      );
     }, MOBILE_CYCLE_MS);
     return () => clearInterval(id);
-  }, [reducedMotion]);
+  }, [reducedMotion, radiusPx]);
 
   return (
     <Link
       href="/nebula"
       aria-label="What's this? Explore the graph."
-      className="fixed z-20 left-1/2"
+      className="fixed z-20 left-1/2 top-1/2"
       style={{
-        top: "50%",
-        transform: `translate(-50%, calc(-50% + ${radiusPx + 16}px))`,
+        transform: `translate(calc(-50% + ${clusterOffsetPx.xPx + labelOffset.x}px), calc(-50% + ${clusterOffsetPx.yPx + labelOffset.y}px))`,
       }}
     >
       <AnimatePresence mode="wait">
@@ -220,15 +331,17 @@ function MobileAffordanceLabel({ radiusPx }: { radiusPx: number }) {
 
 function DesktopAffordance({
   radiusPx,
+  clusterOffsetPx,
   onHoverChange,
 }: {
   radiusPx: number;
+  clusterOffsetPx: { xPx: number; yPx: number };
   onHoverChange: (active: boolean) => void;
 }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
+  const cursor = useCursorPx();
   const [pointerActive, setPointerActive] = useState(false);
   const [focusActive, setFocusActive] = useState(false);
-  const [cursor, setCursor] = useState({ x: 0, y: 0 });
   const [phrase, setPhrase] = useState(() => PHRASES[0]);
   // Locked at the moment a reveal *starts*, not read live off pointerActive
   // — see the wrapperStyle comment below for why that distinction is the
@@ -268,9 +381,10 @@ function DesktopAffordance({
   // focus-fallback position (bottom of the hit region) the same frame the
   // fade-out starts, so the exit played out in the wrong place instead of
   // from wherever the cursor actually was. `cursor` itself keeps its last
-  // value once the pointer leaves (nothing resets it), so continuing to use
-  // it through the exit is exactly "fade out from the last tracked
-  // position."
+  // tracked value (see useCursorPx) once the pointer leaves the hit region —
+  // it's tracked for the whole page, not just while hovering — so
+  // continuing to use it through the exit is exactly "fade out from the
+  // last tracked position."
   const wrapperStyle: CSSProperties =
     revealMode === "pointer"
       ? {
@@ -280,7 +394,7 @@ function DesktopAffordance({
       : {
           left: "50%",
           top: "50%",
-          transform: `translate(-50%, calc(-50% + ${radiusPx + 16}px))`,
+          transform: `translate(calc(-50% + ${clusterOffsetPx.xPx}px), calc(-50% + ${clusterOffsetPx.yPx + radiusPx + 16}px))`,
         };
 
   return (
@@ -288,15 +402,15 @@ function DesktopAffordance({
       <Link
         href="/nebula"
         aria-label="What's this? Explore the graph."
-        className="nebula-affordance-hit fixed z-20 left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        className="nebula-affordance-hit fixed z-20 left-1/2 top-1/2 rounded-full"
         style={{
           width: radiusPx * 2,
           height: radiusPx * 2,
           clipPath: "circle(50% at 50% 50%)",
+          transform: `translate(calc(-50% + ${clusterOffsetPx.xPx}px), calc(-50% + ${clusterOffsetPx.yPx}px))`,
         }}
         onPointerEnter={() => setPointerActive(true)}
         onPointerLeave={() => setPointerActive(false)}
-        onPointerMove={(e) => setCursor({ x: e.clientX, y: e.clientY })}
         onFocus={() => setFocusActive(true)}
         onBlur={() => setFocusActive(false)}
       />
@@ -352,8 +466,20 @@ function DesktopAffordance({
  * that extra margin is deliberately generous for an *invisible* click
  * target, but drawn as an actual visible ring it read as a plain circle
  * sitting outside the cluster rather than hugging it.
+ *
+ * clusterOffsetPx is passed through as CSS custom properties, not a wrapper
+ * transform — the `cluster-pulse` keyframes already animate `transform`
+ * (the contracting scale), and a CSS animation's transform always wins over
+ * an inline style transform on the same element, so the live offset has to
+ * be folded into the keyframes' own transform via var() instead.
  */
-function ClusterPulse({ paused }: { paused: boolean }) {
+function ClusterPulse({
+  paused,
+  clusterOffsetPx,
+}: {
+  paused: boolean;
+  clusterOffsetPx: { xPx: number; yPx: number };
+}) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const radiusPx = useClusterHitRadiusPx(CLUSTER_RADIUS);
 
@@ -363,7 +489,14 @@ function ClusterPulse({ paused }: { paused: boolean }) {
     <div
       aria-hidden="true"
       className="cluster-pulse-ring pointer-events-none fixed z-0 left-1/2 top-1/2 rounded-full"
-      style={{ width: radiusPx * 2, height: radiusPx * 2 }}
+      style={
+        {
+          width: radiusPx * 2,
+          height: radiusPx * 2,
+          "--cluster-offset-x": `${clusterOffsetPx.xPx}px`,
+          "--cluster-offset-y": `${clusterOffsetPx.yPx}px`,
+        } as CSSProperties
+      }
     />
   );
 }

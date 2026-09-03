@@ -62,11 +62,22 @@ body {
  * stark outlined circle. Component-gated on prefers-reduced-motion
  * (unmounted, not just paused) — see ClusterPulse — so no matching @media
  * block is needed here.
+ *
+ * --cluster-offset-x/y (set inline by ClusterPulse) is the cluster's live
+ * parallax offset in pixels — folded into this transform via custom
+ * properties rather than applied as a separate wrapper transform, since a
+ * CSS animation's `transform` always wins over an inline style transform on
+ * the same element; this is the only way to have both the animated scale
+ * and the live offset on one element.
  */
 @keyframes cluster-pulse {
   0% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(1.08);
+    transform: translate(
+        calc(-50% + var(--cluster-offset-x, 0px)),
+        calc(-50% + var(--cluster-offset-y, 0px))
+      )
+      scale(1.08);
   }
   15% {
     opacity: 0.18;
@@ -74,7 +85,11 @@ body {
   45%,
   100% {
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.92);
+    transform: translate(
+        calc(-50% + var(--cluster-offset-x, 0px)),
+        calc(-50% + var(--cluster-offset-y, 0px))
+      )
+      scale(0.92);
   }
 }
 
