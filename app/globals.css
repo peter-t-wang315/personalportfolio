@@ -41,14 +41,31 @@ body {
 }
 
 /*
- * The landing-page "What's this?" hover region (nebula-affordance.tsx) is an
- * invisible circle sized to the whole drifting cluster — a focus ring drawn
- * around it would span a third of the hero and read as broken rather than
- * deliberate. The revealed phrase label carries its own focus styling
- * instead, so this is safe to suppress.
+ * The desktop "What's this?" anchor (nebula-affordance.tsx) is the phrase
+ * label itself, and it has no size at all until a reveal renders text into
+ * it — so a focus ring would be drawn around nothing on the frame focus
+ * lands. The label underlines itself on focus instead, which is why this is
+ * safe to suppress. Deliberately not applied to the mobile label, which is a
+ * permanently visible link and keeps the standard ring.
  */
 .nebula-affordance-hit:focus-visible {
   outline: none;
+}
+
+/*
+ * Armed while the pointer is inside the cluster's circle. Nothing is there to
+ * hover any more — the proximity reveal is computed from coordinates rather
+ * than from an element, precisely so it stops eating clicks and text
+ * selection on the hero behind it — so the clickable-ness of the cluster has
+ * to be signalled from the root instead. `cursor` inherits, so the headline
+ * (the only real content the circle overlaps) takes its caret back explicitly.
+ */
+html.nebula-affordance-armed {
+  cursor: pointer;
+}
+
+html.nebula-affordance-armed h1 {
+  cursor: auto;
 }
 
 /*

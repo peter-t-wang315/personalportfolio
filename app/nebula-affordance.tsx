@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AnimatePresence,
   motion,
@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useDeviceTier } from "@/lib/device-tier";
 import { useSceneStore } from "@/lib/scene-store";
@@ -129,35 +128,46 @@ function usePastHero() {
 
 /**
  * Page-wide cursor position, rAF-throttled to match PointerTracker's own
- * pattern. `syncFromEvent` lets the reveal handler seed the position from
- * the very event that triggered it — `pointerenter` fires before the
- * `pointermove` for the same physical movement, so without it the first
- * revealed frame would use the previous move's coordinates.
+ * pattern. It is the single source for both where the label sits *and*
+ * whether the label should be showing at all — see DesktopAffordance, which
+ * derives proximity from these coordinates rather than from pointer events
+ * on an element.
+ *
+ * `inWindow` replaces what the old hit region's `onPointerLeave` used to do.
+ * With proximity computed from a remembered coordinate, a cursor that leaves
+ * the page entirely would otherwise leave its last position — possibly still
+ * inside the cluster — standing, and the phrase revealed behind it.
  */
 function useCursorPx() {
   const [cursor, setCursor] = useState({ x: 0, y: 0 });
+  const [inWindow, setInWindow] = useState(false);
 
   useEffect(() => {
     let frame = 0;
     function handlePointerMove(event: PointerEvent) {
       if (frame) return;
+      const { clientX, clientY } = event;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setCursor({ x: event.clientX, y: event.clientY });
+        setCursor({ x: clientX, y: clientY });
+        setInWindow(true);
       });
     }
+    // A null relatedTarget on pointerout means the pointer left the document
+    // rather than moving between two elements inside it.
+    function handlePointerOut(event: PointerEvent) {
+      if (event.relatedTarget === null) setInWindow(false);
+    }
     window.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerout", handlePointerOut);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerout", handlePointerOut);
       if (frame) cancelAnimationFrame(frame);
     };
   }, []);
 
-  const syncFromEvent = useCallback((event: ReactPointerEvent) => {
-    setCursor({ x: event.clientX, y: event.clientY });
-  }, []);
-
-  return { cursor, syncFromEvent };
+  return { cursor, inWindow };
 }
 
 /**
@@ -184,6 +194,9 @@ function PhraseFollower({
   reducedMotion,
   spanClassName,
   href,
+  linkClassName,
+  onFocus,
+  onBlur,
   positionMode,
   anchor,
   onExitComplete,
@@ -195,6 +208,13 @@ function PhraseFollower({
   reducedMotion: boolean;
   spanClassName: string;
   href?: string;
+  /** Extra classes for the anchor itself, when there is one. Desktop uses it
+   * to suppress the focus outline in favour of underlining the phrase; mobile
+   * deliberately does not, since there the label is a visible, ordinarily
+   * focusable link. */
+  linkClassName?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
   /** "follow" trails the target with a spring (desktop, tracking a live
    * cursor). "instant" places it outright — mobile only ever moves it while
    * nothing is visible, so travelling there would just drag the next phrase
@@ -271,7 +291,12 @@ function PhraseFollower({
           <Link
             href={href}
             aria-label="What's this? Explore the graph."
-            className="pointer-events-auto block"
+            className={
+              "pointer-events-auto block" +
+              (linkClassName ? ` ${linkClassName}` : "")
+            }
+            onFocus={onFocus}
+            onBlur={onBlur}
           >
             {presence}
           </Link>
@@ -443,6 +468,44 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   );
 }
 
+/** How far a pointer may travel between press and release and still count as
+ * a click rather than a drag. Dragging out a text selection that happens to
+ * start inside the cluster's circle must not navigate. */
+const CLICK_SLOP_PX = 4;
+/** Things that own their own click. Nothing on the landing page currently
+ * sits under the cluster, but the circle is a quarter of the viewport across
+ * and the hero is not frozen — a link that ends up under it later has to keep
+ * working. */
+const INTERACTIVE_SELECTOR =
+  "a, button, input, textarea, select, summary, label, [role='button'], [contenteditable]";
+
+/**
+ * The proximity reveal is a **sensor, not a surface**.
+ *
+ * It used to be an `<a>` sized to the cluster's bounding radius sitting at
+ * `z-20`, above `main`. That is 257–514px across on a desktop viewport, and
+ * as a real element it swallowed every pointer event inside it: the headline
+ * underneath could not be selected (measured: 21–24% of the `<h1>`'s box
+ * covered between 1024px and 1440px wide), and a click meant for the page
+ * navigated to /nebula instead. A region whose only job is to notice the
+ * pointer has no business consuming it.
+ *
+ * So nothing here captures pointer events at all any more. Proximity is plain
+ * geometry against the page-wide cursor useCursorPx already tracks, which
+ * keeps 04-phase-1.md's requirement — a circular region sized off the
+ * cluster's real on-screen radius — while leaving every pixel behind it
+ * clickable, selectable and hoverable.
+ *
+ * The two things that element also provided are kept, separately:
+ *
+ * - **Clicking the cluster still navigates**, through a window-level handler
+ *   gated on the same circle. It stands down for a genuine drag, an
+ *   in-progress text selection, a modified click, and anything interactive
+ *   under the pointer, so it adds a behaviour rather than taking one away.
+ * - **Keyboard reach** is the phrase label itself (PhraseFollower's `href`),
+ *   which is exactly the size of the rendered text. Tab reveals the phrase
+ *   below the cluster; Enter follows it.
+ */
 function DesktopAffordance({
   cluster,
   onHoverChange,
@@ -450,9 +513,9 @@ function DesktopAffordance({
   cluster: ClusterScreen;
   onHoverChange: (active: boolean) => void;
 }) {
+  const router = useRouter();
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
-  const { cursor, syncFromEvent } = useCursorPx();
-  const [pointerActive, setPointerActive] = useState(false);
+  const { cursor, inWindow } = useCursorPx();
   const [focusActive, setFocusActive] = useState(false);
   const [phrase, setPhrase] = useState(() => PHRASES[0]);
   const [driftX, setDriftX] = useState(0);
@@ -462,6 +525,11 @@ function DesktopAffordance({
   // mid-fade instead of letting the phrase leave from where it was.
   const [revealMode, setRevealMode] = useState<"pointer" | "focus">("pointer");
   const wasShowing = useRef(false);
+
+  const pointerActive =
+    inWindow &&
+    Math.hypot(cursor.x - cluster.centerX, cursor.y - cluster.centerY) <=
+      cluster.radiusPx;
 
   const showing = pointerActive || focusActive;
 
@@ -478,6 +546,66 @@ function DesktopAffordance({
     wasShowing.current = showing;
   }, [showing, pointerActive]);
 
+  // The cluster drifts with parallax every frame; the click listener only
+  // needs its value at the moment a click lands, not a reason to be torn down
+  // and rebound continuously.
+  const clusterRef = useRef(cluster);
+  useEffect(() => {
+    clusterRef.current = cluster;
+  }, [cluster]);
+
+  useEffect(() => {
+    let downX = 0;
+    let downY = 0;
+    let downInside = false;
+
+    function inside(x: number, y: number) {
+      const { centerX, centerY, radiusPx } = clusterRef.current;
+      return Math.hypot(x - centerX, y - centerY) <= radiusPx;
+    }
+
+    function handlePointerDown(event: PointerEvent) {
+      downX = event.clientX;
+      downY = event.clientY;
+      downInside = event.button === 0 && inside(event.clientX, event.clientY);
+    }
+
+    function handleClick(event: MouseEvent) {
+      if (!downInside || !inside(event.clientX, event.clientY)) return;
+      if (
+        Math.hypot(event.clientX - downX, event.clientY - downY) >
+        CLICK_SLOP_PX
+      ) {
+        return;
+      }
+      if (window.getSelection()?.toString()) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      if ((event.target as Element | null)?.closest(INTERACTIVE_SELECTOR)) {
+        return;
+      }
+      router.push("/nebula");
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("click", handleClick);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("click", handleClick);
+    };
+  }, [router]);
+
+  // A pointer cursor is the only signal left that the cluster is clickable,
+  // now that no element is there to carry one. Set on <html>, where it costs
+  // nothing; globals.css hands the caret back to the headline, the one piece
+  // of real content the circle actually overlaps.
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("nebula-affordance-armed", pointerActive);
+    return () => root.classList.remove("nebula-affordance-armed");
+  }, [pointerActive]);
+
   const target =
     revealMode === "pointer"
       ? { x: cursor.x + CURSOR_OFFSET.x, y: cursor.y + CURSOR_OFFSET.y }
@@ -487,45 +615,25 @@ function DesktopAffordance({
         };
 
   return (
-    <>
-      <Link
-        href="/nebula"
-        aria-label="What's this? Explore the graph."
-        className="nebula-affordance-hit fixed z-20 rounded-full"
-        style={{
-          left: cluster.centerX - cluster.radiusPx,
-          top: cluster.centerY - cluster.radiusPx,
-          width: cluster.radiusPx * 2,
-          height: cluster.radiusPx * 2,
-          clipPath: "circle(50% at 50% 50%)",
-        }}
-        onPointerEnter={(event) => {
-          // Seed position from the event that triggers the reveal, so the
-          // first visible frame is already correct rather than using the
-          // previous pointermove's coordinates.
-          syncFromEvent(event);
-          setPointerActive(true);
-        }}
-        onPointerLeave={() => setPointerActive(false)}
-        onFocus={() => setFocusActive(true)}
-        onBlur={() => setFocusActive(false)}
-      />
-      <PhraseFollower
-        targetX={target.x}
-        targetY={target.y}
-        phrase={showing ? phrase : null}
-        driftX={driftX}
-        reducedMotion={reducedMotion}
-        positionMode="follow"
-        anchor="top-left"
-        spanClassName={
-          "block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-mask" +
-          (focusActive && !pointerActive
-            ? " underline decoration-mask underline-offset-4"
-            : "")
-        }
-      />
-    </>
+    <PhraseFollower
+      targetX={target.x}
+      targetY={target.y}
+      phrase={showing ? phrase : null}
+      driftX={driftX}
+      reducedMotion={reducedMotion}
+      href="/nebula"
+      linkClassName="nebula-affordance-hit"
+      onFocus={() => setFocusActive(true)}
+      onBlur={() => setFocusActive(false)}
+      positionMode="follow"
+      anchor="top-left"
+      spanClassName={
+        "block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-mask" +
+        (focusActive && !pointerActive
+          ? " underline decoration-mask underline-offset-4"
+          : "")
+      }
+    />
   );
 }
 

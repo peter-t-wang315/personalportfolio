@@ -1,23 +1,10 @@
-"use client";
-
 import Link from "next/link";
-import { useLayoutEffect, useRef } from "react";
-import { useClusterScreen } from "@/lib/use-cluster-screen";
 
 interface NavLink {
   label: string;
   href: string;
   external: boolean;
 }
-
-/**
- * Clearance below the cluster's edge on mobile/tablet — enough for the
- * "what's this?" label that spawns around it (nebula-affordance.tsx, up to
- * ~26px past the edge plus a line of text) with real breathing room after,
- * so nav reads as its own group rather than crowding either.
- */
-const CLEARANCE_BELOW_CLUSTER_PX = 64;
-const DESKTOP_QUERY = "(min-width: 1024px)";
 
 /**
  * Two `<nav>`s, with Tailwind's `lg:` breakpoint (1024px, matching
@@ -28,50 +15,34 @@ const DESKTOP_QUERY = "(min-width: 1024px)";
  *
  * Deliberately not one `<nav>` branching on useDeviceTier(): that hook
  * reports "desktop" for its SSR/first-paint snapshot, so a JS branch shows
- * the desktop nav — with its small, uncleared margin — on every mobile load
- * until hydration corrects it, which is exactly when it collides with the
- * fixed-position cluster. Same reasoning as hero-stats.tsx.
+ * the desktop nav on every mobile load until hydration corrects it. Same
+ * reasoning as hero-stats.tsx.
  *
- * The one thing that genuinely can't be CSS is the mobile margin: the
- * cluster is a `position: fixed` layer whose on-screen size derives from
- * viewport height and its own scale factor, and nothing about nav's normal
- * flow position knows where that layer's edge is. A flat Tailwind margin was
- * tried and broke at iPad width for exactly that reason. So this measures
- * nav's natural position after layout and applies the difference. It reads
- * `window.matchMedia` directly rather than a tier value, because a layout
- * effect only ever runs client-side, where matchMedia is already accurate —
- * no hydration window to be wrong in.
+ * The compact row sits at the **bottom of the hero view**, not below the
+ * cluster. `mt-auto` claims whatever height the hero has left over (page.tsx
+ * makes the hero's text column a growing flex column below `lg`), with
+ * `pt-10` as a floor so it can't end up flush against the stats in the narrow
+ * band of viewport heights where there is only a few pixels spare.
+ *
+ * That floor is dropped under 500px of viewport height — the short-viewport
+ * threshold 02-architecture.md already draws, and landscape phones are its
+ * named case. There the hero has no spare height at all, so the floor is 40px
+ * of pure overflow: at 844x390 it pushed the row's baseline to 426 against a
+ * 390px viewport, where without it the row lands at 386 and the whole hero
+ * fits. Height, not width, is the trigger, exactly as in that table.
+ *
+ * The row used to measure the cluster's on-screen edge and push itself past
+ * it with a computed margin. That read as an appendage to the graph rather
+ * than as the page's own footer, and it was also the source of the mobile
+ * infinite-scroll bug: the measurement compared a viewport-relative rect
+ * against a viewport-relative target and applied the difference as a
+ * document-flow margin, so every recompute at a non-zero scroll offset grew
+ * the page by the distance already scrolled. Anchoring to the bottom of the
+ * flex column needs no measurement at all, so there is nothing left to feed
+ * back into layout.
  */
 export function HeroNav({ links }: { links: NavLink[] }) {
   const compactLinks = links.filter((link) => link.label !== "Email");
-  const cluster = useClusterScreen();
-  const navRef = useRef<HTMLElement>(null);
-
-  useLayoutEffect(() => {
-    const el = navRef.current;
-    if (!el) return;
-
-    function recompute() {
-      if (!el) return;
-      if (window.matchMedia(DESKTOP_QUERY).matches || !cluster.ready) {
-        el.style.marginTop = "";
-        return;
-      }
-      el.style.marginTop = "0px";
-      const naturalTop = el.getBoundingClientRect().top;
-      const targetTop =
-        cluster.centerY + cluster.radiusPx + CLEARANCE_BELOW_CLUSTER_PX;
-      el.style.marginTop = `${Math.max(0, targetTop - naturalTop)}px`;
-    }
-
-    recompute();
-    // The cluster's size tracks viewport *height*, so a width-only resize
-    // across the breakpoint wouldn't otherwise recompute, leaving a stale
-    // margin on a nav that just became visible.
-    const query = window.matchMedia(DESKTOP_QUERY);
-    query.addEventListener("change", recompute);
-    return () => query.removeEventListener("change", recompute);
-  }, [cluster.ready, cluster.centerY, cluster.radiusPx]);
 
   return (
     <>
@@ -94,9 +65,8 @@ export function HeroNav({ links }: { links: NavLink[] }) {
       </nav>
 
       <nav
-        ref={navRef}
         aria-label="Primary"
-        className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 text-[0.875rem]"
+        className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-auto pt-10 [@media(max-height:500px)]:pt-0"
       >
         {compactLinks.map((link) => (
           <Link
