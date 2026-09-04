@@ -1,13 +1,15 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import { useSceneStore } from "@/lib/scene-store";
-import { nodeList, type NodeGeometry } from "@/lib/node-geometry";
+import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
+import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
 import {
@@ -18,9 +20,11 @@ import {
 } from "./nebula-simulation";
 
 /**
- * Step 2.2 — materials. Node typing (solid --mask core on SEL project nodes,
- * everything else hollow), low-frequency vertex displacement so silhouettes
- * breathe, and the device-tier switch threaded through material selection.
+ * Step 2.2 — materials. Node typing (translucent --mask core on
+ * professional-cluster project nodes, personal-cluster and tech nodes fully
+ * hollow — a category, not an ownership signal), low-frequency vertex
+ * displacement so silhouettes breathe, and the device-tier switch threaded
+ * through material selection.
  * Step 2.3 adds edges (see ./nebula-edges.tsx). Step 2.3a adds the force
  * simulation (see ./nebula-simulation.ts) that drives node positions here.
  * See docs/05a-phase-2-sequence.md.
@@ -44,9 +48,13 @@ const TABLET_TECH_FACTOR = 0.7;
 const BREATHE_AMPLITUDE = 0.045;
 const BREATHE_SEED = 0xb4ea7e;
 
-// SEL project cores: solid --mask sphere inside the shell, sized relative to
-// the shell so it survives the radius difference between major and standard.
-const CORE_SCALE = 0.38;
+// Professional-cluster cores: a large, translucent --mask sphere inside the
+// shell (not a small solid one — see coreMaterial below), sized relative to
+// the shell so it survives the radius difference between major and
+// standard. Personal-cluster nodes get no core mesh at all; category (not
+// an ownership signal) is computed in lib/node-geometry.ts.
+const CORE_SCALE = 0.8;
+const CORE_OPACITY = 0.22;
 
 // Step 2.4 — hover. Scale and opacity lerp toward these on hover, back to
 // their per-node/per-tier base otherwise. Under reduced motion the lerp
@@ -73,7 +81,12 @@ const FOG_FAR = 68;
 const breatheTime = { value: 0 };
 
 const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
-const coreMaterial = new THREE.MeshBasicMaterial({ color: palette.mask });
+const coreMaterial = new THREE.MeshBasicMaterial({
+  color: palette.mask,
+  transparent: true,
+  opacity: CORE_OPACITY,
+  depthWrite: false,
+});
 
 // Every node gets its own material instance — tech nodes don't breathe
 // (displacement is a project-node trait — 05-phase-2.md, Nodes — and the
@@ -135,6 +148,141 @@ function handlePointerOut(e: ThreeEvent<PointerEvent>, nodeId: string) {
     useSceneStore.getState().setHoveredNodeId(null);
     releaseAttraction();
   }
+}
+
+/**
+ * A node's hover-title. 05-phase-2.md's hover spec also lists oneLine
+ * alongside title, written with a floating card in mind — read inside the
+ * node itself instead (see HoverLabel below), a small sphere has no room
+ * for two lines at a legible size, so only the title shows; the fuller
+ * description is what the 2.6 interior panel is for.
+ */
+function hoverLabelTitle(nodeId: string): string | null {
+  return projectById(nodeId)?.title ?? techById(nodeId)?.label ?? null;
+}
+
+// The title sits slightly below the sphere's own centre rather than dead
+// on it — a small aesthetic offset, not a dodge: the professional-cluster
+// core is translucent (CORE_OPACITY 0.22) and large enough (CORE_SCALE 0.8)
+// that plain ink-coloured text reads fine sitting directly on top of it,
+// unlike the small solid core this replaced, which needed a text-shadow
+// halo to stay legible — confirmed by testing with the halo removed once
+// the core became translucent, and it's no longer needed.
+const LABEL_Y_OFFSET_FACTOR = -0.5;
+// Scales the label with the node's own (hover-grown) radius and camera
+// distance via Html's distanceFactor, the same "content sized as if it
+// lived in 3D space" technique 2.6's interior panel will need for content
+// that has to grow along with an expanding shell — simpler and smaller
+// here, but the same idea: read the node from inside, not a UI overlay
+// bolted on top of it.
+const LABEL_DISTANCE_FACTOR = 26;
+
+// A critically-underdamped pop, not a fade: quick to arrive, a small
+// overshoot past full size before settling, matching the same
+// spring-driven character as the drift/attraction work rather than a flat
+// instant toggle or a slow linear fade. ζ ≈ 0.46 → ~20% overshoot,
+// settling within ~2/3s — snappy enough to read as "alive," not bouncy
+// enough to look silly on a small line of text.
+const LABEL_STIFFNESS = 170;
+const LABEL_DAMPING = 12;
+const LABEL_SUBSTEP_SECONDS = 1 / 60;
+
+/**
+ * The hover title from 05-phase-2.md's hover spec — the one piece of 2.4's
+ * hover behaviour that was still missing (scale/opacity/edge
+ * brightening/attraction shipped earlier). A single instance, not one per
+ * node, mounted only while some node is hovered or still popping out from
+ * having just been released.
+ *
+ * Deliberately not nested inside the hovered node's own mesh: that would
+ * inherit the mesh's hover-grow scale directly, which is the right amount
+ * for a sphere but not for text sized independently via distanceFactor. A
+ * standalone group with its own live-copied position tracks the same
+ * getLivePosition every other moving piece reads — ambient wander and
+ * attraction both — without inheriting anything else from the mesh.
+ */
+function HoverLabel() {
+  const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
+  const [mountedNodeId, setMountedNodeId] = useState<string | null>(null);
+  const activeNodeIdRef = useRef<string | null>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const spring = useRef({ value: 0, velocity: 0 });
+
+  useFrame((_state, delta) => {
+    // A direct hand-off from one node to another (no gap in between)
+    // resets the spring instead of letting the label jump while staying
+    // fully visible — every hover change gets the same pop, consistently.
+    if (hoveredNodeId && hoveredNodeId !== activeNodeIdRef.current) {
+      activeNodeIdRef.current = hoveredNodeId;
+      spring.current.value = 0;
+      spring.current.velocity = 0;
+      setMountedNodeId(hoveredNodeId);
+    }
+
+    const targetId = activeNodeIdRef.current;
+    if (!targetId) return;
+
+    const { reducedMotion } = useSceneStore.getState();
+    const restValue = hoveredNodeId ? 1 : 0;
+    if (reducedMotion) {
+      spring.current.value = restValue;
+      spring.current.velocity = 0;
+    } else {
+      const steps = Math.max(1, Math.ceil(delta / LABEL_SUBSTEP_SECONDS));
+      const stepDt = delta / steps;
+      for (let s = 0; s < steps; s++) {
+        const force =
+          -LABEL_STIFFNESS * (spring.current.value - restValue) -
+          LABEL_DAMPING * spring.current.velocity;
+        spring.current.velocity += force * stepDt;
+        spring.current.value += spring.current.velocity * stepDt;
+      }
+    }
+
+    if (groupRef.current) {
+      const live = getLivePosition(targetId);
+      if (live) groupRef.current.position.copy(live);
+    }
+    if (textRef.current) {
+      const opacity = THREE.MathUtils.clamp(spring.current.value, 0, 1);
+      textRef.current.style.opacity = String(opacity);
+      textRef.current.style.transform = `scale(${Math.max(spring.current.value, 0)})`;
+    }
+
+    if (
+      !hoveredNodeId &&
+      Math.abs(spring.current.value) < 0.01 &&
+      Math.abs(spring.current.velocity) < 0.01
+    ) {
+      activeNodeIdRef.current = null;
+      setMountedNodeId(null);
+    }
+  });
+
+  if (!mountedNodeId) return null;
+  const node = nodeGeometry[mountedNodeId];
+  const title = hoverLabelTitle(mountedNodeId);
+  if (!node || !title) return null;
+
+  return (
+    <group ref={groupRef} position={node.position}>
+      <Html
+        center
+        position={[0, node.radius * LABEL_Y_OFFSET_FACTOR, 0]}
+        distanceFactor={node.radius * HOVER_SCALE_FACTOR * LABEL_DISTANCE_FACTOR}
+        style={{ pointerEvents: "none" }}
+      >
+        <div
+          ref={textRef}
+          className="w-[130px] text-center text-[0.8125rem] font-medium leading-tight text-ink"
+          style={{ opacity: 0, transform: "scale(0)" }}
+        >
+          {title}
+        </div>
+      </Html>
+    </group>
+  );
 }
 
 export function Constellation() {
@@ -211,7 +359,7 @@ export function Constellation() {
               onPointerOver={(e) => handlePointerOver(e, node.id)}
               onPointerOut={(e) => handlePointerOut(e, node.id)}
             >
-              {node.hasCore && (
+              {node.category === "professional" && (
                 <mesh
                   scale={CORE_SCALE}
                   geometry={sphereGeometry}
@@ -221,6 +369,7 @@ export function Constellation() {
             </mesh>
           );
         })}
+        <HoverLabel />
       </group>
     </>
   );

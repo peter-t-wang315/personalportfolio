@@ -40,6 +40,57 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * The landing-page "What's this?" hover region (nebula-affordance.tsx) is an
+ * invisible circle sized to the whole drifting cluster — a focus ring drawn
+ * around it would span a third of the hero and read as broken rather than
+ * deliberate. The revealed phrase label carries its own focus styling
+ * instead, so this is safe to suppress.
+ */
+.nebula-affordance-hit:focus-visible {
+  outline: none;
+}
+
+/*
+ * The landing-page cluster's idle "look inward" cue (ClusterPulse in
+ * nebula-affordance.tsx) — a faint hairline ring that contracts past the
+ * cluster's edge and fades, several seconds of quiet between each pulse.
+ * Starts just outside the cluster (1.08x) and settles just inside it
+ * (0.92x) — a low-amplitude contraction, not a dramatic sweep — so the
+ * motion reads as pulling the eye in, not pushing out. Peak opacity is
+ * capped low (0.18) so it reads as a whisper against the cluster, not a
+ * stark outlined circle. Component-gated on prefers-reduced-motion
+ * (unmounted, not just paused) — see ClusterPulse — so no matching @media
+ * block is needed here.
+ *
+ * The ring is positioned by its absolute centre (left/top set inline from
+ * useClusterScreen, which already accounts for parallax), so this only has
+ * to re-centre itself on that point and animate the scale.
+ */
+@keyframes cluster-pulse {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+  15% {
+    opacity: 0.18;
+  }
+  45%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+}
+
+.cluster-pulse-ring {
+  border: 1px solid var(--color-ink-faint);
+  /* ease-out here (rather than ease-in-out) front-loaded the whole visible
+     pulse into the first ~1.8s of the 7s cycle — the keyframe percentages
+     below assume roughly even pacing, so the timing function needs to be
+     roughly even too. */
+  animation: cluster-pulse 7s ease-in-out infinite;
+}
+
 /* Third sitewide idle-motion exception, alongside cursor parallax and
    Nebula edge pulses, see 01-design-system.md's Motion section. Three
    carets side by side, each double-bobbing then holding still for most of

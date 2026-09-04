@@ -8,12 +8,11 @@ export { resumeExperience, resumeEducation, resumeProjects } from './resume';
 
 import { projects } from './projects';
 import { tech } from './tech';
-import { clusters } from './clusters';
 
 export const site = {
   name: 'Peter Wang',
   role: 'Software Engineer II, Schweitzer Engineering Laboratories',
-  positioning: 'I make factory machines talk, and I handle everything they say.',
+  positioning: 'I make systems talk to each other',
   email: 'contactpeterwang@gmail.com',
   github: 'https://github.com/peter-t-wang315',
   linkedin: 'https://linkedin.com/in/petertwang',
@@ -23,15 +22,30 @@ export const site = {
  * Hero metrics. The preventive maintenance adoption figure lives on its own
  * node instead, where it has context. Three headline numbers get scrutinised
  * hardest, and that one is the softest of the set.
+ *
+ * `short` is the mobile/tablet compact-row form (hero-stats.tsx) — value and
+ * label collapsed into one short string, dropping `note` entirely, so the
+ * three fit on one line directly under the cluster instead of the desktop
+ * `<dl>`'s stacked value/label/note per metric.
  */
 export const heroMetrics = [
-  { value: '18%', label: 'cycle time reduction', note: '+60 boards per day' },
+  {
+    value: '18%',
+    label: 'cycle time reduction',
+    note: '+60 boards per day',
+    short: '18%',
+  },
   {
     value: '30+',
     label: 'machines and devices across 6+ vendors',
     note: 'machines, conveyors, cameras, SMEMA controllers',
+    short: '30+ machines',
   },
-  { value: '2 sites', label: '6 production lines, running continuously' },
+  {
+    value: '2 sites',
+    label: '6 production lines, running continuously',
+    short: '2 sites',
+  },
 ] as const;
 
 /** Guided tour order. Strongest first, ending on something human. */
@@ -44,14 +58,23 @@ export const tourOrder = [
 ] as const;
 
 /**
- * SEL production clusters. In the Nebula their project nodes carry the solid
- * --mask core; personal, client, and internship work renders hollow.
+ * Node category, not an ownership signal — professional vs. personal, plus
+ * tech nodes as their own population (categorized directly in
+ * lib/node-geometry.ts, not here, since they're never clustered). In the
+ * Nebula this drives the translucent inner core: professional project
+ * nodes carry one, personal ones render fully hollow. "Professional" is the
+ * four SEL clusters plus the METER internship; "personal" is the personal
+ * and client-work clusters. Exhaustive over content/clusters.ts's current
+ * seven clusters — solder, throughhole, maintenance, tools, meter here;
+ * client and personal the only two left out.
  */
-export const selClusterIds = new Set(
-  clusters
-    .filter((c) => c.context === 'Schweitzer Engineering Laboratories')
-    .map((c) => c.id),
-);
+export const professionalClusterIds = new Set([
+  'solder',
+  'throughhole',
+  'maintenance',
+  'tools',
+  'meter',
+]);
 
 export const projectBySlug = (slug: string) =>
   projects.find((p) => p.slug === slug);

@@ -17,9 +17,15 @@ export const metadata: Metadata = {
  * Interactive pieces (HomeLink now; the interior panel and "View as list"
  * link in later steps) opt back in with `pointer-events-auto` individually.
  *
- * No `min-h-dvh` here either: the sticky header already accounts for its
- * own height in the document flow, so a full-100dvh child below it pushes
- * the document taller than the viewport and produces a page scrollbar that
+ * SiteHeader hides itself on every /nebula* route (see site-header.tsx) —
+ * immersive full-viewport canvas, no chrome competing with it — so HomeLink
+ * here is the sole way out. It's pinned to the top-left corner with modest
+ * padding, deliberately clear of center: the 2.6 interior panel is sized
+ * 70-85% of the viewport (02-architecture.md's Responsive tiers) and will
+ * always be centered, so this corner stays uncovered regardless of tier.
+ *
+ * No `min-h-dvh` on the wrapper: a full-100dvh child would push the
+ * document taller than the viewport and produce a page scrollbar that
  * shouldn't exist on a fixed, non-scrolling canvas route.
  */
 export default function Nebula() {
