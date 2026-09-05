@@ -90,3 +90,68 @@ export function clusterCenterYFraction(
     ? NARROW_CLUSTER_CENTER_Y_FRACTION
     : 0.5;
 }
+
+/**
+ * Desktop tier floor, per 02-architecture.md's Responsive tiers table. Kept as
+ * a local constant rather than imported from device-tier.ts, which is a React
+ * hook module — this file is deliberately dependency-free (see the header).
+ */
+const DESKTOP_MIN_WIDTH_PX = 1024;
+
+/**
+ * Right edge of the hero's text column, in px: page gutter plus measure.
+ * Mirrors `px-16` and `max-w-[66ch]` in app/page.tsx (66ch of the body face at
+ * its base size measures ~700px), and 01-design-system.md's Layout section.
+ * Only has to be approximately right — it feeds a clearance gap, and
+ * HERO_CLUSTER_GAP_PX absorbs a few px of drift either way.
+ */
+const HERO_TEXT_RIGHT_PX = 64 + 700;
+/** Breathing room between the text column and the cluster's near edge. */
+const HERO_CLUSTER_GAP_PX = 32;
+/** Keeps the cluster off the right edge when it is pushed as far as it goes. */
+const HERO_EDGE_MARGIN_PX = 32;
+
+/**
+ * Fraction of viewport width the cluster's centre sits at.
+ *
+ * Centred is right whenever the hero's text column and the cluster genuinely
+ * fit side by side. On a wide, short laptop they do not: the cluster's
+ * on-screen size comes from viewport *height*, so a short viewport shrinks it,
+ * while the text column stays a fixed ~764px wide. Centred, the cluster then
+ * lands inside the column — measured 43% of it covered by hero text at
+ * 1024x768 and 22% at 1100x768 — which is the opposite of 04-phase-1.md's
+ * "the text arranged around it so the cluster is never fully occluded".
+ *
+ * So this solves the constraint rather than guessing a breakpoint: put the
+ * cluster's left edge just past the text column, and no further right than the
+ * viewport edge allows. Where a centred cluster already clears the column the
+ * first term wins and nothing moves, which is why tall or very wide screens
+ * (1920x800, 2560x1440) are untouched. Where even the far-right position can't
+ * fully clear it (1024 wide, where the column is most of the viewport) it goes
+ * as far as it can, which is still a large improvement on centred.
+ *
+ * Below the desktop tier the hero is a vertical stack with no left-hand column
+ * to clear, so there is nothing to solve and the cluster stays centred — the
+ * same reasoning that gives narrow viewports their own centre-Y fraction
+ * above, keyed off the same tier boundary the rest of the site uses.
+ */
+export function clusterCenterXFraction(
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  if (viewportWidth < DESKTOP_MIN_WIDTH_PX) return 0.5;
+
+  const radiusPx =
+    CLUSTER_BOUNDING_RADIUS *
+    pxPerWorldUnitFor(viewportHeight) *
+    clusterScaleForViewport(viewportWidth, viewportHeight);
+
+  const clearOfText = HERO_TEXT_RIGHT_PX + HERO_CLUSTER_GAP_PX + radiusPx;
+  const rightmost = viewportWidth - radiusPx - HERO_EDGE_MARGIN_PX;
+  const centerX = Math.max(
+    viewportWidth / 2,
+    Math.min(clearOfText, rightmost),
+  );
+
+  return centerX / viewportWidth;
+}

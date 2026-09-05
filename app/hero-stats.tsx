@@ -20,7 +20,7 @@ import { heroMetrics } from "@/content";
 export function HeroStats() {
   return (
     <>
-      <dl className="hidden lg:flex mt-24 flex-wrap gap-10">
+      <dl className="hidden lg:flex mt-24 short-desktop:mt-12 flex-wrap gap-10 short-desktop:gap-x-10 short-desktop:gap-y-6">
         {heroMetrics.map((metric) => (
           <div key={metric.label}>
             <dd

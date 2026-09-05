@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
 /*
+ * A wide laptop or monitor with little vertical room — 1366x768, 1440x800,
+ * 1920x800. The hero's desktop layout assumes height it does not have there:
+ * its text stack is a fixed ~890px tall regardless of viewport, so the link
+ * row fell below the fold on any screen shorter than that (1366x768 included,
+ * which is among the most common laptop resolutions), and the headline
+ * sprawled sideways across the cluster it is supposed to sit beside.
+ *
+ * Width is in the condition on purpose. Phones and tablets are short too, but
+ * their hero is a vertical stack that already handles it — see hero-nav.tsx —
+ * and pulling them into this variant would undo that. Only the desktop
+ * side-by-side layout needs tightening.
+ */
+@custom-variant short-desktop (@media (min-width: 1024px) and (max-height: 900px));
+
+/*
  * Palette source of truth is lib/palette.ts — CSS can't import from TS, so
  * these values are kept in sync by hand. Update both when the palette
  * changes.

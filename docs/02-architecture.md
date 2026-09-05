@@ -36,7 +36,7 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 
 | Route | Content | Camera state |
 |---|---|---|
-| `/` | Hero, three metrics, links | Far. Cluster small, centered, behind text. |
+| `/` | Hero, three metrics, links | Far. Cluster small, behind text. Centred where the hero's text column and the cluster fit side by side; slid right of that column where they don't — see Landing cluster placement below. |
 | `/about` | Bio, photo, skills prose, mentoring, on-call, Claude Code | Far, slightly offset |
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
@@ -49,6 +49,31 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 **`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
 Graph state resets on each visit. No persistence.
+
+### Landing cluster placement
+
+The cluster's on-screen size derives from viewport **height** (the camera's
+vertical FOV), while the hero's text column is a fixed ~764px wide. Those two
+facts disagree on a wide, short laptop: the cluster shrinks, the column does
+not, and a centred cluster lands inside the column. Measured before the fix,
+with hero text covering 43% of the cluster at 1024x768 and 22% at 1100x768 —
+the opposite of what 04-phase-1.md asks for.
+
+So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
+
+- **Horizontally**, the cluster's left edge is placed just past the text
+  column, and no further right than the viewport edge allows. Where a centred
+  cluster already clears the column, centred wins and nothing moves — which is
+  why 1920x800 and 2560x1440 are untouched. Where even the far-right position
+  cannot fully clear it, it goes as far as it can.
+- **Below the desktop tier** it is always centred horizontally. The hero is a
+  vertical stack there with no left-hand column to clear.
+- **Vertically**, narrow viewports drop it below the hero text rather than
+  centring it behind them, for the same reason.
+
+`lib/use-cluster-screen.ts` and `app/nebula-canvas.tsx` apply these from the
+same functions, so the rendered cluster and every DOM overlay measured against
+it (hover region, pulse ring, phrase label) cannot drift apart.
 
 ## State
 

@@ -12,6 +12,7 @@ import {
   CLUSTER_RADIUS,
   HOME_CAMERA_FOV,
   HOME_CAMERA_POSITION,
+  clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
   pxPerWorldUnitFor,
@@ -126,19 +127,33 @@ function Cluster() {
         0.05,
       );
     }
-    // On narrow viewports the cluster drops below the hero text rather than
-    // sitting centred behind it — see clusterCenterYFraction. Converted from
-    // the px fraction into world units here; use-cluster-screen.ts applies
-    // the identical shift on the DOM side, so overlays stay locked to it.
+    // The cluster is not always centred on the viewport. On narrow ones it
+    // drops below the hero text (clusterCenterYFraction); on wide, short ones
+    // it slides right of the hero's text column (clusterCenterXFraction).
+    // Both are px fractions, converted into world units here;
+    // use-cluster-screen.ts applies the identical shifts on the DOM side, so
+    // the hover region, pulse ring and label stay locked to what's drawn.
+    //
+    // Both divide by the *unscaled* px-per-world-unit on purpose: this sets
+    // the group's parent-space position, and scaling a group about its own
+    // origin leaves that untouched. Y is negated because world +Y is up while
+    // CSS +Y is down; X needs no flip, since this camera has no roll.
+    const centerXFraction = clusterCenterXFraction(
+      state.size.width,
+      state.size.height,
+    );
     const centerYFraction = clusterCenterYFraction(
       state.size.width,
       state.size.height,
     );
+    const centerOffsetWorldX =
+      (state.size.width * (centerXFraction - 0.5)) /
+      pxPerWorldUnitFor(state.size.height);
     const centerOffsetWorldY =
       -(state.size.height * (centerYFraction - 0.5)) /
       pxPerWorldUnitFor(state.size.height);
 
-    groupRef.current.position.x = parallax.current.x;
+    groupRef.current.position.x = parallax.current.x + centerOffsetWorldX;
     groupRef.current.position.y = parallax.current.y + centerOffsetWorldY;
 
     // Written when it's moved meaningfully, not every frame — a plain

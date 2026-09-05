@@ -30,7 +30,7 @@ const featuredProjects = featuredProjectIds
 export default function Home() {
   return (
     <>
-    <section className="min-h-dvh flex flex-col px-6 pt-16 pb-8 md:px-16 md:pt-20 md:pb-10">
+    <section className="min-h-dvh flex flex-col px-6 pt-16 pb-8 md:px-16 md:pt-20 md:pb-10 short-desktop:pt-12">
       <PointerParallax className="flex-1 flex flex-col justify-between">
       {/*
         On mobile and tablet this is a flex column that absorbs the hero's
@@ -43,10 +43,19 @@ export default function Home() {
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
 
+        {/*
+          The display size is bounded by viewport *height* as well as width.
+          A width-only clamp ignores that this headline lives in a full-height
+          hero beside the cluster: on a short wide screen it stayed at its
+          88px ceiling, ran to three 700px lines, and covered the graph. The
+          height term only binds when a viewport is wide relative to its
+          height, so phones (width-bound, at the 2.5rem floor) and tall
+          monitors (already at the 5.5rem ceiling) render exactly as before.
+        */}
         <h1
-          className="font-display lowercase mt-8 md:mt-10"
+          className="font-display lowercase mt-8 md:mt-10 short-desktop:mt-6"
           style={{
-            fontSize: "clamp(2.5rem, 7vw, 5.5rem)",
+            fontSize: "clamp(2.5rem, min(7vw, 9vh), 5.5rem)",
             fontWeight: 400,
             letterSpacing: "-0.04em",
             lineHeight: 1.15,

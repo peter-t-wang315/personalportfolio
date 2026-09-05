@@ -47,7 +47,7 @@ Do not use mono for small data labels. That's the conventional use and it would 
 
 | Role | Face | Size | Weight | Tracking | Case |
 |---|---|---|---|---|---|
-| Hero display | Mono | `clamp(2.5rem, 7vw, 5.5rem)` | 400 | `-0.04em` | lowercase |
+| Hero display | Mono | `clamp(2.5rem, min(7vw, 9vh), 5.5rem)` | 400 | `-0.04em` | lowercase |
 | Page title | Mono | `clamp(1.75rem, 4vw, 2.75rem)` | 400 | `-0.03em` | lowercase |
 | Section head | Sans | `1.25rem` | 500 | `-0.01em` | sentence |
 | Body | Sans | `1.0625rem` | 400 | `0` | sentence |
@@ -56,6 +56,22 @@ Do not use mono for small data labels. That's the conventional use and it would 
 | Metric label | Sans | `0.8125rem` | 400 | `0` | sentence |
 
 Line height: 1.6 body, 1.15 display. Measure: max 68 characters.
+
+The hero display size is bounded by viewport **height** as well as width. It
+lives in a full-height hero beside the landing cluster, and a width-only clamp
+ignored that: on a short wide laptop it held its 88px ceiling, ran to three
+full-measure lines, pushed the link row below the fold, and covered the
+cluster it is supposed to sit beside. The height term only binds when a
+viewport is wide relative to its height, so phones stay width-bound at the
+floor and tall monitors stay at the ceiling — both render identically to the
+width-only clamp.
+
+The desktop hero's vertical spacing has a matching compact step under the
+`short-desktop` variant (`globals.css`, at least 1024px wide and at most 900px
+tall): the gaps above the headline, the metrics and the link row all tighten,
+because those were fixed pixel values that assumed height the screen does not
+have. Phones and tablets are excluded by the width half of that condition —
+their hero is a vertical stack that solves the same problem differently.
 
 ### Prohibited typographic treatments
 

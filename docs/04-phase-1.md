@@ -18,7 +18,7 @@ All of `content/` per `03-content-model.md`. Projects that lack final copy get a
 
 ### The canvas (Phase 1 version only)
 - Full-viewport, fixed, `z-0`, transparent over `--paper`.
-- A single loose cluster of ~40 small spheres, centered, sitting visually behind the hero text with the text arranged around it so the cluster is never fully occluded.
+- A single loose cluster of ~40 small spheres sitting visually behind the hero text, with the text arranged around it so the cluster is never fully occluded. Its placement is solved rather than fixed — centred when the text column and the cluster fit side by side, slid right of the column when they don't. See 02-architecture.md's Landing cluster placement, which is the authority.
 - Slow continuous drift. No hover, no click on individual nodes, no edges.
 - Fresnel material, not transmission.
 - Responds to `pointer` from the store for parallax.
