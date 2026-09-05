@@ -66,8 +66,15 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
   cluster already clears the column, centred wins and nothing moves — which is
   why 1920x800 and 2560x1440 are untouched. Where even the far-right position
   cannot fully clear it, it goes as far as it can.
-- **Below the desktop tier** it is always centred horizontally. The hero is a
-  vertical stack there with no left-hand column to clear.
+- **The horizontal solve applies whenever the hero is a column beside the
+  cluster rather than stacked above it.** Desktop width is one way to be that.
+  A **short** viewport is the other: a landscape phone at 844x390 is a wide,
+  short strip with a left-hand text column, and testing width alone left the
+  cluster dead centre of the headline at 64% covered. Where neither holds — a
+  portrait phone, an upright tablet — it stays centred.
+- **Off `/`, below the desktop tier, the cluster is not drawn at all.** It is
+  ambient on those routes, and at those widths the content column is nearly the
+  whole viewport, so it would sit behind body prose. See 04-phase-1.md.
 - **Vertically**, narrow viewports drop it below the hero text rather than
   centring it behind them, for the same reason.
 

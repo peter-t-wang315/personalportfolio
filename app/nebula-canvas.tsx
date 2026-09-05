@@ -11,6 +11,7 @@ import {
   CLUSTER_DEPTH,
   CLUSTER_PARALLAX_MAX_PX,
   CLUSTER_RADIUS,
+  DESKTOP_MIN_WIDTH_PX,
   HOME_CAMERA_FOV,
   HOME_CAMERA_POSITION,
   clusterCenterXFraction,
@@ -95,7 +96,19 @@ function Cluster() {
     const { pointer, reducedMotion } = useSceneStore.getState();
     const elapsed = state.clock.elapsedTime;
 
-    const targetOpacity = isHome ? 0.9 : 0.35;
+    // On `/`, the cluster is the subject and the text is arranged around it.
+    // Everywhere else it is ambient, dimmed per 04-phase-1.md — and ambient
+    // only works if there is somewhere to be ambient *in*. Below the desktop
+    // tier the content column is nearly the whole viewport, so a centred
+    // cluster sits squarely behind body prose: measured 55% of the disc under
+    // text on /about at 768x1024, 59% on /work at 360x640, with the nodes
+    // plainly legible through the paragraphs. No opacity that is still visible
+    // survives that, because the problem is texture behind reading text rather
+    // than how strong the texture is, so it stands down entirely there.
+    // Desktop is unaffected and was measured clean (0-4%) — the column is
+    // narrow relative to the viewport, which is the whole premise.
+    const ambientHasRoom = state.size.width >= DESKTOP_MIN_WIDTH_PX;
+    const targetOpacity = isHome ? 0.9 : ambientHasRoom ? 0.35 : 0;
     // Narrow viewports shrink the whole cluster so it doesn't fill the width
     // edge to edge — see clusterScaleForViewport. No-op on desktop/tablet.
     // Every DOM overlay measured against the cluster applies the same factor
@@ -118,6 +131,10 @@ function Cluster() {
 
     if (!groupRef.current) return;
     groupRef.current.scale.setScalar(currentScale.current);
+    // Once faded out, stop drawing it: forty transparent spheres a phone can't
+    // see are forty draw calls it doesn't need. Threshold rather than equality
+    // because the opacity is eased, so it fades and then goes quiet.
+    groupRef.current.visible = material.uniforms.opacity.value > 0.01;
 
     if (reducedMotion) {
       parallax.current.set(0, 0);

@@ -22,7 +22,7 @@ All of `content/` per `03-content-model.md`. Projects that lack final copy get a
 - Slow continuous drift. No hover, no click on individual nodes, no edges.
 - Fresnel material, not transmission.
 - Responds to `pointer` from the store for parallax.
-- On `/about`, `/resume`, `/work` the cluster is pushed further back and dimmed to ~35% opacity.
+- On `/about`, `/resume`, `/work` the cluster is pushed further back and dimmed to ~35% opacity — **on desktop**. Below the desktop tier it is hidden outright and not drawn at all. Ambient needs somewhere to be ambient in, and at those widths the content column is nearly the whole viewport, so a centred cluster sits squarely behind body prose: measured 55% of the disc under text on `/about` at 768x1024 and 59% on `/work` at 360x640, with the nodes plainly legible through the paragraphs. No still-visible opacity survives that — the problem is texture behind reading text, not how strong the texture is. Desktop is unaffected and measures clean, because there the column is narrow relative to the viewport. `/` always keeps its cluster: it is the affordance, not decoration.
 
 ### `/` landing page
 Above the fold, no interaction required:

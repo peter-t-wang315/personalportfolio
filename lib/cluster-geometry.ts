@@ -108,7 +108,13 @@ export function clusterCenterYFraction(
  * a local constant rather than imported from device-tier.ts, which is a React
  * hook module — this file is deliberately dependency-free (see the header).
  */
-const DESKTOP_MIN_WIDTH_PX = 1024;
+export const DESKTOP_MIN_WIDTH_PX = 1024;
+/**
+ * Short-viewport threshold, per 02-architecture.md's Orientation and short
+ * viewports note. Height, not width, is the trigger there too — landscape
+ * phones are its named case.
+ */
+export const SHORT_VIEWPORT_HEIGHT_PX = 500;
 
 /**
  * Right edge of the hero's text column, in px: page gutter plus measure.
@@ -142,16 +148,25 @@ const HERO_EDGE_MARGIN_PX = 32;
  * fully clear it (1024 wide, where the column is most of the viewport) it goes
  * as far as it can, which is still a large improvement on centred.
  *
- * Below the desktop tier the hero is a vertical stack with no left-hand column
- * to clear, so there is nothing to solve and the cluster stays centred — the
- * same reasoning that gives narrow viewports their own centre-Y fraction
- * above, keyed off the same tier boundary the rest of the site uses.
+ * The condition for solving at all is "is the hero laid out as a column beside
+ * the cluster, or stacked above it". Desktop width is one way to be the former.
+ * A **short** viewport is the other, and missing it was a real gap: a landscape
+ * phone at 844x390 is only 844px wide, so the tier test alone left the cluster
+ * dead centre of the headline, measured at 64% of the disc covered by hero
+ * text. It is a wide, short strip with the text in a left-hand column — the
+ * exact case this solves — it simply is not a desktop.
+ *
+ * Where neither holds (a portrait phone, a tablet held upright) the hero really
+ * is a vertical stack with no column to clear, and the cluster stays centred.
  */
 export function clusterCenterXFraction(
   viewportWidth: number,
   viewportHeight: number,
 ) {
-  if (viewportWidth < DESKTOP_MIN_WIDTH_PX) return 0.5;
+  const besideAColumn =
+    viewportWidth >= DESKTOP_MIN_WIDTH_PX ||
+    viewportHeight < SHORT_VIEWPORT_HEIGHT_PX;
+  if (!besideAColumn) return 0.5;
 
   const radiusPx =
     CLUSTER_BOUNDING_RADIUS *
