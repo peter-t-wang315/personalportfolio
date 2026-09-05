@@ -1,17 +1,44 @@
 # Phase 2 — build sequence
 
 ## Session status (update each session)
-Last completed: 2.4 (camera controls + hover), including all follow-on fixes
-(pointer-events bug, edge live-tracking, organic drift noise, spring attraction,
-per-node personality variation, three-way node category visuals, hover title).
-Committed and stable.
 
-Not yet started: landing-page affordance fix (see 04-phase-1.md for updated spec),
-then 2.5 (fly-in + focus state).
+Last completed: **2.4** (camera controls + hover) with all follow-on fixes, and
+the **Phase 1 landing page**, which has since had a long run of its own work.
+Committed and stable on `nebulustest`.
+
+The landing page as it now stands:
+
+- **The "What's this?" affordance.** Its proximity reveal is a sensor, not a
+  surface — no element captures pointer events, so nothing behind it is
+  blocked. Clicking or tapping the cluster navigates via a window-level handler
+  gated on the cluster's circle, which stands down for drags, selections,
+  modified clicks and interactive targets. The phrase label itself is the
+  keyboard-reachable anchor.
+- **The mobile label** drifts laterally the whole time it is legible, spawns at
+  a point solved against its own box so it clears the graph, and rides the
+  cluster's parallax during a drag.
+- **The hero** anchors its link row to the bottom at every viewport size, has
+  height-responsive display type and spacing so a short laptop keeps the links
+  above the fold, and gives phones their own compact metrics phrasing.
+- **The cluster's placement is solved, not fixed** — it slides right of the
+  hero's text column when a centred position would put it underneath, and drops
+  below the text on narrow viewports. `02-architecture.md`'s Landing cluster
+  placement section is the authority.
+- **Parallax** follows a finger on touch (pointer events die mid-drag; touchmove
+  does not) and is specified and implemented in pixels.
+
+Two tilt-reactive behaviours — a phrase nudge and a shader sheen — were built
+and then **removed** at the owner's request; all mobile movement is tied to the
+drag instead. `01-design-system.md`'s prohibition on device-orientation
+parallax was never weakened and still stands. Do not reintroduce either without
+a deliberate decision.
+
+Not yet started: **2.5** (fly-in + focus state).
 
 Next session should: read this file plus 00, 01, 02, 04, 05 in full before
-continuing, then confirm current git state matches this summary before
-proceeding with either the affordance fix or 2.5.
+continuing, then confirm current git state matches this summary before starting
+2.5. Note the landing page has never been deployed — the owner runs
+`npx vercel` themselves.
 
 ---
 

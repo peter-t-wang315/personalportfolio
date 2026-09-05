@@ -98,7 +98,7 @@ Non-user-triggered motion is limited to **four** things sitewide:
 
 **Touch drives the same parallax, from the finger.** A finger held on the hero moves the cluster exactly as a cursor does, and releasing recentres it. This is direct manipulation — the thing moving is the thing under the finger, caused by the viewer in the moment — so it carries none of the vestibular mismatch the next sentence is about. It needs its own `touchmove` listener: pointer events stop mid-gesture once the browser claims a drag for scrolling (`pointercancel`), which used to leave the parallax lurching once on touch-down and then frozen. See `app/pointer-tracker.tsx`.
 
-Do not implement device-orientation tilt as a parallax source — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff. That is a different thing from a finger drag: nothing is touching the screen, so the viewer is not the proximate cause of the motion. Two *non*-parallax tilt behaviours do exist; see Tilt-reactive behaviours below.
+Do not implement device-orientation tilt as a parallax source — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff. That is a different thing from a finger drag: nothing is touching the screen, so the viewer is not the proximate cause of the motion. **Nothing on the site reads device orientation at all.** A tilt-driven phrase nudge and a tilt-driven shader sheen were built once, on the argument that neither moved the scene, and were removed — all movement on touch comes from the drag instead. Do not reintroduce either without a deliberate decision; the argument for them was sound, the appetite for the sensor was not.
 2. **Data flow along Nebula production edges.** Amber pulses traveling the line, ~4s period.
 3. **The free-floating node simulation on `/nebula`.** Nodes drift continuously in a lightweight force simulation rather than sitting still — weak springs hold runtime-edge-connected pairs loosely together, everything else wanders freely. Hovering a node attracts its connected neighbours toward it; hover-out releases them. See `02-architecture.md` for the model and its freeze rule.
 4. **The work-page subgraph gathering on `/work/[slug]`.** The project's connected subgraph (runtime-edge neighbours plus its tech nodes) gathers toward a focal point using the same attraction mechanic as hover, viewed from outside the constellation. It settles once and the simulation loop stops — no ongoing motion afterward.
@@ -111,38 +111,7 @@ No fade-and-slide-up entrance on every section. No hover transition on every car
 
 Standard easing: `cubic-bezier(0.32, 0.72, 0, 1)`. Standard duration: 240ms for UI, 1400ms for camera flights.
 
-### Tilt-reactive behaviours
-
-Two behaviours on touch devices respond to device orientation. **Neither is
-parallax, and neither weakens the prohibition in motion item 1 above** — that
-rule stands exactly as written, and nothing may drive the cluster's or the
-camera's *position* from device orientation.
-
-The distinction is not a loophole, it is the whole basis of the rule. Motion
-sickness from device-orientation input is a vestibular mismatch: the inner ear
-reports one motion while the eyes are shown a scene translating through space
-under a different one. Neither of these moves anything through space.
-
-1. **Phrase-label nudge.** The mobile/tablet cycling label offsets by at most
-   6px with tilt. A DOM text element shifting a few pixels is not a moving
-   scene, and the amplitude is kept small anyway — the cluster behind it does
-   not move at all, so a large offset would read as the text sliding off its
-   own graph.
-2. **Node shell sheen.** The fresnel material's highlight direction shifts with
-   tilt, like light catching glass as the device turns. This is a *lighting*
-   response: only where the highlight falls on the surface changes, and no
-   geometry, camera or position is touched. There is no vestibular mismatch at
-   any amplitude, so this one is not held to item 1's minimalism.
-
-Both are gated on `prefers-reduced-motion` and on a coarse pointer, both
-calibrate their zero point from the first reading rather than assuming the
-device is held flat, and both clamp so a hard tilt saturates rather than
-flinging anything. On iOS 13+ the sensor requires
-`DeviceOrientationEvent.requestPermission()` from a user gesture; until that is
-granted, and on any device without the sensor, both render exactly as they did
-before these existed. Implementation in `lib/device-tilt.ts`.
-
-`prefers-reduced-motion: reduce` disables cursor parallax, edge pulses, the float simulation (nodes render frozen at their seeded initial layout position), the work-page gathering (renders already-settled, no animation), the scroll-cue ripple, both tilt-reactive behaviours above, and camera interpolation (flights become instant cuts). The site must be fully usable with all motion off.
+`prefers-reduced-motion: reduce` disables cursor parallax, edge pulses, the float simulation (nodes render frozen at their seeded initial layout position), the work-page gathering (renders already-settled, no animation), the scroll-cue ripple, and camera interpolation (flights become instant cuts). The site must be fully usable with all motion off.
 
 ## Accessibility floor
 

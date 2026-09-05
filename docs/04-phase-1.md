@@ -34,7 +34,7 @@ Above the fold, no interaction required:
 
 Below: a short paragraph of orientation and a compact list of the six or seven most significant projects linking to `/work/[slug]`.
 
-**Cursor parallax:** foreground text and background cluster translate in opposite directions, 12px and 28px max respectively, spring-eased. Disabled under `prefers-reduced-motion`.
+**Cursor parallax:** foreground text and background cluster translate in opposite directions, 12px and 28px max respectively, spring-eased. On touch this is driven by the finger — see 01-design-system.md's motion item 1, including why it needs its own `touchmove` listener. Disabled under `prefers-reduced-motion`.
 
 **The "What's this?" affordance — implemented.** See `app/nebula-affordance.tsx`:
 

@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { site } from "@/content";
-import { DeviceTiltProvider } from "./device-tilt-provider";
 import { NebulaAffordance } from "./nebula-affordance";
 import { NebulaCanvasLoader } from "./nebula-canvas-loader";
 import { PointerTracker } from "./pointer-tracker";
@@ -25,7 +24,6 @@ export default function RootLayout({
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className="font-body bg-paper text-ink antialiased">
         <PointerTracker />
-        <DeviceTiltProvider />
         <NebulaCanvasLoader />
         <NebulaAffordance />
         <SiteHeader />

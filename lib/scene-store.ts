@@ -29,31 +29,11 @@ interface SceneState {
    * center — true only when the eased parallax offset happens to be zero.
    */
   clusterParallax: { x: number; y: number };
-  /**
-   * Device tilt, normalised to -1..1 on each axis and measured as a *delta
-   * from a calibrated baseline*, not an absolute attitude — see
-   * lib/device-tilt.ts. Written on touch devices only, and never under
-   * prefers-reduced-motion.
-   *
-   * Two things read it, and neither moves the scene: the mobile phrase label
-   * nudges a few pixels (a DOM element, not the camera), and the node shell
-   * shader shifts where its sheen falls (a lighting response on the material,
-   * not a position). The prohibition on device-orientation *parallax* in
-   * 01-design-system.md stands — nothing here translates the cluster or the
-   * camera. See that file's Tilt-reactive behaviours section.
-   */
-  tilt: { x: number; y: number };
-  /** Whether a tilt source is actually feeding `tilt`. Consumers must treat a
-   * false here as "render exactly as before", not as "tilt is zero" — the two
-   * differ for anything that ramps an effect in. */
-  tiltActive: boolean;
   setMode: (mode: SceneMode) => void;
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
   setHoveredNodeId: (id: string | null) => void;
   setClusterParallax: (offset: { x: number; y: number }) => void;
-  setTilt: (tilt: { x: number; y: number }) => void;
-  setTiltActive: (active: boolean) => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
@@ -62,13 +42,9 @@ export const useSceneStore = create<SceneState>((set) => ({
   reducedMotion: false,
   hoveredNodeId: null,
   clusterParallax: { x: 0, y: 0 },
-  tilt: { x: 0, y: 0 },
-  tiltActive: false,
   setMode: (mode) => set({ mode }),
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
   setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
   setClusterParallax: (clusterParallax) => set({ clusterParallax }),
-  setTilt: (tilt) => set({ tilt }),
-  setTiltActive: (tiltActive) => set({ tiltActive }),
 }));

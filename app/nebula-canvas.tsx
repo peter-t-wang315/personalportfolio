@@ -91,25 +91,9 @@ function Cluster() {
   const currentScale = useRef(1);
   const lastWrittenParallax = useRef({ x: 0, y: 0 });
 
-  const sheen = useRef(0);
-
   useFrame((state) => {
-    const { pointer, reducedMotion, tilt, tiltActive } =
-      useSceneStore.getState();
+    const { pointer, reducedMotion } = useSceneStore.getState();
     const elapsed = state.clock.elapsedTime;
-
-    // Tilt drives where the highlight falls on the shells, and nothing else.
-    // No position, no camera — see 01-design-system.md's Tilt-reactive
-    // behaviours section, and note that the device-orientation *parallax*
-    // prohibition above it still holds. uSheen ramps rather than snapping, so
-    // granting the sensor permission mid-session fades the effect in instead
-    // of popping it, and reduced motion fades it back out.
-    const targetSheen = tiltActive && !reducedMotion ? 1 : 0;
-    sheen.current = THREE.MathUtils.lerp(sheen.current, targetSheen, 0.05);
-    material.uniforms.uSheen.value = sheen.current;
-    if (sheen.current > 0.001) {
-      (material.uniforms.uTilt.value as THREE.Vector2).set(tilt.x, tilt.y);
-    }
 
     const targetOpacity = isHome ? 0.9 : 0.35;
     // Narrow viewports shrink the whole cluster so it doesn't fill the width

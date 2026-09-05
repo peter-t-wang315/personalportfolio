@@ -299,16 +299,9 @@ function useCursorPx() {
  * always completes its exit before the next one mounts — that sequencing is
  * the library's job now rather than something timed by hand.
  */
-/** Spring for the tilt nudge. Slacker than FOLLOW_SPRING on purpose: this is
- * responding to a hand, not tracking a cursor, and a stiff spring on
- * accelerometer input reads as twitch. */
-const TILT_NUDGE_SPRING = { stiffness: 90, damping: 20, mass: 0.9 };
-
 function PhraseFollower({
   targetX,
   targetY,
-  tiltX,
-  tiltY,
   phrase,
   offsets,
   transitionIn,
@@ -325,10 +318,6 @@ function PhraseFollower({
 }: {
   targetX: number;
   targetY: number;
-  /** Tilt nudge in px, applied on its own layer so it stays smooth across the
-   * spawn-point jumps `positionMode: "instant"` makes. Zero on desktop. */
-  tiltX: number;
-  tiltY: number;
   phrase: string | null;
   offsets: DriftOffsets;
   transitionIn: LabelTransition;
@@ -359,18 +348,7 @@ function PhraseFollower({
   const y = useMotionValue(targetY);
   const springX = useSpring(x, FOLLOW_SPRING);
   const springY = useSpring(y, FOLLOW_SPRING);
-  const nudgeX = useSpring(useMotionValue(0), TILT_NUDGE_SPRING);
-  const nudgeY = useSpring(useMotionValue(0), TILT_NUDGE_SPRING);
   const wasHidden = useRef(phrase === null);
-
-  // Deliberately a separate transform layer from the spawn point above. That
-  // one jumps outright between phrases (see the layout effect below); the
-  // nudge has to stay continuous across those jumps, and it cannot if the two
-  // share a motion value.
-  useEffect(() => {
-    nudgeX.set(tiltX);
-    nudgeY.set(tiltY);
-  }, [tiltX, tiltY, nudgeX, nudgeY]);
 
   const instant = positionMode === "instant" || reducedMotion;
 
@@ -429,7 +407,6 @@ function PhraseFollower({
       className="pointer-events-none fixed left-0 top-0 z-20"
       style={{ x: springX, y: springY }}
     >
-      <motion.div style={{ x: nudgeX, y: nudgeY }}>
       <div className={anchor === "center" ? "-translate-x-1/2 -translate-y-1/2" : undefined}>
         {href ? (
           <Link
@@ -448,7 +425,6 @@ function PhraseFollower({
           presence
         )}
       </div>
-      </motion.div>
     </motion.div>
   );
 }
@@ -534,14 +510,6 @@ const MOBILE_LABEL_CHAR_PX = 7.67;
 const MOBILE_LABEL_LINE_PX = 20;
 /** How many spawn directions to try before giving up and going below. */
 const MOBILE_LABEL_SPAWN_ATTEMPTS = 32;
-/**
- * Maximum tilt nudge for the phrase label, in px. Small on purpose: this is a
- * line of text acknowledging that the device moved, not parallax. The cluster
- * behind it does not move at all — see 01-design-system.md's Tilt-reactive
- * behaviours section — so a large offset here would read as the text sliding
- * off its own graph rather than as the page being alive in the hand.
- */
-const PHRASE_TILT_NUDGE_PX = 6;
 
 /**
  * Does a label box centred here clear the cluster's disc?
@@ -581,6 +549,12 @@ function boxClearsCluster(
  * The fallback is directly below rather than a best-effort overlap: a label
  * that has to give up should sit somewhere legible, not merely somewhere less
  * bad.
+ *
+ * Returns an **offset from the cluster's centre**, not an absolute point, plus
+ * the half-width the clearance was solved against. The caller adds the live
+ * centre every render, so the label rides the cluster's parallax while a
+ * finger drags it instead of standing still on a graph that has slid out from
+ * under it — and the clearance holds automatically, since both move together.
  */
 function randomLabelPoint(
   cluster: ClusterScreen,
@@ -623,7 +597,13 @@ function randomLabelPoint(
 
     x = cluster.centerX + Math.cos(angle) * (dist + gap);
     y = cluster.centerY + Math.sin(angle) * (dist + gap);
-    if (x >= minX && x <= maxX) return { x, y };
+    if (x >= minX && x <= maxX) {
+      return {
+        dx: x - cluster.centerX,
+        dy: y - cluster.centerY,
+        halfWidth,
+      };
+    }
   }
 
   // Nothing beside the graph fits — sit under it, with the same random gap so
@@ -632,8 +612,9 @@ function randomLabelPoint(
     MOBILE_LABEL_GAP_MIN +
     Math.random() * (MOBILE_LABEL_GAP_MAX - MOBILE_LABEL_GAP_MIN);
   return {
-    x: Math.min(Math.max(cluster.centerX, minX), maxX),
-    y: cluster.centerY + cluster.radiusPx + halfHeight + gap,
+    dx: Math.min(Math.max(cluster.centerX, minX), maxX) - cluster.centerX,
+    dy: cluster.radiusPx + halfHeight + gap,
+    halfWidth,
   };
 }
 
@@ -647,12 +628,11 @@ function randomLabelPoint(
  */
 function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
-  const tilt = useSceneStore((s) => s.tilt);
   const [phrase, setPhrase] = useState(() => randomPhrase());
   const [driftX, setDriftX] = useState(() =>
     randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
   );
-  const [point, setPoint] = useState(() =>
+  const [offset, setOffset] = useState(() =>
     randomLabelPoint(cluster, window.innerWidth, phrase),
   );
   // The next point depends on the next *phrase*, since clearance is solved
@@ -662,10 +642,10 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   useEffect(() => {
     phraseRef.current = phrase;
   }, [phrase]);
-  const pending = useRef<{ point: { x: number; y: number }; drift: number }>({
-    point,
-    drift: driftX,
-  });
+  const pending = useRef<{
+    offset: ReturnType<typeof randomLabelPoint>;
+    drift: number;
+  }>({ offset, drift: driftX });
 
   // The cluster drifts with parallax; the timer shouldn't restart every time
   // it does, so its latest value is read through a ref at fire time rather
@@ -681,7 +661,7 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
       const next = randomPhrase(phraseRef.current);
       setPhrase(next);
       pending.current = {
-        point: randomLabelPoint(clusterRef.current, window.innerWidth, next),
+        offset: randomLabelPoint(clusterRef.current, window.innerWidth, next),
         drift: randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
       };
     }, MOBILE_CYCLE_MS);
@@ -689,18 +669,29 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   }, [reducedMotion]);
 
   const commitPending = useCallback(() => {
-    setPoint(pending.current.point);
+    setOffset(pending.current.offset);
     setDriftX(pending.current.drift);
   }, []);
+
+  // Resolved against the *live* centre, so a drag carries the label along with
+  // the cluster. Re-clamped here rather than only at spawn: parallax can shift
+  // the centre by up to CLUSTER_PARALLAX_MAX_PX after the fact, which is
+  // enough to push a long phrase past the viewport edge it was cleared for.
+  const targetX = Math.min(
+    Math.max(
+      cluster.centerX + offset.dx,
+      MOBILE_LABEL_SAFE_MARGIN_PX + offset.halfWidth,
+    ),
+    window.innerWidth - MOBILE_LABEL_SAFE_MARGIN_PX - offset.halfWidth,
+  );
+  const targetY = cluster.centerY + offset.dy;
 
   useClusterTapNavigation(cluster);
 
   return (
     <PhraseFollower
-      targetX={point.x}
-      targetY={point.y}
-      tiltX={tilt.x * PHRASE_TILT_NUDGE_PX}
-      tiltY={tilt.y * PHRASE_TILT_NUDGE_PX}
+      targetX={targetX}
+      targetY={targetY}
       phrase={phrase}
       offsets={mobileDrift(driftX)}
       transitionIn={MOBILE_LABEL_TRANSITION_IN}
@@ -890,8 +881,6 @@ function DesktopAffordance({
     <PhraseFollower
       targetX={target.x}
       targetY={target.y}
-      tiltX={0}
-      tiltY={0}
       phrase={showing ? phrase : null}
       offsets={desktopDrift(driftX)}
       transitionIn={LABEL_TRANSITION_IN}
