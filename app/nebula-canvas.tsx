@@ -20,6 +20,13 @@ import {
   pxPerWorldUnitFor,
 } from "@/lib/cluster-geometry";
 import { createFresnelMaterial } from "./fresnel-material";
+import {
+  FLIGHT_DURATION_MS,
+  flightEase,
+  focusPose,
+  lerpPose,
+  type CameraPose,
+} from "./nebula-flight";
 import { Constellation } from "./nebula-constellation";
 
 /**
@@ -295,14 +302,35 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
 const DOLLY_MIN_DISTANCE = 10;
 const DOLLY_MAX_DISTANCE = 58;
 
+/** The constellation's resting pose, as a CameraPose for the flight to use. */
+const RESTING_POSE: CameraPose = {
+  position: new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION),
+  target: new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET),
+};
+
 /**
  * Step 2.4: drag-to-rotate, scroll-to-dolly, clamped. Only mounted for the
  * nebula view — the Phase 1 cluster stays a fixed, parallax-only camera per
  * 01-design-system.md. Only the position/target need setting here; FOV isn't
  * something camera-controls owns, so CameraRig above still handles that.
+ *
+ * Step 2.5 adds the flight. It is driven by hand rather than handed to
+ * camera-controls' own `enableTransition`, because that smooths
+ * exponentially toward a target — a curve with no fixed duration and no way
+ * to specify one. 01-design-system.md asks for a specific curve over a
+ * specific 1400ms, which means owning the interpolation: sample the easing,
+ * lerp the pose, and push it in with transitions off.
+ *
+ * The dolly clamp is lifted for the duration of a flight. It exists to stop a
+ * viewer dollying inside the constellation by hand, but the whole point of a
+ * flight is to end up much closer than DOLLY_MIN_DISTANCE — with the clamp
+ * live, camera-controls drags the camera back out mid-flight and the arrival
+ * never lands.
  */
 function NebulaCameraRig() {
   const controlsRef = useRef<CameraControlsImpl>(null);
+  const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
+  const reducedMotion = useSceneStore((s) => s.reducedMotion);
 
   useEffect(() => {
     controlsRef.current?.setLookAt(
@@ -311,6 +339,70 @@ function NebulaCameraRig() {
       false,
     );
   }, []);
+
+  const flight = useRef<{
+    from: CameraPose;
+    to: CameraPose;
+    start: number;
+  } | null>(null);
+
+  // Starting a flight is an effect on the focus edge, not something the frame
+  // loop polls: the departure pose has to be sampled at the instant focus
+  // changes, from wherever the viewer had actually dragged the camera to.
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+
+    const to = focusedNodeId ? focusPose(focusedNodeId) : RESTING_POSE;
+    if (!to) return;
+
+    // Reduced motion turns flights into instant cuts, per 01-design-system.md
+    // and 05a's done-when. Not a fast flight — no interpolation at all.
+    if (reducedMotion) {
+      flight.current = null;
+      controls.minDistance = focusedNodeId ? 0 : DOLLY_MIN_DISTANCE;
+      controls.setLookAt(
+        to.position.x, to.position.y, to.position.z,
+        to.target.x, to.target.y, to.target.z,
+        false,
+      );
+      useSceneStore.getState().setFocusSettled(true);
+      return;
+    }
+
+    const from: CameraPose = {
+      position: controls.camera.position.clone(),
+      target: controls.getTarget(new THREE.Vector3()),
+    };
+    controls.minDistance = 0;
+    flight.current = { from, to, start: performance.now() };
+  }, [focusedNodeId, reducedMotion]);
+
+  useFrame(() => {
+    const controls = controlsRef.current;
+    const active = flight.current;
+    if (!controls || !active) return;
+
+    const elapsed = performance.now() - active.start;
+    const t = Math.min(elapsed / FLIGHT_DURATION_MS, 1);
+    const pose = lerpPose(active.from, active.to, flightEase(t));
+
+    controls.setLookAt(
+      pose.position.x, pose.position.y, pose.position.z,
+      pose.target.x, pose.target.y, pose.target.z,
+      false,
+    );
+
+    if (t >= 1) {
+      flight.current = null;
+      useSceneStore.getState().setFocusSettled(true);
+      // Restore the hand-dolly floor only on the way out; while focused the
+      // camera is legitimately parked inside it.
+      controls.minDistance = useSceneStore.getState().focusedNodeId
+        ? 0
+        : DOLLY_MIN_DISTANCE;
+    }
+  });
 
   return (
     <CameraControls

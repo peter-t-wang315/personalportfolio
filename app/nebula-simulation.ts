@@ -211,7 +211,9 @@ const offsets: Record<string, THREE.Vector3> = (() => {
 })();
 
 const neighborCache: Record<string, string[]> = {};
-function neighborsOf(id: string): string[] {
+/** Runtime-edge neighbours of a node. Exported so 2.5's focus dimming asks the
+ * same question hover attraction does, rather than deriving "related" twice. */
+export function neighborsOf(id: string): string[] {
   return (neighborCache[id] ??= (() => {
     const set = new Set<string>();
     for (const e of edges) {

@@ -2,43 +2,84 @@
 
 ## Session status (update each session)
 
-Last completed: **2.4** (camera controls + hover) with all follow-on fixes, and
-the **Phase 1 landing page**, which has since had a long run of its own work.
-Committed and stable on `nebulustest`.
+> ### TEMPORARY — hand-off note, delete once read
+>
+> Written at the end of the session of 2026-09-05. It records what happened
+> rather than what the code is; once you have read it and the summary below
+> looks right, **delete this blockquote**. The rest of this section is the
+> permanent status.
+>
+> That session did a long run on the **Phase 1 landing page** and then built
+> **2.5**. Three things are worth knowing that the code does not say:
+>
+> 1. **Two tilt-reactive behaviours were built and then deleted** — a phrase
+>    nudge and a shader sheen driven by `deviceorientation`. They were not a
+>    mistake and they were not a violation: neither moved the scene, so
+>    01-design-system.md's prohibition on device-orientation *parallax* was
+>    never in play. They went because they were the one piece of the work that
+>    could not be verified without real hardware, and the owner did not want
+>    the sensor. **Do not rediscover the idea as new.** All movement on touch
+>    comes from the drag instead.
+> 2. **Verification in that session was headless Chromium**, driven with real
+>    events and real touch gestures but no phone. The owner has been testing on
+>    a real device in between and reports it good. Anything sensor- or
+>    hardware-specific still deserves their eyes, not mine.
+> 3. **The landing page has never been deployed.** The owner runs `npx vercel`
+>    themselves and knows.
+
+Last completed: **2.5** (fly-in + focus state), and the **Phase 1 landing
+page**. Committed and stable on `nebulustest`.
+
+**2.5 as built.** Clicking a node flies the camera along the vector from the
+constellation's centre through that node, stopping outside its surface and
+looking back at it — never at the node's own position, which would put the
+camera inside the shell. 1400ms on 01-design-system.md's standard curve, driven
+by hand rather than by camera-controls' `enableTransition`, because that
+smooths exponentially with no fixed duration and the spec asks for a specific
+curve over a specific time. The dolly clamp lifts for the flight; with it live,
+camera-controls drags the camera back out mid-flight and the arrival never
+lands. On focus the simulation freezes (2.3a's hook), unrelated nodes drop to
+25% of their own base opacity, and on desktop only the focused node swaps to
+real transmission once the flight has landed. Escape and a close control both
+leave. Reduced motion makes flights instant cuts.
+
+Measured: scene change peaks mid-flight and goes still at ~1450ms; after
+arrival the frame-to-frame change is 0.4% of sampled pixels (the shells still
+breathe, which is correct — only the float simulation freezes); after exit it
+rises again, confirming a clean resume; under reduced motion the change is a
+single frame and then exactly zero.
+
+**Watch out for one thing in 2.6.** The transmissive material is a
+`MeshPhysicalMaterial` in an otherwise unlit scene — every other shell is a
+custom `ShaderMaterial` that ignores lights. It needs the two lights added for
+it, and its `color` must stay white with the green in `attenuationColor`: put
+`--mask` in `color` and it tints everything seen through the glass toward black
+and renders as a flat opaque disc.
 
 The landing page as it now stands:
 
-- **The "What's this?" affordance.** Its proximity reveal is a sensor, not a
-  surface — no element captures pointer events, so nothing behind it is
-  blocked. Clicking or tapping the cluster navigates via a window-level handler
-  gated on the cluster's circle, which stands down for drags, selections,
-  modified clicks and interactive targets. The phrase label itself is the
-  keyboard-reachable anchor.
+- **The affordance** reveals by proximity without capturing pointer events;
+  clicking or tapping the cluster navigates through a window-level handler
+  gated on its circle, which defers to drags, selections and real controls.
 - **The mobile label** drifts laterally the whole time it is legible, spawns at
   a point solved against its own box so it clears the graph, and rides the
   cluster's parallax during a drag.
-- **The hero** anchors its link row to the bottom at every viewport size, has
-  height-responsive display type and spacing so a short laptop keeps the links
-  above the fold, and gives phones their own compact metrics phrasing.
-- **The cluster's placement is solved, not fixed** — it slides right of the
-  hero's text column when a centred position would put it underneath, and drops
-  below the text on narrow viewports. `02-architecture.md`'s Landing cluster
-  placement section is the authority.
-- **Parallax** follows a finger on touch (pointer events die mid-drag; touchmove
-  does not) and is specified and implemented in pixels.
+- **The hero** anchors its link row to the bottom at every size, scales its
+  display type and spacing with viewport height, and gives phones their own
+  compact metrics phrasing.
+- **The cluster's placement is solved, not fixed** — it slides right of the text
+  column when centring would bury it, drops below the text on narrow
+  viewports, and is not drawn at all off `/` below the desktop tier, where it
+  would sit behind body prose. 02-architecture.md's Landing cluster placement
+  section is the authority.
+- **Parallax** follows a finger on touch and is specified and implemented in
+  pixels.
 
-Two tilt-reactive behaviours — a phrase nudge and a shader sheen — were built
-and then **removed** at the owner's request; all mobile movement is tied to the
-drag instead. `01-design-system.md`'s prohibition on device-orientation
-parallax was never weakened and still stands. Do not reintroduce either without
-a deliberate decision.
-
-Not yet started: **2.5** (fly-in + focus state).
+Not yet started: **2.6** (interior panel and routing).
 
 Next session should: read this file plus 00, 01, 02, 04, 05 in full before
 continuing, then confirm current git state matches this summary before starting
-2.5. Note the landing page has never been deployed — the owner runs
-`npx vercel` themselves.
+2.6.
 
 ---
 
@@ -125,6 +166,8 @@ On focus: the float simulation freezes (per the hook built in 2.3a), unrelated n
 Escape and a close control both return to the constellation.
 
 **Done when:** the flight feels weighted rather than snappy or floaty, the simulation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
+
+**Landed.** See the session status block above for how, and for the one trap in the transmissive material.
 
 ---
 

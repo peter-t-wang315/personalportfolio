@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { HomeLink } from "../home-link";
+import { NebulaCloseControl } from "../nebula-close-control";
 
 export const metadata: Metadata = {
   title: "Nebula | Peter Wang",
@@ -30,10 +31,11 @@ export const metadata: Metadata = {
  */
 export default function Nebula() {
   return (
-    <div className="pointer-events-none px-6 pt-8 md:px-16 md:pt-10">
+    <div className="pointer-events-none relative px-6 pt-8 md:px-16 md:pt-10">
       <div className="pointer-events-auto inline-block">
         <HomeLink />
       </div>
+      <NebulaCloseControl />
     </div>
   );
 }

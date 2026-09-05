@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
@@ -17,6 +17,9 @@ import {
   getLivePosition,
   attractNeighbors,
   releaseAttraction,
+  freezeSimulation,
+  resumeSimulation,
+  neighborsOf,
 } from "./nebula-simulation";
 
 /**
@@ -53,6 +56,12 @@ const BREATHE_SEED = 0xb4ea7e;
 // the shell so it survives the radius difference between major and
 // standard. Personal-cluster nodes get no core mesh at all; category (not
 // an ownership signal) is computed in lib/node-geometry.ts.
+// Step 2.5 — focus. Everything that isn't the focused node or one of its
+// neighbours drops to this fraction of its own base opacity, per 05a. A
+// fraction rather than a flat value so the tech layer stays recessed relative
+// to projects instead of every node collapsing onto one grey.
+const UNRELATED_OPACITY_FACTOR = 0.25;
+
 const CORE_SCALE = 0.8;
 const CORE_OPACITY = 0.22;
 
@@ -117,13 +126,52 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
 }
 
 /**
- * The tier-dependent material branch, in place from the start so 2.5's
- * transmission swap extends it instead of retrofitting the render path.
- * Transmission policy per tier lives in 02-architecture.md's Responsive
- * tiers table; nothing is focusable yet, so today every path is fresnel.
+ * Real transmission for the focused node. **One instance, reused** — the
+ * performance budget in 02-architecture.md caps transmissive meshes at two
+ * because each one costs an extra scene render pass, and only ever one node
+ * is focused, so a single shared material is both sufficient and the only
+ * thing that keeps the cap honest as node count grows.
  */
-function shellMaterial(node: NodeGeometry, _tier: DeviceTier): THREE.Material {
-  // 2.5 adds: desktop + focused + fly-in complete -> real transmission.
+const transmissionMaterial = new THREE.MeshPhysicalMaterial({
+  // White, **not** --mask. `color` multiplies transmitted light, so a dark
+  // green base tints everything seen through the glass toward black and the
+  // node renders as a flat opaque disc — which is exactly what it did first
+  // time. The green belongs in `attenuation*` instead, which is the physical
+  // model for a tinted medium: light picks up the colour with the distance it
+  // travels through the volume, so thin edges stay pale and the thick centre
+  // reads --mask. Same colour, arrived at correctly.
+  color: 0xffffff,
+  transmission: 1,
+  thickness: 1.1,
+  attenuationColor: new THREE.Color(palette.mask),
+  attenuationDistance: 1.4,
+  roughness: 0.14,
+  ior: 1.4,
+  // Transmission does its own blending; `transparent` on top of it double-
+  // counts and re-introduces the sorting problems transmission exists to
+  // avoid.
+  transparent: false,
+});
+
+/**
+ * The tier-dependent material branch, in place since 2.2 so this swap extended
+ * the render path instead of retrofitting it.
+ *
+ * Transmission is desktop-only and focused-only, per 02-architecture.md's
+ * Responsive tiers table — tablet and mobile stay on the fresnel shader
+ * throughout, focused node included. It is also deliberately withheld until
+ * the flight finishes: swapping materials mid-flight makes the arrival read as
+ * a pop rather than a landing, and the extra render pass is exactly what a
+ * moving camera can least afford.
+ */
+function shellMaterial(
+  node: NodeGeometry,
+  tier: DeviceTier,
+  transmissiveNodeId: string | null,
+): THREE.Material {
+  if (tier === "desktop" && node.id === transmissiveNodeId) {
+    return transmissionMaterial;
+  }
   return materialByNodeId[node.id];
 }
 
@@ -288,6 +336,48 @@ function HoverLabel() {
 export function Constellation() {
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
+  const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
+  const clearFocus = useSceneStore((s) => s.clearFocus);
+
+  // Who stays lit: the focused node and whatever it actually talks to.
+  const related = useMemo(() => {
+    if (!focusedNodeId) return null;
+    return new Set([focusedNodeId, ...neighborsOf(focusedNodeId)]);
+  }, [focusedNodeId]);
+
+  /**
+   * The simulation holds still while focused, per 2.3a's freeze hook and 05a's
+   * done-when. Two reasons it has to: the camera is parked a couple of units
+   * off a specific node's surface, and a node that drifts out from under it
+   * ruins the framing; and the neighbours are dimmed by identity, which only
+   * reads as a stable statement if they stop moving too.
+   */
+  useEffect(() => {
+    if (focusedNodeId) freezeSimulation();
+    else resumeSimulation();
+  }, [focusedNodeId]);
+
+  /**
+   * Transmission waits for the flight to land — see shellMaterial. Derived
+   * from the arrival the camera rig publishes, not from a timer of its own:
+   * a local copy of the flight duration is a second source of truth that can
+   * only ever drift from the first. Under reduced motion the rig reports the
+   * instant cut as settled immediately, so this needs no special case.
+   */
+  const focusSettled = useSceneStore((s) => s.focusSettled);
+  const transmissiveNodeId = focusSettled ? focusedNodeId : null;
+
+  // Escape leaves the focused node. Bound to the window rather than to any
+  // element because nothing here holds DOM focus — the thing the viewer is
+  // "in" is a mesh, and there is no element for a keydown to bubble from.
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") clearFocus();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [focusedNodeId, clearFocus]);
 
   // Tech node visibility is tier-dependent — see 02-architecture.md's
   // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
@@ -297,7 +387,8 @@ export function Constellation() {
   const showTech = tier !== "mobile";
 
   useFrame((state, delta) => {
-    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    const { reducedMotion, hoveredNodeId, focusedNodeId: focused } =
+      useSceneStore.getState();
     // Reduced motion: an instant snap to target instead of an eased lerp —
     // hover still highlights and scales, it just doesn't animate into place
     // (same idiom the Phase 1 cluster uses for its own opacity/scale lerp).
@@ -324,13 +415,22 @@ export function Constellation() {
       }
 
       const hovered = hoveredNodeId === node.id;
-      const targetScale = node.radius * (hovered ? HOVER_SCALE_FACTOR : 1);
+      // While focused, hover scaling stands down: the camera is inches from
+      // one node and a neighbour swelling under a stray pointer reads as the
+      // scene twitching, not as a preview.
+      const targetScale =
+        node.radius * (hovered && !focused ? HOVER_SCALE_FACTOR : 1);
       mesh.scale.setScalar(
         THREE.MathUtils.lerp(mesh.scale.x, targetScale, ease),
       );
 
       const material = materialByNodeId[node.id];
-      const targetOpacity = hovered ? HOVER_OPACITY : baseOpacity(node, tier);
+      const unrelated = related !== null && !related.has(node.id);
+      const targetOpacity = unrelated
+        ? baseOpacity(node, tier) * UNRELATED_OPACITY_FACTOR
+        : hovered && !focused
+          ? HOVER_OPACITY
+          : baseOpacity(node, tier);
       material.uniforms.opacity.value = THREE.MathUtils.lerp(
         material.uniforms.opacity.value,
         targetOpacity,
@@ -342,6 +442,15 @@ export function Constellation() {
   return (
     <>
       <fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />
+      {/*
+        The only lit material in the scene is the focused node's transmissive
+        shell — every other shell is a custom ShaderMaterial that computes its
+        own rim and ignores lights entirely. So this is two lights for one mesh,
+        and they cost nothing anywhere else: without them a MeshPhysicalMaterial
+        has no specular to catch and reads as a dead silhouette.
+      */}
+      <ambientLight intensity={1.6} />
+      <directionalLight position={[4, 8, 6]} intensity={1.1} />
       <group>
         <Edges showTech={showTech} />
         {nodeList.map((node) => {
@@ -355,9 +464,13 @@ export function Constellation() {
               position={node.position}
               scale={node.radius}
               geometry={sphereGeometry}
-              material={shellMaterial(node, tier)}
+              material={shellMaterial(node, tier, transmissiveNodeId)}
               onPointerOver={(e) => handlePointerOver(e, node.id)}
               onPointerOut={(e) => handlePointerOut(e, node.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                useSceneStore.getState().focusNode(node.id);
+              }}
             >
               {node.category === "professional" && (
                 <mesh

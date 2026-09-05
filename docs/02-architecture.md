@@ -91,6 +91,8 @@ interface SceneState {
   mode: 'distant' | 'constellation' | 'inside';
   focusedNodeId: string | null;
   hoveredNodeId: string | null;
+  focusedNodeId: string | null;      // 2.5: the flown-to node
+  focusSettled: boolean;             // has the approach flight landed
   hoveredEdgeId: string | null;
   tourActive: boolean;
   tourIndex: number;
@@ -102,6 +104,11 @@ interface SceneState {
   setMode(m: SceneState['mode']): void;
 }
 ```
+
+`focusSettled` is written by the camera rig, the only thing that knows when a
+flight has landed. Anything that must wait for the arrival — 2.5's transmission
+swap, 2.6's panel — gates on it rather than re-deriving the duration, which
+would be a second copy of the flight's timing free to drift from the real one.
 
 Route changes drive `mode`. Node clicks drive `focusedNodeId` **and** push a route via `router.push('/nebula/[slug]', { scroll: false })` so the URL always reflects the view.
 
