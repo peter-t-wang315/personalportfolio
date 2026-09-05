@@ -30,6 +30,10 @@ The canvas never unmounts. Routes change the DOM above it and push a camera targ
 
 This is painful to retrofit. Build it this way from Phase 1, even though Phase 1 only renders a static drifting cluster.
 
+**The arrival flight is what that decision buys, and it is built (2.5).** Entering `/nebula` starts the camera outside the constellation on its resting heading and closes to the framing pose over the standard 1400ms, widening the FOV from the landing page's 45 to the constellation's 50 so the two framings meet rather than snap. `app/nebula-canvas.tsx`'s `NebulaCameraRig` owns it; `CameraRig` deliberately does not touch the camera on `/nebula`, because two rigs writing it on the same commit is a race the flight loses.
+
+How far out it starts is bounded by the fog, not by taste: fog goes fully opaque at `FOG_FAR`, so starting beyond that opens the flight on a blank screen for a quarter-second and fades in late. It starts inside the fog instead, near side legible from the first frame, far side still hidden.
+
 Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholder that paints immediately. `three` + `drei` is a heavy bundle and LCP will suffer otherwise.
 
 ## Routes

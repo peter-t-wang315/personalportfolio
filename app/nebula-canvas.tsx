@@ -269,24 +269,23 @@ const CONSTELLATION_CAMERA_FOV = 50;
 const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 3.5, 0];
 
 /**
- * Step 2.1: an instant, fixed camera swap between the Phase 1 decorative
- * cluster and the Phase 2 constellation. The canvas never unmounts across
+ * Parks the camera for the Phase 1 routes. The canvas never unmounts across
  * routes (see docs/02-architecture.md), so <Canvas>'s camera prop only sets
- * the very first position — this is what actually moves it afterward. No
- * interpolation yet; that's fly-in, step 2.5.
+ * the very first position — this is what actually moves it afterward.
+ *
+ * It deliberately does **not** touch the camera on /nebula. NebulaCameraRig
+ * owns it there, arrival flight included, and two rigs writing the same camera
+ * on the same commit is a race the flight loses.
  */
 function CameraRig({ isNebula }: { isNebula: boolean }) {
   const { camera } = useThree();
 
   useEffect(() => {
-    const [x, y, z] = isNebula
-      ? CONSTELLATION_CAMERA_POSITION
-      : HOME_CAMERA_POSITION;
-    const [tx, ty, tz] = isNebula ? CONSTELLATION_CAMERA_TARGET : [0, 0, 0];
-    camera.position.set(x, y, z);
-    camera.lookAt(tx, ty, tz);
+    if (isNebula) return;
+    camera.position.set(...HOME_CAMERA_POSITION);
+    camera.lookAt(0, 0, 0);
     if (camera instanceof THREE.PerspectiveCamera) {
-      camera.fov = isNebula ? CONSTELLATION_CAMERA_FOV : HOME_CAMERA_FOV;
+      camera.fov = HOME_CAMERA_FOV;
       camera.updateProjectionMatrix();
     }
   }, [isNebula, camera]);
@@ -301,6 +300,32 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
 // than shrinking to a speck. Verified visually, not just computed.
 const DOLLY_MIN_DISTANCE = 10;
 const DOLLY_MAX_DISTANCE = 58;
+
+/**
+ * How far out the arrival flight begins, as a multiple of the constellation's
+ * resting distance (~41 units).
+ *
+ * Bounded by the fog, not by taste. Scene fog is the depth cue that makes the
+ * constellation recede (02-architecture.md), and it goes fully opaque at
+ * FOG_FAR = 68. A more dramatic 2.6x start put the camera 107 units out, where
+ * every node is past that plane — so the flight opened on a blank cream screen
+ * for its first quarter-second and only faded in once inside the fog, which
+ * reads as a flash of nothing rather than an approach. At this scale the near
+ * side of the graph sits around 40 units out and is legible from the first
+ * frame, while the far side is still fogged, so the arrival begins as a shape
+ * emerging from depth and resolves as it closes.
+ */
+const ARRIVAL_START_SCALE = 1.45;
+
+/** camera-controls owns the camera, but FOV is not something it manages, so
+ * this reaches through to the camera and re-derives the projection. */
+function applyFov(controls: CameraControlsImpl, fov: number) {
+  const camera = controls.camera;
+  if (camera instanceof THREE.PerspectiveCamera) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+}
 
 /** The constellation's resting pose, as a CameraPose for the flight to use. */
 const RESTING_POSE: CameraPose = {
@@ -332,26 +357,98 @@ function NebulaCameraRig() {
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
 
-  useEffect(() => {
-    controlsRef.current?.setLookAt(
-      ...CONSTELLATION_CAMERA_POSITION,
-      ...CONSTELLATION_CAMERA_TARGET,
-      false,
-    );
-  }, []);
-
   const flight = useRef<{
     from: CameraPose;
     to: CameraPose;
     start: number;
+    fovFrom?: number;
+    fovTo?: number;
   } | null>(null);
+
+  /**
+   * The arrival flight, from the landing page into the constellation.
+   *
+   * This is the flight 02-architecture.md's persistent-canvas decision exists
+   * for: the camera flies into the cluster and lands on /nebula, continuous
+   * rather than a page transition. 2.1 deferred it here and 05a's 2.5 text
+   * only spelled out the node half, so it went unbuilt — the canvas was living
+   * in the root layout for a flight that did not exist.
+   *
+   * It begins well outside the resting distance on the same heading, so the
+   * graph reads as small and far off in the first frame, picking up where the
+   * landing page's distant cluster left off, and closes to the framing pose.
+   * FOV widens from the landing page's 45 to the constellation's 50 across the
+   * same interval so the two framings meet rather than snap.
+   *
+   * Approaching from outside, rather than interpolating from the literal
+   * landing camera, is deliberate: that camera sits at z=9, which is *inside*
+   * the node field, so a true pose-to-pose interpolation would start amid the
+   * nodes and pull outward — the opposite of flying in.
+   */
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    const { reducedMotion } = useSceneStore.getState();
+
+    if (reducedMotion) {
+      controls.setLookAt(
+        ...CONSTELLATION_CAMERA_POSITION,
+        ...CONSTELLATION_CAMERA_TARGET,
+        false,
+      );
+      applyFov(controls, CONSTELLATION_CAMERA_FOV);
+      return;
+    }
+
+    const target = RESTING_POSE.target.clone();
+    const approach = RESTING_POSE.position.clone().sub(target);
+    const from: CameraPose = {
+      position: target.clone().addScaledVector(approach, ARRIVAL_START_SCALE),
+      target,
+    };
+    // The approach starts outside the dolly clamp's ceiling; that clamp exists
+    // to arbitrate hand-dollying, and an arrival is not one. Restored on
+    // landing.
+    controls.minDistance = 0;
+    controls.maxDistance = Infinity;
+    controls.setLookAt(
+      from.position.x, from.position.y, from.position.z,
+      from.target.x, from.target.y, from.target.z,
+      false,
+    );
+    applyFov(controls, HOME_CAMERA_FOV);
+    flight.current = {
+      from,
+      to: RESTING_POSE,
+      start: performance.now(),
+      fovFrom: HOME_CAMERA_FOV,
+      fovTo: CONSTELLATION_CAMERA_FOV,
+    };
+  }, []);
 
   // Starting a flight is an effect on the focus edge, not something the frame
   // loop polls: the departure pose has to be sampled at the instant focus
   // changes, from wherever the viewer had actually dragged the camera to.
+  //
+  // It must fire only when focus genuinely *changes*, and it tracks the last
+  // value to decide rather than counting runs. Two things defeat a
+  // skip-the-first-run flag: effects with a dependency array fire on the first
+  // commit anyway, and StrictMode runs them twice in development, so the
+  // second pass sails through the flag. Either way this would overwrite the
+  // arrival flight above with a focus-shaped one — same destination, but
+  // sampled a beat later, from a camera position camera-controls has not
+  // applied yet, and carrying no FOV interpolation. That is exactly how the
+  // arrival lost its widening and gained a lurch toward the target before
+  // settling back out.
+  const lastFocus = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
+    if (lastFocus.current === undefined || lastFocus.current === focusedNodeId) {
+      lastFocus.current = focusedNodeId;
+      return;
+    }
+    lastFocus.current = focusedNodeId;
 
     const to = focusedNodeId ? focusPose(focusedNodeId) : RESTING_POSE;
     if (!to) return;
@@ -385,22 +482,30 @@ function NebulaCameraRig() {
 
     const elapsed = performance.now() - active.start;
     const t = Math.min(elapsed / FLIGHT_DURATION_MS, 1);
-    const pose = lerpPose(active.from, active.to, flightEase(t));
+    const eased = flightEase(t);
+    const pose = lerpPose(active.from, active.to, eased);
 
     controls.setLookAt(
       pose.position.x, pose.position.y, pose.position.z,
       pose.target.x, pose.target.y, pose.target.z,
       false,
     );
+    if (active.fovFrom !== undefined && active.fovTo !== undefined) {
+      applyFov(
+        controls,
+        THREE.MathUtils.lerp(active.fovFrom, active.fovTo, eased),
+      );
+    }
 
     if (t >= 1) {
       flight.current = null;
       useSceneStore.getState().setFocusSettled(true);
-      // Restore the hand-dolly floor only on the way out; while focused the
-      // camera is legitimately parked inside it.
+      // Restore the hand-dolly clamps only on the way out; while focused the
+      // camera is legitimately parked inside the floor.
       controls.minDistance = useSceneStore.getState().focusedNodeId
         ? 0
         : DOLLY_MIN_DISTANCE;
+      controls.maxDistance = DOLLY_MAX_DISTANCE;
     }
   });
 

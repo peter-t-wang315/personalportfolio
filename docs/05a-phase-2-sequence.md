@@ -30,7 +30,14 @@
 Last completed: **2.5** (fly-in + focus state), and the **Phase 1 landing
 page**. Committed and stable on `nebulustest`.
 
-**2.5 as built.** Clicking a node flies the camera along the vector from the
+**2.5 as built — two flights.** Entering `/nebula` from the landing page flies
+the camera in from outside the constellation to its framing pose, widening FOV
+45 -> 50 on the way. That is the flight the persistent canvas exists for; 2.1
+deferred it to 2.5 and 05a's step text only described the node half, so it was
+nearly missed. How far out it starts is bounded by `FOG_FAR`: start beyond the
+fog plane and the flight opens on a blank screen.
+
+Clicking a node flies the camera along the vector from the
 constellation's centre through that node, stopping outside its surface and
 looking back at it — never at the node's own position, which would put the
 camera inside the shell. 1400ms on 01-design-system.md's standard curve, driven
@@ -49,7 +56,11 @@ breathe, which is correct — only the float simulation freezes); after exit it
 rises again, confirming a clean resume; under reduced motion the change is a
 single frame and then exactly zero.
 
-**Watch out for one thing in 2.6.** The transmissive material is a
+**Two traps for 2.6.** First, effect ordering: the focus-flight effect fires on
+mount like any dependency-array effect, and StrictMode fires it twice in dev, so
+it silently overwrote the arrival flight until it was made to track focus's
+*value* rather than count runs. Anything else that starts a flight needs the
+same discipline. Second: The transmissive material is a
 `MeshPhysicalMaterial` in an otherwise unlit scene — every other shell is a
 custom `ShaderMaterial` that ignores lights. It needs the two lights added for
 it, and its `color` must stay white with the green in `attenuationColor`: put
@@ -159,6 +170,8 @@ This step needs edges (2.3) to exist first, since the springs attach to runtime-
 
 **Goal:** clicking a node takes you to it. No panel content yet.
 
+**Two flights, not one.** This step owes the node fly-in described below *and* the landing-page arrival that 02-architecture.md's persistent-canvas decision exists for — 2.1 explicitly deferred that one here. Building only the node half leaves the canvas living in the root layout for a transition that never happens.
+
 Camera interpolates to a position offset along the vector from constellation centre through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through geometry.
 
 On focus: the float simulation freezes (per the hook built in 2.3a), unrelated nodes drop to 25% opacity, and on desktop only the focused node's material switches to real transmission.
@@ -167,7 +180,7 @@ Escape and a close control both return to the constellation.
 
 **Done when:** the flight feels weighted rather than snappy or floaty, the simulation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
 
-**Landed.** See the session status block above for how, and for the one trap in the transmissive material.
+**Landed**, both flights. See the session status block above for how, and for the traps in the transmissive material and in effect ordering.
 
 ---
 
