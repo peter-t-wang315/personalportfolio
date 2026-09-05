@@ -9,6 +9,7 @@ import { useSceneStore } from "@/lib/scene-store";
 import { makeRng } from "@/lib/seeded-random";
 import {
   CLUSTER_DEPTH,
+  CLUSTER_PARALLAX_MAX_PX,
   CLUSTER_RADIUS,
   HOME_CAMERA_FOV,
   HOME_CAMERA_POSITION,
@@ -28,7 +29,12 @@ import { Constellation } from "./nebula-constellation";
  */
 const CLUSTER_SEED = 0xc105a7;
 const NODE_COUNT = 40;
-const PARALLAX_MAX = 1.4;
+/**
+ * Easing toward the pointer, per frame. Weighted rather than floaty, per
+ * 01-design-system.md — but responsive enough to read as following a finger
+ * during a drag, which a slower value did not.
+ */
+const PARALLAX_EASE = 0.09;
 // World units — far below anything visible (radiusPx conversion is roughly
 // 40-70px per world unit depending on viewport height), just enough to
 // collapse the tail of the lerp's asymptotic approach into a single write.
@@ -85,9 +91,25 @@ function Cluster() {
   const currentScale = useRef(1);
   const lastWrittenParallax = useRef({ x: 0, y: 0 });
 
+  const sheen = useRef(0);
+
   useFrame((state) => {
-    const { pointer, reducedMotion } = useSceneStore.getState();
+    const { pointer, reducedMotion, tilt, tiltActive } =
+      useSceneStore.getState();
     const elapsed = state.clock.elapsedTime;
+
+    // Tilt drives where the highlight falls on the shells, and nothing else.
+    // No position, no camera — see 01-design-system.md's Tilt-reactive
+    // behaviours section, and note that the device-orientation *parallax*
+    // prohibition above it still holds. uSheen ramps rather than snapping, so
+    // granting the sensor permission mid-session fades the effect in instead
+    // of popping it, and reduced motion fades it back out.
+    const targetSheen = tiltActive && !reducedMotion ? 1 : 0;
+    sheen.current = THREE.MathUtils.lerp(sheen.current, targetSheen, 0.05);
+    material.uniforms.uSheen.value = sheen.current;
+    if (sheen.current > 0.001) {
+      (material.uniforms.uTilt.value as THREE.Vector2).set(tilt.x, tilt.y);
+    }
 
     const targetOpacity = isHome ? 0.9 : 0.35;
     // Narrow viewports shrink the whole cluster so it doesn't fill the width
@@ -116,15 +138,22 @@ function Cluster() {
     if (reducedMotion) {
       parallax.current.set(0, 0);
     } else {
+      // The design system specifies this swing in pixels, so it is converted
+      // here rather than stored as world units — see CLUSTER_PARALLAX_MAX_PX.
+      // Unscaled rate on purpose: this sets the group's position, which the
+      // group's own scale does not affect (same reasoning as the centre
+      // offsets below, and as use-cluster-screen.ts on the DOM side).
+      const maxWorld =
+        CLUSTER_PARALLAX_MAX_PX / pxPerWorldUnitFor(state.size.height);
       parallax.current.x = THREE.MathUtils.lerp(
         parallax.current.x,
-        -pointer.x * PARALLAX_MAX,
-        0.05,
+        -pointer.x * maxWorld,
+        PARALLAX_EASE,
       );
       parallax.current.y = THREE.MathUtils.lerp(
         parallax.current.y,
-        pointer.y * PARALLAX_MAX,
-        0.05,
+        pointer.y * maxWorld,
+        PARALLAX_EASE,
       );
     }
     // The cluster is not always centred on the viewport. On narrow ones it

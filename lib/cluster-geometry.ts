@@ -10,6 +10,18 @@
 export const HOME_CAMERA_POSITION: [number, number, number] = [0, 0, 9];
 export const HOME_CAMERA_FOV = 45;
 export const CLUSTER_RADIUS = 3;
+/**
+ * Maximum parallax displacement of the cluster, **in pixels**, per
+ * 01-design-system.md's motion item 1 ("12px for text, 28px for the cluster").
+ *
+ * In pixels because that is how the design system specifies it. It used to be
+ * a world-unit constant, which is not the same thing: world units project
+ * through the camera's vertical FOV, so the on-screen swing scaled with
+ * viewport height and matched the spec at no height at all — measured ±59px at
+ * 1440x900 against a specified 28, and worse on a taller screen. The text half
+ * was always correct, since PointerParallax works in real pixels.
+ */
+export const CLUSTER_PARALLAX_MAX_PX = 28;
 export const CLUSTER_DEPTH = -14;
 
 /**

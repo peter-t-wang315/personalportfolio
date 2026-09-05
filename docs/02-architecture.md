@@ -88,6 +88,8 @@ interface SceneState {
   tourActive: boolean;
   tourIndex: number;
   pointer: { x: number; y: number };   // normalised -1..1, for parallax
+  tilt: { x: number; y: number };      // normalised -1..1, device orientation
+  tiltActive: boolean;                 // is a tilt source actually feeding it
   reducedMotion: boolean;
 
   focusNode(id: string): void;
@@ -95,6 +97,15 @@ interface SceneState {
   setMode(m: SceneState['mode']): void;
 }
 ```
+
+`tilt` is written on touch devices only, from `lib/device-tilt.ts`, and read by
+two consumers that deliberately do **not** move the scene: the mobile phrase
+label's few-pixel nudge, and the node shell shader's highlight direction. It
+crosses the reconciler boundary through the store for the same reason
+everything else does — the shader uniform is driven from the R3F frame loop
+while the label is DOM. See 01-design-system.md's Tilt-reactive behaviours
+section, and note that the device-orientation *parallax* prohibition there is
+unchanged: nothing reads `tilt` into a position or a camera.
 
 Route changes drive `mode`. Node clicks drive `focusedNodeId` **and** push a route via `router.push('/nebula/[slug]', { scroll: false })` so the URL always reflects the view.
 

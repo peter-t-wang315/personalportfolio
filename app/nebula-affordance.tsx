@@ -115,11 +115,23 @@ function desktopDrift(drift: number): DriftOffsets {
  * still for the three seconds between its fade in and its fade out read as
  * stale; this reads as a thought passing through.
  */
+/**
+ * Extra lateral distance covered during the fade in and the fade out, as a
+ * multiple of the drift amplitude. The entrance is front-loaded by the x
+ * curve below, so this travel is spent almost entirely inside the ~0.34s of
+ * the fade rather than bleeding into the hold — the phrase arrives moving,
+ * then settles into the slow crossing. The exit gets the same treatment in
+ * reverse, sliding away as it goes rather than fading in place.
+ */
+const MOBILE_ENTER_LEAD = 2.1;
+const MOBILE_EXIT_LEAD = 1.1;
+
 function mobileDrift(drift: number): DriftOffsets {
+  const rest = -drift * 0.55;
   return {
-    enter: { x: drift, y: 0 },
-    rest: { x: -drift * 0.55, y: 0 },
-    exit: { x: -drift * 0.85, y: 0 },
+    enter: { x: drift * MOBILE_ENTER_LEAD, y: 0 },
+    rest: { x: rest, y: 0 },
+    exit: { x: rest - drift * MOBILE_EXIT_LEAD, y: 0 },
   };
 }
 function randomPhrase(exclude?: string) {
@@ -172,9 +184,15 @@ const MOBILE_DRIFT_DURATION_S = 5.2;
 const MOBILE_LABEL_TRANSITION_IN: LabelTransition = {
   opacity: { duration: 0.34, ease: "linear" as const },
   y: { duration: MOBILE_DRIFT_DURATION_S, ease: "linear" as const },
+  // Sharply front-loaded, so most of the entrance lead is spent while the
+  // phrase is still fading in and the hold keeps the slow crossing it had
+  // before. The second control point stops short of 1 so the curve still has
+  // velocity at its end — the site's standard ease lands at zero and would
+  // leave the text visibly parked, which is the thing this whole treatment
+  // exists to avoid.
   x: {
     duration: MOBILE_DRIFT_DURATION_S,
-    ease: [0.2, 0.5, 0.4, 0.92] as const,
+    ease: [0.03, 0.62, 0.38, 0.9] as const,
   },
 };
 const MOBILE_LABEL_TRANSITION_OUT: LabelTransition = {
@@ -281,9 +299,16 @@ function useCursorPx() {
  * always completes its exit before the next one mounts — that sequencing is
  * the library's job now rather than something timed by hand.
  */
+/** Spring for the tilt nudge. Slacker than FOLLOW_SPRING on purpose: this is
+ * responding to a hand, not tracking a cursor, and a stiff spring on
+ * accelerometer input reads as twitch. */
+const TILT_NUDGE_SPRING = { stiffness: 90, damping: 20, mass: 0.9 };
+
 function PhraseFollower({
   targetX,
   targetY,
+  tiltX,
+  tiltY,
   phrase,
   offsets,
   transitionIn,
@@ -300,6 +325,10 @@ function PhraseFollower({
 }: {
   targetX: number;
   targetY: number;
+  /** Tilt nudge in px, applied on its own layer so it stays smooth across the
+   * spawn-point jumps `positionMode: "instant"` makes. Zero on desktop. */
+  tiltX: number;
+  tiltY: number;
   phrase: string | null;
   offsets: DriftOffsets;
   transitionIn: LabelTransition;
@@ -330,7 +359,18 @@ function PhraseFollower({
   const y = useMotionValue(targetY);
   const springX = useSpring(x, FOLLOW_SPRING);
   const springY = useSpring(y, FOLLOW_SPRING);
+  const nudgeX = useSpring(useMotionValue(0), TILT_NUDGE_SPRING);
+  const nudgeY = useSpring(useMotionValue(0), TILT_NUDGE_SPRING);
   const wasHidden = useRef(phrase === null);
+
+  // Deliberately a separate transform layer from the spawn point above. That
+  // one jumps outright between phrases (see the layout effect below); the
+  // nudge has to stay continuous across those jumps, and it cannot if the two
+  // share a motion value.
+  useEffect(() => {
+    nudgeX.set(tiltX);
+    nudgeY.set(tiltY);
+  }, [tiltX, tiltY, nudgeX, nudgeY]);
 
   const instant = positionMode === "instant" || reducedMotion;
 
@@ -389,6 +429,7 @@ function PhraseFollower({
       className="pointer-events-none fixed left-0 top-0 z-20"
       style={{ x: springX, y: springY }}
     >
+      <motion.div style={{ x: nudgeX, y: nudgeY }}>
       <div className={anchor === "center" ? "-translate-x-1/2 -translate-y-1/2" : undefined}>
         {href ? (
           <Link
@@ -407,6 +448,7 @@ function PhraseFollower({
           presence
         )}
       </div>
+      </motion.div>
     </motion.div>
   );
 }
@@ -473,56 +515,125 @@ interface ClusterScreen {
 }
 
 const MOBILE_CYCLE_MS = 4000;
-/** Distance beyond the cluster's own edge for the mobile label, in px —
- * tight enough that every spawn point reads as tethered to the graph rather
- * than floating loose on the page. */
-const MOBILE_LABEL_GAP_MIN = 8;
-const MOBILE_LABEL_GAP_MAX = 26;
-/** Rough half-width of the longest phrase, so a spawn near the left or right
- * of the circle can't clip text off a narrow viewport — the label is centred
- * on its point, so it needs clearance on both sides. The lateral drift is
- * added on top, since a phrase spends its entrance and exit offset by up to
- * that much from the point it was clamped against. */
-const MOBILE_LABEL_SAFE_MARGIN_PX = 90 + MOBILE_DRIFT_AMPLITUDE_PX;
+/** Distance beyond whatever clearance the label needs, in px — tight enough
+ * that every spawn point still reads as tethered to the graph rather than
+ * floating loose on the page. */
+const MOBILE_LABEL_GAP_MIN = 10;
+const MOBILE_LABEL_GAP_MAX = 28;
+/** Keeps the label's box off the viewport edges. */
+const MOBILE_LABEL_SAFE_MARGIN_PX = 14;
 /** Degrees of arc, centred on straight up, excluded from the spawn angle.
- * The tight gap leaves little headroom in that one direction: below has
- * HeroNav's computed clearance and the sides have open page, but directly
+ * Below has HeroNav's clearance and the sides have open page, but directly
  * above is the headline. */
 const MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG = 90;
+/** Advance width of one character of the label's face — Geist Mono at
+ * 0.8125rem with -0.01em tracking. Mono, so a phrase's width is just its
+ * length times this; measured against the rendered box, the longest phrase in
+ * the pool comes to ~153px and this predicts 153px. */
+const MOBILE_LABEL_CHAR_PX = 7.67;
+const MOBILE_LABEL_LINE_PX = 20;
+/** How many spawn directions to try before giving up and going below. */
+const MOBILE_LABEL_SPAWN_ATTEMPTS = 32;
+/**
+ * Maximum tilt nudge for the phrase label, in px. Small on purpose: this is a
+ * line of text acknowledging that the device moved, not parallax. The cluster
+ * behind it does not move at all — see 01-design-system.md's Tilt-reactive
+ * behaviours section — so a large offset here would read as the text sliding
+ * off its own graph rather than as the page being alive in the hand.
+ */
+const PHRASE_TILT_NUDGE_PX = 6;
 
-function randomLabelPoint(cluster: ClusterScreen, viewportWidth: number) {
+/**
+ * Does a label box centred here clear the cluster's disc?
+ *
+ * The box is grown by the lateral drift on both sides, because the phrase
+ * spends its life sliding across that range — a point that clears only while
+ * the text is at rest is not clear.
+ */
+function boxClearsCluster(
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  cluster: ClusterScreen,
+) {
+  const dx = Math.max(Math.abs(x - cluster.centerX) - halfWidth, 0);
+  const dy = Math.max(Math.abs(y - cluster.centerY) - halfHeight, 0);
+  return Math.hypot(dx, dy) >= cluster.radiusPx;
+}
+
+/**
+ * Where the next mobile phrase should appear.
+ *
+ * The label used to be centred on a point a fixed gap outside the cluster's
+ * radius, which sounds like it clears the graph and doesn't: the box is up to
+ * ~153px wide against a ~214px cluster on a 390px screen, so centring it
+ * ~135px out still left half of it lying over the nodes, and text over the
+ * densest part of the graph is genuinely hard to read.
+ *
+ * So the clearance is solved against the label's real box rather than a point.
+ * Candidate directions are tried in random order; for each, the distance is
+ * pushed out until the whole box — widened by the drift range it will travel —
+ * clears the disc, and the candidate is taken only if it also fits the
+ * viewport. That naturally uses the sides on a tablet, where there is room
+ * beside the graph, and falls to below it on a phone, where there is not.
+ *
+ * The fallback is directly below rather than a best-effort overlap: a label
+ * that has to give up should sit somewhere legible, not merely somewhere less
+ * bad.
+ */
+function randomLabelPoint(
+  cluster: ClusterScreen,
+  viewportWidth: number,
+  phrase: string,
+) {
+  const halfWidth =
+    (phrase.length * MOBILE_LABEL_CHAR_PX) / 2 + MOBILE_DRIFT_AMPLITUDE_PX;
+  const halfHeight = MOBILE_LABEL_LINE_PX / 2;
+  const minX = MOBILE_LABEL_SAFE_MARGIN_PX + halfWidth;
+  const maxX = viewportWidth - MOBILE_LABEL_SAFE_MARGIN_PX - halfWidth;
+
   const availableDeg = 360 - MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG;
   const startDeg = 270 + MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG / 2;
-  const angle = (((startDeg + Math.random() * availableDeg) % 360) * Math.PI) / 180;
 
+  for (let attempt = 0; attempt < MOBILE_LABEL_SPAWN_ATTEMPTS; attempt++) {
+    const angle =
+      (((startDeg + Math.random() * availableDeg) % 360) * Math.PI) / 180;
+    const gap =
+      MOBILE_LABEL_GAP_MIN +
+      Math.random() * (MOBILE_LABEL_GAP_MAX - MOBILE_LABEL_GAP_MIN);
+
+    // Walk outward along this direction until the box is off the disc. The
+    // step is coarse because the gap above is already randomised — this only
+    // has to find the first clearing distance, not the exact one.
+    let dist = cluster.radiusPx;
+    let x = 0;
+    let y = 0;
+    let cleared = false;
+    for (let step = 0; step < 60; step++) {
+      x = cluster.centerX + Math.cos(angle) * dist;
+      y = cluster.centerY + Math.sin(angle) * dist;
+      if (boxClearsCluster(x, y, halfWidth, halfHeight, cluster)) {
+        cleared = true;
+        break;
+      }
+      dist += 6;
+    }
+    if (!cleared) continue;
+
+    x = cluster.centerX + Math.cos(angle) * (dist + gap);
+    y = cluster.centerY + Math.sin(angle) * (dist + gap);
+    if (x >= minX && x <= maxX) return { x, y };
+  }
+
+  // Nothing beside the graph fits — sit under it, with the same random gap so
+  // successive phrases still don't land in exactly the same spot.
   const gap =
     MOBILE_LABEL_GAP_MIN +
     Math.random() * (MOBILE_LABEL_GAP_MAX - MOBILE_LABEL_GAP_MIN);
-  const dist = cluster.radiusPx + gap;
-
-  // The lateral drift is added to the *horizontal* component of the radius
-  // only, which is where a phrase can travel toward the cluster: one spawned
-  // beside it slides sideways by up to the drift amplitude, while one spawned
-  // above or below slides along the edge and needs no allowance. Scaling by
-  // cos(angle) gives full clearance on the flanks, none at the poles, and no
-  // extra distance from the graph anywhere it isn't wanted.
-  //
-  // This holds the drift where it was, no more. It does not stop a label
-  // overlapping the cluster, and is not trying to: the longest phrase is
-  // ~153px wide, centred on its point, against a ~214px cluster on a 390px
-  // screen — there is no room beside the graph for a box that size, so labels
-  // have always crossed the nodes and the faint palette is what carries it.
-  const x =
-    cluster.centerX +
-    Math.cos(angle) * (dist + MOBILE_DRIFT_AMPLITUDE_PX);
-  const y = cluster.centerY + Math.sin(angle) * dist;
-
   return {
-    x: Math.min(
-      Math.max(x, MOBILE_LABEL_SAFE_MARGIN_PX),
-      viewportWidth - MOBILE_LABEL_SAFE_MARGIN_PX,
-    ),
-    y,
+    x: Math.min(Math.max(cluster.centerX, minX), maxX),
+    y: cluster.centerY + cluster.radiusPx + halfHeight + gap,
   };
 }
 
@@ -536,13 +647,21 @@ function randomLabelPoint(cluster: ClusterScreen, viewportWidth: number) {
  */
 function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
+  const tilt = useSceneStore((s) => s.tilt);
   const [phrase, setPhrase] = useState(() => randomPhrase());
   const [driftX, setDriftX] = useState(() =>
     randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
   );
   const [point, setPoint] = useState(() =>
-    randomLabelPoint(cluster, window.innerWidth),
+    randomLabelPoint(cluster, window.innerWidth, phrase),
   );
+  // The next point depends on the next *phrase*, since clearance is solved
+  // against that phrase's own box width. Read through a ref so picking one
+  // stays a plain statement rather than a side effect inside a state updater.
+  const phraseRef = useRef(phrase);
+  useEffect(() => {
+    phraseRef.current = phrase;
+  }, [phrase]);
   const pending = useRef<{ point: { x: number; y: number }; drift: number }>({
     point,
     drift: driftX,
@@ -559,9 +678,10 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   useEffect(() => {
     if (reducedMotion) return;
     const id = setInterval(() => {
-      setPhrase((previous) => randomPhrase(previous));
+      const next = randomPhrase(phraseRef.current);
+      setPhrase(next);
       pending.current = {
-        point: randomLabelPoint(clusterRef.current, window.innerWidth),
+        point: randomLabelPoint(clusterRef.current, window.innerWidth, next),
         drift: randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
       };
     }, MOBILE_CYCLE_MS);
@@ -579,6 +699,8 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
     <PhraseFollower
       targetX={point.x}
       targetY={point.y}
+      tiltX={tilt.x * PHRASE_TILT_NUDGE_PX}
+      tiltY={tilt.y * PHRASE_TILT_NUDGE_PX}
       phrase={phrase}
       offsets={mobileDrift(driftX)}
       transitionIn={MOBILE_LABEL_TRANSITION_IN}
@@ -768,6 +890,8 @@ function DesktopAffordance({
     <PhraseFollower
       targetX={target.x}
       targetY={target.y}
+      tiltX={0}
+      tiltY={0}
       phrase={showing ? phrase : null}
       offsets={desktopDrift(driftX)}
       transitionIn={LABEL_TRANSITION_IN}
