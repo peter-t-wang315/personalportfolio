@@ -1,11 +1,12 @@
-import { heroMetrics } from "@/content";
+import { heroMetrics, heroMetricsCompact } from "@/content";
 
 /**
- * Desktop keeps the full value/label/note stack. Mobile and tablet collapse
- * each metric to its `short` form (content/index.ts) into one compact row
- * with a tight top margin, so the stats sit close under the cluster rather
- * than trailing far below the headline as their own competing section — per
- * 04-phase-1.md's landing-page redesign.
+ * Desktop keeps the full value/label/note stack. Mobile and tablet get
+ * `heroMetricsCompact` (content/index.ts) as one row with a tight top margin,
+ * so the stats sit close under the cluster rather than trailing far below the
+ * headline as their own competing section — per 04-phase-1.md's landing-page
+ * redesign. That row is its own phrasing rather than a truncation of the three
+ * metrics; the content file explains why.
  *
  * Both variants render unconditionally and Tailwind's `lg:` breakpoint
  * (1024px, matching useDeviceTier's own desktop threshold) picks which is
@@ -39,17 +40,24 @@ export function HeroStats() {
         ))}
       </dl>
 
+      {/*
+        Comma-separated, and the comma travels inside its own span so it can
+        never be orphaned onto the next line when the row wraps. The gap is a
+        word space rather than the wider column gutter the values used to need,
+        because with punctuation doing the separating this reads as one
+        sentence rather than three tiles.
+      */}
       <div
         aria-label="Key metrics"
-        className="flex lg:hidden mt-8 flex-wrap gap-x-5 gap-y-1"
+        className="flex lg:hidden mt-8 flex-wrap gap-x-2 gap-y-1"
       >
-        {heroMetrics.map((metric) => (
+        {heroMetricsCompact.map((entry, i) => (
           <span
-            key={metric.label}
+            key={entry}
             className="font-display text-[0.9375rem]"
             style={{ letterSpacing: "-0.02em" }}
           >
-            {metric.short}
+            {i < heroMetricsCompact.length - 1 ? `${entry},` : entry}
           </span>
         ))}
       </div>

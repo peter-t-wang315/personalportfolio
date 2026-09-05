@@ -165,6 +165,12 @@ Tech: SQL, REST APIs, C#/.NET.
 
 The preventive maintenance adoption figure (30%+ of manufacturing) lives on the `maintenance-frontend` node where it has context, not in the hero.
 
+**The compact row on phones and tablets is not these three truncated.** Collapsing each metric to its value gave "18% · 30+ · 2 sites", which is three numbers with the sentence that made them mean something stripped off. The compact row is its own phrasing instead, in `heroMetricsCompact`:
+
+> 30+ machines · 6+ vendors · across 2 sites
+
+It reads as one line of prose and draws on the second metric twice — its value and its vendor count — rather than once each. The cost is that the cycle-time figure has no room there, so **18% is a desktop and `/work` number only.** That is deliberate: an unexplained "18%" was buying nothing on a phone. If a phone-sized hero ever needs to carry it, it needs its own phrasing, not the bare value back.
+
 ## Positioning line
 
 > I make factory machines talk, and I handle everything they say.

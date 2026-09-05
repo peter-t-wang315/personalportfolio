@@ -33,13 +33,13 @@ export default function Home() {
     <section className="min-h-dvh flex flex-col px-6 pt-16 pb-8 md:px-16 md:pt-20 md:pb-10 short-desktop:pt-12">
       <PointerParallax className="flex-1 flex flex-col justify-between">
       {/*
-        On mobile and tablet this is a flex column that absorbs the hero's
-        spare height, so HeroNav's compact row can sit at the bottom of the
-        view (`mt-auto`) rather than trailing the cluster. Desktop keeps the
-        old block flow, where nav follows the stats as part of the text
-        column and the cluster shares the row beside it.
+        A flex column that absorbs the hero's spare height at every size, so
+        HeroNav's link row can sit at the bottom of the view (`mt-auto`) rather
+        than trailing whatever happens to precede it. Desktop used to keep a
+        plain block flow here, which left the links stranded mid-page on a tall
+        screen while empty hero ran on below them.
       */}
-      <div className="max-w-[66ch] flex flex-col grow lg:block lg:grow-0">
+      <div className="max-w-[66ch] flex flex-col grow">
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
 

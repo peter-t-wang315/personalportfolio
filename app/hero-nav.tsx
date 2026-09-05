@@ -18,18 +18,22 @@ interface NavLink {
  * the desktop nav on every mobile load until hydration corrects it. Same
  * reasoning as hero-stats.tsx.
  *
- * The compact row sits at the **bottom of the hero view**, not below the
- * cluster. `mt-auto` claims whatever height the hero has left over (page.tsx
- * makes the hero's text column a growing flex column below `lg`), with
- * `pt-10` as a floor so it can't end up flush against the stats in the narrow
- * band of viewport heights where there is only a few pixels spare.
+ * Both rows sit at the **bottom of the hero view**, at every viewport size.
+ * `mt-auto` claims whatever height the hero has left over — page.tsx makes the
+ * hero's text column a growing flex column — so the links land just above the
+ * scroll cue rather than trailing whatever precedes them. The `pt-*` values
+ * are floors, not the usual gap: they only decide the spacing when the hero
+ * has no spare height to give, and on every other screen `mt-auto` supplies
+ * far more. They are expressed as padding rather than margin precisely so they
+ * can coexist with `mt-auto` instead of fighting it for the same property.
  *
- * That floor is dropped under 500px of viewport height — the short-viewport
- * threshold 02-architecture.md already draws, and landscape phones are its
- * named case. There the hero has no spare height at all, so the floor is 40px
- * of pure overflow: at 844x390 it pushed the row's baseline to 426 against a
- * 390px viewport, where without it the row lands at 386 and the whole hero
- * fits. Height, not width, is the trigger, exactly as in that table.
+ * The compact row's floor is dropped under 500px of viewport height — the
+ * short-viewport threshold 02-architecture.md already draws, and landscape
+ * phones are its named case. There the hero has no spare height at all, so the
+ * floor is 40px of pure overflow: at 844x390 it pushed the row's baseline to
+ * 426 against a 390px viewport, where without it the row lands at 386 and the
+ * whole hero fits. Height, not width, is the trigger, exactly as in that
+ * table.
  *
  * The row used to measure the cluster's on-screen edge and push itself past
  * it with a computed margin. That read as an appendage to the graph rather
@@ -48,7 +52,7 @@ export function HeroNav({ links }: { links: NavLink[] }) {
     <>
       <nav
         aria-label="Primary"
-        className="hidden lg:flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-16 md:mt-20 short-desktop:mt-10"
+        className="hidden lg:flex flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-auto pt-16 md:pt-20 short-desktop:pt-10"
       >
         {links.map((link) => (
           <Link

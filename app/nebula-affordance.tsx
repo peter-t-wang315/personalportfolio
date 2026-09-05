@@ -7,6 +7,7 @@ import {
   motion,
   useMotionValue,
   useSpring,
+  type Transition,
 } from "motion/react";
 import {
   useCallback,
@@ -57,12 +58,69 @@ const PHRASES = [
 ];
 
 const CURSOR_OFFSET = { x: 18, y: 18 };
-/** Small side-to-side drift alongside the fade — arrives from ±this and
- * leaves continuing the same direction rather than snapping back, so it
- * reads as one continuous waft rather than a bounce. */
+/**
+ * Side-to-side drift alongside the fade. A phrase arrives offset by ±this and
+ * leaves continuing in the same direction rather than snapping back, so one
+ * appearance reads as a single uninterrupted pass rather than a bounce. The
+ * sign is redrawn per phrase, so successive phrases cross in random
+ * directions.
+ *
+ * Desktop keeps this small — the label is pinned to a moving cursor there, and
+ * a wide horizontal travel on top of that reads as lag, not drift. The
+ * mobile/tablet label has no cursor to belong to, so it gets the full
+ * amplitude and no vertical component at all: a phrase slides across, which
+ * reads as a thought passing through rather than a tooltip popping up.
+ */
 const DRIFT_AMPLITUDE_PX = 6;
-function randomDrift() {
-  return (Math.random() * 2 - 1) * DRIFT_AMPLITUDE_PX;
+const MOBILE_DRIFT_AMPLITUDE_PX = 22;
+/** Vertical rise on entry; halved on exit. Zero for a purely lateral drift. */
+const DESKTOP_DRIFT_RISE_PX = 12;
+
+function randomDrift(amplitude: number = DRIFT_AMPLITUDE_PX) {
+  // Never near zero: a phrase that barely moves reads as a plain fade and
+  // breaks the alternation the random sign is there to create.
+  const magnitude = amplitude * (0.65 + Math.random() * 0.35);
+  return Math.random() < 0.5 ? -magnitude : magnitude;
+}
+
+/**
+ * Where a phrase sits at each stage of its life, as an offset from the point
+ * the follower is parked on. `rest` is not usually the origin: on mobile the
+ * phrase is still travelling toward it when the exit takes over, which is what
+ * keeps it moving the whole time it is legible.
+ */
+interface DriftOffsets {
+  enter: { x: number; y: number };
+  rest: { x: number; y: number };
+  exit: { x: number; y: number };
+}
+
+/**
+ * Desktop: the label is pinned to a live cursor, so it arrives, settles, and
+ * waits. Wide or continuous travel on top of cursor-following reads as lag.
+ */
+function desktopDrift(drift: number): DriftOffsets {
+  return {
+    enter: { x: drift, y: DESKTOP_DRIFT_RISE_PX },
+    rest: { x: 0, y: 0 },
+    exit: { x: -drift, y: DESKTOP_DRIFT_RISE_PX / 2 },
+  };
+}
+
+/**
+ * Mobile and tablet: one long lateral pass, purely horizontal. The phrase
+ * enters offset to one side and is still crossing when it leaves — `rest` sits
+ * well past the origin and MOBILE_DRIFT_DURATION_S outlasts the hold, so the
+ * animation never completes and the text is never parked. A phrase that sat
+ * still for the three seconds between its fade in and its fade out read as
+ * stale; this reads as a thought passing through.
+ */
+function mobileDrift(drift: number): DriftOffsets {
+  return {
+    enter: { x: drift, y: 0 },
+    rest: { x: -drift * 0.55, y: 0 },
+    exit: { x: -drift * 0.85, y: 0 },
+  };
 }
 function randomPhrase(exclude?: string) {
   let next = exclude;
@@ -82,15 +140,52 @@ function randomPhrase(exclude?: string) {
  * of one.
  */
 const FOLLOW_SPRING = { stiffness: 500, damping: 45, mass: 0.5 };
-const LABEL_TRANSITION_IN = {
+/**
+ * One stage of the label's animation. Opacity and position are always given
+ * their own timing, because the two tempos differ — most sharply on mobile,
+ * where the fade is a third of a second and the travel runs for five.
+ */
+type LabelTransition = Transition;
+
+const LABEL_TRANSITION_IN: LabelTransition = {
   opacity: { duration: 0.42, ease: "linear" as const },
   y: { duration: 0.42, ease: [0.32, 0.72, 0, 1] as const },
   x: { duration: 0.42, ease: [0.32, 0.72, 0, 1] as const },
 };
-const LABEL_TRANSITION_OUT = {
+const LABEL_TRANSITION_OUT: LabelTransition = {
   opacity: { duration: 0.26, ease: "linear" as const },
   y: { duration: 0.26, ease: [0.32, 0.72, 0, 1] as const },
   x: { duration: 0.26, ease: [0.32, 0.72, 0, 1] as const },
+};
+
+/**
+ * Mobile's separate tempo: quick in, a long slow crossing, quicker out.
+ *
+ * Opacity and position are deliberately on different clocks. The fade is short
+ * at both ends so the phrase reads as arriving and leaving decisively, while
+ * the lateral travel runs for longer than the phrase is even on screen — see
+ * mobileDrift. The x curve keeps a little velocity at its end (its second
+ * control point stops short of 1) rather than the site's standard ease, which
+ * lands at zero and would leave the text visibly parked.
+ */
+const MOBILE_DRIFT_DURATION_S = 5.2;
+const MOBILE_LABEL_TRANSITION_IN: LabelTransition = {
+  opacity: { duration: 0.34, ease: "linear" as const },
+  y: { duration: MOBILE_DRIFT_DURATION_S, ease: "linear" as const },
+  x: {
+    duration: MOBILE_DRIFT_DURATION_S,
+    ease: [0.2, 0.5, 0.4, 0.92] as const,
+  },
+};
+const MOBILE_LABEL_TRANSITION_OUT: LabelTransition = {
+  // Distinctly quicker than the entrance, so the rhythm is arrive, linger,
+  // gone — not a symmetric pulse. The travel is kept close to the fade's own
+  // length: `AnimatePresence mode="wait"` holds the next phrase until the
+  // slowest exiting property finishes, so a long x here would just be dead
+  // time with nothing on screen.
+  opacity: { duration: 0.22, ease: "linear" as const },
+  y: { duration: 0.34, ease: "linear" as const },
+  x: { duration: 0.34, ease: "linear" as const },
 };
 const INSTANT = { duration: 0 };
 
@@ -190,7 +285,9 @@ function PhraseFollower({
   targetX,
   targetY,
   phrase,
-  driftX,
+  offsets,
+  transitionIn,
+  transitionOut,
   reducedMotion,
   spanClassName,
   href,
@@ -204,7 +301,9 @@ function PhraseFollower({
   targetX: number;
   targetY: number;
   phrase: string | null;
-  driftX: number;
+  offsets: DriftOffsets;
+  transitionIn: LabelTransition;
+  transitionOut: LabelTransition;
   reducedMotion: boolean;
   spanClassName: string;
   href?: string;
@@ -255,18 +354,22 @@ function PhraseFollower({
     phrase === null ? null : (
       <motion.span
         key={phrase}
-        initial={reducedMotion ? false : { opacity: 0, y: 12, x: driftX }}
+        initial={
+          reducedMotion
+            ? false
+            : { opacity: 0, y: offsets.enter.y, x: offsets.enter.x }
+        }
         animate={{
           opacity: 1,
-          y: 0,
-          x: 0,
-          transition: reducedMotion ? INSTANT : LABEL_TRANSITION_IN,
+          y: reducedMotion ? 0 : offsets.rest.y,
+          x: reducedMotion ? 0 : offsets.rest.x,
+          transition: reducedMotion ? INSTANT : transitionIn,
         }}
         exit={{
           opacity: 0,
-          y: 6,
-          x: -driftX,
-          transition: reducedMotion ? INSTANT : LABEL_TRANSITION_OUT,
+          y: offsets.exit.y,
+          x: offsets.exit.x,
+          transition: reducedMotion ? INSTANT : transitionOut,
         }}
         className={spanClassName}
       >
@@ -377,8 +480,10 @@ const MOBILE_LABEL_GAP_MIN = 8;
 const MOBILE_LABEL_GAP_MAX = 26;
 /** Rough half-width of the longest phrase, so a spawn near the left or right
  * of the circle can't clip text off a narrow viewport — the label is centred
- * on its point, so it needs clearance on both sides. */
-const MOBILE_LABEL_SAFE_MARGIN_PX = 90;
+ * on its point, so it needs clearance on both sides. The lateral drift is
+ * added on top, since a phrase spends its entrance and exit offset by up to
+ * that much from the point it was clamped against. */
+const MOBILE_LABEL_SAFE_MARGIN_PX = 90 + MOBILE_DRIFT_AMPLITUDE_PX;
 /** Degrees of arc, centred on straight up, excluded from the spawn angle.
  * The tight gap leaves little headroom in that one direction: below has
  * HeroNav's computed clearance and the sides have open page, but directly
@@ -395,7 +500,21 @@ function randomLabelPoint(cluster: ClusterScreen, viewportWidth: number) {
     Math.random() * (MOBILE_LABEL_GAP_MAX - MOBILE_LABEL_GAP_MIN);
   const dist = cluster.radiusPx + gap;
 
-  const x = cluster.centerX + Math.cos(angle) * dist;
+  // The lateral drift is added to the *horizontal* component of the radius
+  // only, which is where a phrase can travel toward the cluster: one spawned
+  // beside it slides sideways by up to the drift amplitude, while one spawned
+  // above or below slides along the edge and needs no allowance. Scaling by
+  // cos(angle) gives full clearance on the flanks, none at the poles, and no
+  // extra distance from the graph anywhere it isn't wanted.
+  //
+  // This holds the drift where it was, no more. It does not stop a label
+  // overlapping the cluster, and is not trying to: the longest phrase is
+  // ~153px wide, centred on its point, against a ~214px cluster on a 390px
+  // screen — there is no room beside the graph for a box that size, so labels
+  // have always crossed the nodes and the faint palette is what carries it.
+  const x =
+    cluster.centerX +
+    Math.cos(angle) * (dist + MOBILE_DRIFT_AMPLITUDE_PX);
   const y = cluster.centerY + Math.sin(angle) * dist;
 
   return {
@@ -418,7 +537,9 @@ function randomLabelPoint(cluster: ClusterScreen, viewportWidth: number) {
 function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const [phrase, setPhrase] = useState(() => randomPhrase());
-  const [driftX, setDriftX] = useState(() => randomDrift());
+  const [driftX, setDriftX] = useState(() =>
+    randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
+  );
   const [point, setPoint] = useState(() =>
     randomLabelPoint(cluster, window.innerWidth),
   );
@@ -441,7 +562,7 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
       setPhrase((previous) => randomPhrase(previous));
       pending.current = {
         point: randomLabelPoint(clusterRef.current, window.innerWidth),
-        drift: randomDrift(),
+        drift: randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
       };
     }, MOBILE_CYCLE_MS);
     return () => clearInterval(id);
@@ -452,12 +573,16 @@ function MobileAffordanceLabel({ cluster }: { cluster: ClusterScreen }) {
     setDriftX(pending.current.drift);
   }, []);
 
+  useClusterTapNavigation(cluster);
+
   return (
     <PhraseFollower
       targetX={point.x}
       targetY={point.y}
       phrase={phrase}
-      driftX={driftX}
+      offsets={mobileDrift(driftX)}
+      transitionIn={MOBILE_LABEL_TRANSITION_IN}
+      transitionOut={MOBILE_LABEL_TRANSITION_OUT}
       reducedMotion={reducedMotion}
       href="/nebula"
       positionMode="instant"
@@ -480,75 +605,31 @@ const INTERACTIVE_SELECTOR =
   "a, button, input, textarea, select, summary, label, [role='button'], [contenteditable]";
 
 /**
- * The proximity reveal is a **sensor, not a surface**.
+ * Click or tap the cluster to open the graph.
  *
- * It used to be an `<a>` sized to the cluster's bounding radius sitting at
- * `z-20`, above `main`. That is 257–514px across on a desktop viewport, and
- * as a real element it swallowed every pointer event inside it: the headline
- * underneath could not be selected (measured: 21–24% of the `<h1>`'s box
- * covered between 1024px and 1440px wide), and a click meant for the page
- * navigated to /nebula instead. A region whose only job is to notice the
- * pointer has no business consuming it.
+ * Bound to the window and gated on the cluster's circle rather than attached
+ * to an element, because there is no element: the affordance stopped using one
+ * so it would stop swallowing clicks and text selection on the hero behind it
+ * (see DesktopAffordance below). This restores the navigation that element
+ * used to provide, without restoring what was wrong with it.
  *
- * So nothing here captures pointer events at all any more. Proximity is plain
- * geometry against the page-wide cursor useCursorPx already tracks, which
- * keeps 04-phase-1.md's requirement — a circular region sized off the
- * cluster's real on-screen radius — while leaving every pixel behind it
- * clickable, selectable and hoverable.
+ * Used by both tiers. On desktop it is one of two ways in, alongside the
+ * keyboard-reachable phrase label. On mobile and tablet it is effectively the
+ * only one: the label there is a ~150x20px line of text that moves to a new
+ * point every few seconds, which is not a tap target anyone should have to
+ * hit, and 04-phase-1.md asks for tap-to-open on every tier.
  *
- * The two things that element also provided are kept, separately:
- *
- * - **Clicking the cluster still navigates**, through a window-level handler
- *   gated on the same circle. It stands down for a genuine drag, an
- *   in-progress text selection, a modified click, and anything interactive
- *   under the pointer, so it adds a behaviour rather than taking one away.
- * - **Keyboard reach** is the phrase label itself (PhraseFollower's `href`),
- *   which is exactly the size of the rendered text. Tab reveals the phrase
- *   below the cluster; Enter follows it.
+ * It defers rather than competes — a drag past a few pixels (a scroll, or a
+ * text selection), a modified click, and anything genuinely interactive under
+ * the pointer all keep their own behaviour. A touch scroll never reaches it at
+ * all, since browsers only synthesise `click` for a tap.
  */
-function DesktopAffordance({
-  cluster,
-  onHoverChange,
-}: {
-  cluster: ClusterScreen;
-  onHoverChange: (active: boolean) => void;
-}) {
+function useClusterTapNavigation(cluster: ClusterScreen) {
   const router = useRouter();
-  const reducedMotion = useSceneStore((s) => s.reducedMotion);
-  const { cursor, inWindow } = useCursorPx();
-  const [focusActive, setFocusActive] = useState(false);
-  const [phrase, setPhrase] = useState(() => PHRASES[0]);
-  const [driftX, setDriftX] = useState(0);
-  // Locked when a reveal starts, not read live: pointerActive flips false the
-  // instant the pointer leaves, which is exactly when the exit begins — so
-  // reading it live would swing the follower to the focus-fallback point
-  // mid-fade instead of letting the phrase leave from where it was.
-  const [revealMode, setRevealMode] = useState<"pointer" | "focus">("pointer");
-  const wasShowing = useRef(false);
 
-  const pointerActive =
-    inWindow &&
-    Math.hypot(cursor.x - cluster.centerX, cursor.y - cluster.centerY) <=
-      cluster.radiusPx;
-
-  const showing = pointerActive || focusActive;
-
-  useEffect(() => {
-    onHoverChange(showing);
-  }, [showing, onHoverChange]);
-
-  useEffect(() => {
-    if (showing && !wasShowing.current) {
-      setPhrase((previous) => randomPhrase(previous));
-      setRevealMode(pointerActive ? "pointer" : "focus");
-      setDriftX(randomDrift());
-    }
-    wasShowing.current = showing;
-  }, [showing, pointerActive]);
-
-  // The cluster drifts with parallax every frame; the click listener only
-  // needs its value at the moment a click lands, not a reason to be torn down
-  // and rebound continuously.
+  // The cluster drifts with parallax every frame; the listener only needs its
+  // value at the moment a click lands, not a reason to be torn down and
+  // rebound continuously.
   const clusterRef = useRef(cluster);
   useEffect(() => {
     clusterRef.current = cluster;
@@ -595,6 +676,75 @@ function DesktopAffordance({
       window.removeEventListener("click", handleClick);
     };
   }, [router]);
+}
+
+/**
+ * The proximity reveal is a **sensor, not a surface**.
+ *
+ * It used to be an `<a>` sized to the cluster's bounding radius sitting at
+ * `z-20`, above `main`. That is 257–514px across on a desktop viewport, and
+ * as a real element it swallowed every pointer event inside it: the headline
+ * underneath could not be selected (measured: 21–24% of the `<h1>`'s box
+ * covered between 1024px and 1440px wide), and a click meant for the page
+ * navigated to /nebula instead. A region whose only job is to notice the
+ * pointer has no business consuming it.
+ *
+ * So nothing here captures pointer events at all any more. Proximity is plain
+ * geometry against the page-wide cursor useCursorPx already tracks, which
+ * keeps 04-phase-1.md's requirement — a circular region sized off the
+ * cluster's real on-screen radius — while leaving every pixel behind it
+ * clickable, selectable and hoverable.
+ *
+ * The two things that element also provided are kept, separately:
+ *
+ * - **Clicking the cluster still navigates**, through a window-level handler
+ *   gated on the same circle. It stands down for a genuine drag, an
+ *   in-progress text selection, a modified click, and anything interactive
+ *   under the pointer, so it adds a behaviour rather than taking one away.
+ * - **Keyboard reach** is the phrase label itself (PhraseFollower's `href`),
+ *   which is exactly the size of the rendered text. Tab reveals the phrase
+ *   below the cluster; Enter follows it.
+ */
+function DesktopAffordance({
+  cluster,
+  onHoverChange,
+}: {
+  cluster: ClusterScreen;
+  onHoverChange: (active: boolean) => void;
+}) {
+  const reducedMotion = useSceneStore((s) => s.reducedMotion);
+  const { cursor, inWindow } = useCursorPx();
+  const [focusActive, setFocusActive] = useState(false);
+  const [phrase, setPhrase] = useState(() => PHRASES[0]);
+  const [driftX, setDriftX] = useState(0);
+  // Locked when a reveal starts, not read live: pointerActive flips false the
+  // instant the pointer leaves, which is exactly when the exit begins — so
+  // reading it live would swing the follower to the focus-fallback point
+  // mid-fade instead of letting the phrase leave from where it was.
+  const [revealMode, setRevealMode] = useState<"pointer" | "focus">("pointer");
+  const wasShowing = useRef(false);
+
+  const pointerActive =
+    inWindow &&
+    Math.hypot(cursor.x - cluster.centerX, cursor.y - cluster.centerY) <=
+      cluster.radiusPx;
+
+  const showing = pointerActive || focusActive;
+
+  useEffect(() => {
+    onHoverChange(showing);
+  }, [showing, onHoverChange]);
+
+  useEffect(() => {
+    if (showing && !wasShowing.current) {
+      setPhrase((previous) => randomPhrase(previous));
+      setRevealMode(pointerActive ? "pointer" : "focus");
+      setDriftX(randomDrift());
+    }
+    wasShowing.current = showing;
+  }, [showing, pointerActive]);
+
+  useClusterTapNavigation(cluster);
 
   // A pointer cursor is the only signal left that the cluster is clickable,
   // now that no element is there to carry one. Set on <html>, where it costs
@@ -619,7 +769,9 @@ function DesktopAffordance({
       targetX={target.x}
       targetY={target.y}
       phrase={showing ? phrase : null}
-      driftX={driftX}
+      offsets={desktopDrift(driftX)}
+      transitionIn={LABEL_TRANSITION_IN}
+      transitionOut={LABEL_TRANSITION_OUT}
       reducedMotion={reducedMotion}
       href="/nebula"
       linkClassName="nebula-affordance-hit"
