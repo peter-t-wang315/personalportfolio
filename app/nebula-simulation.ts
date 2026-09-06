@@ -272,14 +272,34 @@ export function releaseAttraction() {
 
 let frozenAt: number | null = null;
 let lastClockTime = 0;
+/**
+ * Total time spent frozen, subtracted from the clock so the wander resumes
+ * from where it stopped rather than from where it *would* have been.
+ *
+ * Without it, `resumeSimulation` handed the noise functions the live clock
+ * again and every node teleported to the position it would have wandered to
+ * during the freeze — a 1.4-second jump after a fly-in, in a single frame.
+ */
+let frozenTotal = 0;
 
-/** Stops the simulation completely, holding position. 2.5's fly-in wires this. */
+/**
+ * Stops the simulation completely, holding position. 2.5's fly-in wires this.
+ *
+ * Idempotent, and that matters: the effect that calls it fires both on focus
+ * and on the flight ending, so a second call re-stamping the freeze point
+ * would advance the wander by exactly the flight's duration at the instant
+ * the camera came to rest. Measured, that was 29% of the frame's pixels
+ * changing in one frame, spread across the whole viewport, with the camera
+ * provably still — which reads as the whole graph flinching on arrival.
+ */
 export function freezeSimulation() {
-  frozenAt = lastClockTime;
+  if (frozenAt === null) frozenAt = lastClockTime;
 }
 
 /** Resumes advancing from wherever freezeSimulation left off. */
 export function resumeSimulation() {
+  if (frozenAt === null) return;
+  frozenTotal += lastClockTime - frozenAt;
   frozenAt = null;
 }
 
@@ -319,7 +339,7 @@ const _pull = new THREE.Vector3();
  */
 export function stepSimulation(clockTime: number, delta: number) {
   lastClockTime = clockTime;
-  const t = frozenAt ?? clockTime;
+  const t = (frozenAt ?? clockTime) - frozenTotal;
 
   for (const node of nodeList) {
     wanderOffset(node.id, t, offsets[node.id]);

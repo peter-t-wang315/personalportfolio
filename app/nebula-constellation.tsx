@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
+import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
@@ -177,25 +178,110 @@ const transmissionMaterial = new THREE.MeshPhysicalMaterial({
 });
 
 /**
- * The tier-dependent material branch, in place since 2.2 so this swap extended
- * the render path instead of retrofitting it.
+ * The focused node's real glass, cross-faded in over the fresnel shell rather
+ * than swapped for it.
  *
- * Transmission is desktop-only and focused-only, per 02-architecture.md's
- * Responsive tiers table — tablet and mobile stay on the fresnel shader
- * throughout, focused node included. It is also deliberately withheld until
- * the flight finishes: swapping materials mid-flight makes the arrival read as
- * a pop rather than a landing, and the extra render pass is exactly what a
- * moving camera can least afford.
+ * Transmission is desktop-only and focused-only per 02-architecture.md's
+ * Responsive tiers table — the tier branch 2.2 asked for lives here now — and
+ * it is still withheld until the flight lands, because the extra render pass
+ * is what a moving camera can least afford. What changed is the *arrival* of
+ * it: an instant swap at that moment changed 30% of the frame's pixels in one
+ * frame, measured, which is a pop at exactly the beat the landing is supposed
+ * to settle on.
+ *
+ * It cannot be cross-faded the obvious way. `opacity` needs `transparent`, and
+ * `transparent` on a transmissive material double-counts its blending and
+ * washes the glass out (see transmissionMaterial). But **thickness and
+ * attenuation are plain uniforms**, and a transmissive sphere with no
+ * thickness and no attenuation is clear: it passes the background through
+ * undistorted and untinted, so it is invisible apart from its specular rim.
+ * So the glass fades in by *becoming* glass — thickening and picking up its
+ * tint — while the fresnel shell fades out over it. Two draws for 240ms, one
+ * after.
  */
-function shellMaterial(
-  node: NodeGeometry,
-  tier: DeviceTier,
-  transmissiveNodeId: string | null,
-): THREE.Material {
-  if (tier === "desktop" && node.id === transmissiveNodeId) {
-    return transmissionMaterial;
-  }
-  return materialByNodeId[node.id];
+const GLASS_THICKNESS = 1.1;
+const GLASS_ATTENUATION = 1.4;
+/** Effectively infinite: light picks up no colour crossing the volume. */
+const GLASS_CLEAR_ATTENUATION = 1e4;
+/** 01-design-system.md's standard UI duration and easing. Not the 1400ms
+ * camera-flight duration — this is a material transition, not a flight. */
+const GLASS_FADE_MS = 240;
+const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
+/** Tucked just inside the shell so the two coincident spheres can't z-fight
+ * while both are drawn. */
+const GLASS_INSET = 0.995;
+
+/**
+ * Published for the main frame loop, which has to fade the focused node's own
+ * fresnel shell out by the same amount — the other half of the cross-fade.
+ * A module object rather than store state: it changes every frame of the fade
+ * and nothing outside this file reads it.
+ */
+const focusGlass = { fade: 0, nodeId: null as string | null };
+
+function FocusGlass({ tier }: { tier: DeviceTier }) {
+  const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
+  const focusSettled = useSceneStore((s) => s.focusSettled);
+  const [mountedNodeId, setMountedNodeId] = useState<string | null>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+  const progress = useRef(0);
+
+  const wanted =
+    tier === "desktop" && focusSettled && focusedNodeId !== null
+      ? focusedNodeId
+      : null;
+
+  useFrame((_state, delta) => {
+    const { reducedMotion } = useSceneStore.getState();
+    // Reduced motion gets the instant swap, deliberately: the same rule that
+    // makes flights cuts. There is no arrival for this to land on either.
+    const step = reducedMotion ? 1 : (delta * 1000) / GLASS_FADE_MS;
+    progress.current = THREE.MathUtils.clamp(
+      progress.current + (wanted ? step : -step),
+      0,
+      1,
+    );
+
+    if (wanted && wanted !== mountedNodeId) setMountedNodeId(wanted);
+    else if (!wanted && progress.current <= 0 && mountedNodeId !== null) {
+      setMountedNodeId(null);
+    }
+
+    const fade = easeStandard(progress.current);
+    focusGlass.fade = fade;
+    focusGlass.nodeId = mountedNodeId;
+
+    transmissionMaterial.thickness = GLASS_THICKNESS * fade;
+    transmissionMaterial.attenuationDistance = THREE.MathUtils.lerp(
+      GLASS_CLEAR_ATTENUATION,
+      GLASS_ATTENUATION,
+      fade,
+    );
+
+    // The simulation is frozen while focused, but it resumes the instant focus
+    // clears — and the glass is still fading out then, so it has to keep
+    // tracking rather than sit at the position the node has just left.
+    const mesh = meshRef.current;
+    if (mesh && mountedNodeId) {
+      const live = getLivePosition(mountedNodeId);
+      if (live) mesh.position.copy(live);
+    }
+  });
+
+  if (!mountedNodeId) return null;
+  const node = nodeGeometry[mountedNodeId];
+  if (!node) return null;
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={node.position}
+      scale={node.radius * GLASS_INSET}
+      geometry={sphereGeometry}
+      material={transmissionMaterial}
+      raycast={() => null}
+    />
+  );
 }
 
 /**
@@ -420,16 +506,6 @@ export function Constellation({
     else resumeSimulation();
   }, [focusedNodeId, flying]);
 
-  /**
-   * Transmission waits for the flight to land — see shellMaterial. Derived
-   * from the arrival the camera rig publishes, not from a timer of its own:
-   * a local copy of the flight duration is a second source of truth that can
-   * only ever drift from the first. Under reduced motion the rig reports the
-   * instant cut as settled immediately, so this needs no special case.
-   */
-  const focusSettled = useSceneStore((s) => s.focusSettled);
-  const transmissiveNodeId = focusSettled ? focusedNodeId : null;
-
   // Escape leaves the focused node. Bound to the window rather than to any
   // element because nothing here holds DOM focus — the thing the viewer is
   // "in" is a mesh, and there is no element for a keydown to bubble from.
@@ -514,8 +590,12 @@ export function Constellation({
 
       const material = materialByNodeId[node.id];
       const unrelated = related !== null && !related.has(node.id);
+      // The focused node's shell hands over to its glass rather than sitting
+      // behind it — the other half of FocusGlass's cross-fade.
+      const handover = node.id === focusGlass.nodeId ? 1 - focusGlass.fade : 1;
       const targetOpacity =
         ambient.current *
+        handover *
         (unrelated
           ? baseOpacity(node, tier) * UNRELATED_OPACITY_FACTOR
           : hovered && !focused
@@ -551,7 +631,7 @@ export function Constellation({
               position={node.position}
               scale={node.radius}
               geometry={sphereGeometry}
-              material={shellMaterial(node, tier, transmissiveNodeId)}
+              material={materialByNodeId[node.id]}
               onPointerOver={
                 interactive ? (e) => handlePointerOver(e, node.id) : undefined
               }
@@ -577,6 +657,7 @@ export function Constellation({
             </mesh>
           );
         })}
+      <FocusGlass tier={tier} />
       {interactive && <HoverLabel />}
     </group>
   );
