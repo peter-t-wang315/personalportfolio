@@ -66,11 +66,38 @@ framing the whole landing page is composed against. On focus the simulation free
 real transmission once the flight has landed. Escape and a close control both
 leave. Reduced motion makes flights instant cuts.
 
-Measured: scene change peaks mid-flight and goes still at ~1450ms; after
-arrival the frame-to-frame change is 0.4% of sampled pixels (the shells still
-breathe, which is correct — only the float simulation freezes); after exit it
-rises again, confirming a clean resume; under reduced motion the change is a
-single frame and then exactly zero.
+Measured, after the arrival flinch below was fixed — these supersede an
+earlier set taken while that bug was still present:
+
+- **Node fly-in:** frame-to-frame change decays 31% -> 25 -> 17 -> 9 -> 2.9 ->
+  0.78%, then holds at 0.3-0.85%. The shells still breathe at rest, which is
+  correct — only the float simulation freezes.
+- **Exit:** decays to 0.03% at 1648ms, then rises gently to 0.15% as the wander
+  restarts. A clean resume, with no jump at the hand-off.
+- **Reduced motion:** exactly one frame of change, then exactly 0.00% for every
+  frame after. Both directions.
+- **Landing arrival:** projected spread grows monotonically 69.8 -> 140px with
+  no frame from inside the graph; leaving returns it to 69.9px, steady from
+  1550ms.
+
+**The arrival flinch, and why it was not what it looked like.** A 30%-of-pixels
+single-frame change at the moment the fly-in landed looked like the transmission
+material swapping in. It was not: it reproduced identically at tablet width,
+where transmission is never used, and a per-frame camera trace showed the camera
+decelerating smoothly through it (steps of 0.067 down to 0.001, no
+discontinuity) with the changed pixels spread across the whole frame rather than
+localised. It was `freezeSimulation()` re-stamping `frozenAt` on a second call —
+the effect fires once on focus and again when the flight ends — which advanced
+the wander clock by exactly the flight's duration at the instant the camera came
+to rest. `resumeSimulation` had the mirror-image bug and now accumulates frozen
+time. **When a whole-frame change appears, check the camera before the
+materials.**
+
+**The transmission swap is cross-faded** (240ms, standard curve) even though it
+turned out not to be the pop. It cannot be done with opacity — `transparent` on
+a transmissive material double-counts its blending and washes the glass out — so
+the glass fades in by *becoming* glass: thickness and attenuation ramp from
+nothing, which is a clear sphere, while the fresnel shell fades out over it.
 
 **Two traps for 2.6.** First, effect ordering: the focus-flight effect fires on
 mount like any dependency-array effect, and StrictMode fires it twice in dev, so
@@ -102,6 +129,15 @@ The landing page as it now stands:
   constellation, and none of its arithmetic changed to make that work.
 - **Parallax** follows a finger on touch and is specified and implemented in
   pixels.
+
+**Cleared before 2.6, so they are not inherited:** the store's `mode` field and
+`isSimulationFrozen()` were both dead — never written, never read — and are
+gone. 02-architecture.md's State section records when `mode` should come back.
+
+**Known and deferred to 2.6:** leaving `/nebula` while a node is focused is
+still a cut rather than a flight. A departure from a focused pose would start
+the camera inside a shell that is about to shrink around it, and 2.6 owns that
+exit properly since it reverses the node's own arrival.
 
 Not yet started: **2.6** (interior panel and routing).
 

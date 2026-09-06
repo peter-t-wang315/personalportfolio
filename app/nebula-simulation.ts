@@ -303,10 +303,6 @@ export function resumeSimulation() {
   frozenAt = null;
 }
 
-export function isSimulationFrozen() {
-  return frozenAt !== null;
-}
-
 function wanderOffset(id: string, t: number, out: THREE.Vector3) {
   const p = wanderParams[id];
   const ramp = smoothstep(t / RAMP_SECONDS);

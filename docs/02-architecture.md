@@ -161,7 +161,6 @@ One zustand store. Context does not cross the R3F reconciler boundary reliably; 
 
 ```ts
 interface SceneState {
-  mode: 'distant' | 'constellation' | 'inside';
   focusedNodeId: string | null;
   hoveredNodeId: string | null;
   focusedNodeId: string | null;      // 2.5: the flown-to node
@@ -190,7 +189,9 @@ flight has landed. Anything that must wait for the arrival — 2.5's transmissio
 swap, 2.6's panel — gates on it rather than re-deriving the duration, which
 would be a second copy of the flight's timing free to drift from the real one.
 
-Route changes drive `mode`. Node clicks drive `focusedNodeId` **and** push a route via `router.push('/nebula/[slug]', { scroll: false })` so the URL always reflects the view.
+Node clicks drive `focusedNodeId` **and** push a route via `router.push('/nebula/[slug]', { scroll: false })` so the URL always reflects the view.
+
+This section used to say route changes drove a `mode: 'distant' | 'constellation' | 'inside'`. Nothing ever did, and the field was removed: the canvas takes the route as props and derives everything else from `focusedNodeId`, so `mode` could only have been a second copy of facts already held elsewhere. Add it back when something needs a state the URL cannot express — Phase 3's guided tour and ⌘K search are the candidates, since neither changes the route.
 
 ## Content pipeline
 

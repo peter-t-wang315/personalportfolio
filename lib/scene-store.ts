@@ -7,13 +7,15 @@ import { create } from "zustand";
  * from this. Context doesn't cross the R3F reconciler boundary reliably,
  * so this is the standard answer. See docs/02-architecture.md.
  *
- * `mode` tracks the constellation/inside states Phase 2 needs; Phase 1 never
- * leaves 'distant'.
+ * It used to carry a `mode: 'distant' | 'constellation' | 'inside'`, which
+ * nothing ever wrote and nothing ever read — the scene takes the route as
+ * props and derives the rest from `focusedNodeId`, so `mode` could only ever
+ * have been a second copy of facts already held elsewhere, free to go stale.
+ * Bring it back when something needs a state the route genuinely cannot
+ * express: Phase 3's guided tour and ⌘K search are the candidates, since
+ * neither changes the URL.
  */
-export type SceneMode = "distant" | "constellation" | "inside";
-
 interface SceneState {
-  mode: SceneMode;
   pointer: { x: number; y: number };
   reducedMotion: boolean;
   /** Step 2.4: the single hovered node, if any. One node hovered at a time. */
@@ -62,7 +64,6 @@ interface SceneState {
    * center — true only when the eased parallax offset happens to be zero.
    */
   clusterParallax: { x: number; y: number };
-  setMode: (mode: SceneMode) => void;
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
   setHoveredNodeId: (id: string | null) => void;
@@ -74,7 +75,6 @@ interface SceneState {
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
-  mode: "distant",
   pointer: { x: 0, y: 0 },
   reducedMotion: false,
   hoveredNodeId: null,
@@ -82,7 +82,6 @@ export const useSceneStore = create<SceneState>((set) => ({
   focusSettled: false,
   flying: false,
   clusterParallax: { x: 0, y: 0 },
-  setMode: (mode) => set({ mode }),
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
   setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
