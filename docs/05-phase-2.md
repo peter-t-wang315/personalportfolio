@@ -27,7 +27,9 @@ Also attracts: every node connected to the hovered one is pulled toward it for a
 
 ## Edges
 
-Per `03-content-model.md`. Runtime edges are `QuadraticBezierLine`, `--ink` at 40%, with an amber pulse traveling a ~4s loop. Shared-tech edges are a single batched `LineSegments`, `--ink-faint` at 20%, static.
+Per `03-content-model.md`. Runtime edges are `QuadraticBezierLine`, `--ink` at 52% and 1.9px wide, with an amber pulse traveling a ~4s loop. Shared-tech edges are a single batched `LineSegments`, `--ink-faint` at 45%, static.
+
+Those opacities started at 40% and 20% and measured too faint on a real screen — at 1440x900 only two or three runtime edges registered and the shared-tech layer was effectively invisible, worst in the far half where scene fog is already pulling everything toward paper. The original figures were picked against a still with no fog behind them. The ratio between the two is not preserved on purpose: `LineBasicMaterial.linewidth` is ignored by WebGL, so the batched hairlines can only be lifted by opacity while runtime edges can be lifted by width. The hierarchy the design depends on now lives in colour and width — a runtime edge sits ~110 luminance below paper against a hairline's ~35 — which is what 2.3's done-when is actually about.
 
 Undirected — no arrowheads.
 

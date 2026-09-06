@@ -44,12 +44,43 @@ import { getLivePosition } from "./nebula-simulation";
  * footprint, where 195px of graph still shows its edges perfectly well. Fading
  * on placement means they are already at zero by the time the unmount happens.
  */
+/**
+ * Edge weight. 05-phase-2.md specifies `--ink` at 40% and `--ink-faint` at
+ * 20%, which measured too faint to read on a real screen: at 1440x900 only two
+ * or three runtime edges registered at all and the shared-tech layer was
+ * essentially invisible, worst in the far half where scene fog is already
+ * pulling everything toward paper. The spec's numbers were chosen against a
+ * still with no fog behind them.
+ *
+ * Raised, and the opacity *ratio* between the two deliberately not preserved —
+ * 2.3's done-when is about the visible asymmetry, not about these two numbers:
+ * you must be able to tell at a glance which edges carry messages and which
+ * only mean "shares a technology".
+ *
+ * The asymmetry now rests on colour and width rather than on opacity, because
+ * width is available to one layer and not the other, and that is not a choice.
+ * Runtime edges are drei `QuadraticBezierLine`s — `Line2`, which honours
+ * `lineWidth` in pixels. The shared-tech batch is a plain `LineSegments`, whose
+ * `LineBasicMaterial.linewidth` WebGL ignores; those are one pixel, always. So
+ * lifting the hairlines out of invisibility means opacity or nothing, while
+ * runtime edges get width for free.
+ *
+ * Measured against `--paper`, the result keeps the hierarchy wide: a runtime
+ * edge sits ~110 luminance below paper, a hairline ~35, so runtime carries
+ * about three times the tonal contrast over about twice the width. Raising
+ * shared-tech to 45% does not bring it near competing.
+ */
 const RUNTIME_COLOR = palette.ink;
-const RUNTIME_OPACITY = 0.4;
+const RUNTIME_OPACITY = 0.52;
+const RUNTIME_WIDTH = 1.9;
 const PULSE_COLOR = palette.lamp;
 const PULSE_OPACITY = 0.95;
+/** Above RUNTIME_WIDTH by the same margin it used to clear the old base, so
+ * the travelling pulse still reads as riding on the line rather than as the
+ * line itself. */
+const PULSE_WIDTH = 2.6;
 const TECH_COLOR = palette.inkFaint;
-const TECH_OPACITY = 0.2;
+const TECH_OPACITY = 0.45;
 
 // Step 2.4 — hover brightens every edge connected to the hovered node. Tech
 // hairlines stay one batched draw call for the other ~100+, so their
@@ -236,7 +267,7 @@ function RuntimeEdgeLine({
         mid={geo.mid}
         end={geo.end}
         color={RUNTIME_COLOR}
-        lineWidth={1.4}
+        lineWidth={RUNTIME_WIDTH}
         transparent
         opacity={RUNTIME_OPACITY}
         fog
@@ -250,7 +281,7 @@ function RuntimeEdgeLine({
         mid={geo.mid}
         end={geo.end}
         color={PULSE_COLOR}
-        lineWidth={2}
+        lineWidth={PULSE_WIDTH}
         transparent
         opacity={PULSE_OPACITY}
         fog

@@ -157,7 +157,7 @@ Deploy a preview. This is the first version worth looking at on a phone.
 
 **Goal:** the graph is connected and the edge hierarchy is legible without a legend.
 
-Runtime edges as `QuadraticBezierLine`, `--ink` at 40%, amber `--lamp` pulse on a ~4s loop. Dev-time edges dashed with a slower pulse. Shared-tech edges as a single batched `LineSegments`, `--ink-faint` at 20%, static.
+Runtime edges as `QuadraticBezierLine`, `--ink` at 52% and 1.9px, amber `--lamp` pulse on a ~4s loop. Dev-time edges dashed with a slower pulse. Shared-tech edges as a single batched `LineSegments`, `--ink-faint` at 45%, static. Those were 40% and 20% and were raised after measuring — see 05-phase-2.md's Edges section for why, and for why the two no longer move together.
 
 **Done when:** you can tell at a glance which edges carry messages and which only mean "shares a technology," with no explanation. If the hairlines compete visually with the runtime edges, drop their opacity until they don't — that asymmetry is the entire point of the design.
 
