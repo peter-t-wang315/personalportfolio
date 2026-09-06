@@ -109,9 +109,29 @@ const DEVTIME_GAP_SIZE = 0.16;
 // How far the control point bulges outward from the constellation center,
 // as a fraction of the edge's straight-line length. Keeps arcs from
 // stacking directly on top of each other near the center.
-const ARC_BULGE = 0.18;
+/**
+ * Edges follow the surface of the shell rather than chording through it.
+ *
+ * The constellation is a hollow sphere (content/layout.ts) and its interior is
+ * meant to stay empty — that is the whole composition, and it is what makes
+ * flying inside worth doing. A straight edge between two nodes on a shell
+ * passes through that interior, and a fixed outward bulge cannot fix it: the
+ * push needed to reach the surface grows with the pair's angular separation,
+ * from almost nothing for neighbours to half the chord for antipodes, so one
+ * fraction is wrong nearly everywhere.
+ *
+ * Solved instead of tuned. For a quadratic Bezier the curve's own midpoint
+ * sits at `(a + 2·control + b) / 4`, so placing the control on the outward
+ * axis at `shell · (2 − cos(θ/2))` — where θ is the angle between the two
+ * nodes — puts that midpoint exactly on the shell. Neighbours get a control
+ * barely above the surface, antipodes get one at twice the radius, and every
+ * pair in between lands right. Away from the midpoint the curve stays within a
+ * percent or so of the surface for typical separations, dipping to ~0.9 of it
+ * only for near-antipodal pairs, where a single quadratic can't hold a
+ * half-circumference.
+ */
+const ANTIPODAL_EPSILON = 1e-3;
 
-const ORIGIN = new THREE.Vector3(0, 0, 0);
 
 interface EdgeGeometry {
   start: THREE.Vector3;
@@ -154,14 +174,23 @@ function computeCurveGeometry(edge: Edge, live: boolean): EdgeGeometry | null {
   if (!a || !b) return null;
 
   const straightMid = a.clone().add(b).multiplyScalar(0.5);
+  // The shell radius local to this pair — the nodes carry a little radial
+  // thickness, so this is not one global constant.
+  const shell = (a.length() + b.length()) / 2;
   const outward =
-    straightMid.distanceTo(ORIGIN) > 0.001
+    straightMid.length() > ANTIPODAL_EPSILON
       ? straightMid.clone().normalize()
-      : b.clone().sub(a).normalize();
-  const mid = straightMid.addScaledVector(
-    outward,
-    a.distanceTo(b) * ARC_BULGE,
+      : // Antipodal: every great circle through the pair is equally valid, so
+        // take any direction perpendicular to the axis joining them.
+        new THREE.Vector3()
+          .crossVectors(a, new THREE.Vector3(0, 1, 0))
+          .normalize();
+  const cosHalfAngle = THREE.MathUtils.clamp(
+    shell > 0 ? straightMid.length() / shell : 1,
+    -1,
+    1,
   );
+  const mid = outward.clone().multiplyScalar(shell * (2 - cosHalfAngle));
 
   const start = a.clone().addScaledVector(
     mid.clone().sub(a).normalize(),
@@ -297,21 +326,76 @@ function RuntimeEdgeLine({
  * Writes every edge's live (or seeded) endpoints into a flat xyz buffer,
  * two vertices per edge, and flags the attribute for re-upload.
  */
+/**
+ * How many straight pieces each shared-tech arc is drawn as. Enough that a
+ * hairline spanning a large angle reads as a curve on the surface rather than
+ * a polyline; still one `LineSegments` draw call for the whole population,
+ * which is what 02-architecture.md's performance budget asks for.
+ */
+const TECH_ARC_SEGMENTS = 10;
+
+const _arcA = new THREE.Vector3();
+const _arcB = new THREE.Vector3();
+const _arcP = new THREE.Vector3();
+
+/**
+ * Writes every shared-tech edge into the batch as an arc across the shell.
+ *
+ * These are the population that most needed it: there are over a hundred of
+ * them and they connect technologies to work anywhere on the sphere, so drawn
+ * straight they filled the hollow interior with a cage of chords — the exact
+ * thing the layout empties the middle to avoid. Spherical interpolation puts
+ * each one on the surface exactly (unlike the runtime edges' single Bezier,
+ * which only approximates it), and the endpoints' radii are interpolated along
+ * the way so an arc between nodes at slightly different depths doesn't step.
+ */
 function writeStraightEndpoints(
   edgeList: Edge[],
   attribute: THREE.BufferAttribute,
   live: boolean,
 ) {
   const array = attribute.array as Float32Array;
+  const stride = TECH_ARC_SEGMENTS * 6;
   edgeList.forEach((edge, i) => {
     const geo = computeStraightGeometry(edge, live);
     if (!geo) return;
-    array[i * 6] = geo.start.x;
-    array[i * 6 + 1] = geo.start.y;
-    array[i * 6 + 2] = geo.start.z;
-    array[i * 6 + 3] = geo.end.x;
-    array[i * 6 + 4] = geo.end.y;
-    array[i * 6 + 5] = geo.end.z;
+    _arcA.copy(geo.start);
+    _arcB.copy(geo.end);
+    const ra = _arcA.length();
+    const rb = _arcB.length();
+    const angle = _arcA.angleTo(_arcB);
+    const sin = Math.sin(angle);
+
+    for (let seg = 0; seg <= TECH_ARC_SEGMENTS; seg++) {
+      const t = seg / TECH_ARC_SEGMENTS;
+      if (sin < 1e-4) {
+        // Coincident or antipodal: no unique great circle, so fall back to the
+        // straight interpolation rather than dividing by ~zero.
+        _arcP.copy(_arcA).lerp(_arcB, t);
+      } else {
+        const wa = Math.sin((1 - t) * angle) / sin;
+        const wb = Math.sin(t * angle) / sin;
+        _arcP
+          .copy(_arcA)
+          .multiplyScalar(wa / (ra || 1))
+          .addScaledVector(_arcB, wb / (rb || 1))
+          .multiplyScalar(ra + (rb - ra) * t);
+      }
+      // LineSegments takes disjoint pairs, so every interior point is written
+      // twice: once ending the previous piece, once starting the next.
+      if (seg > 0) {
+        const tail = i * stride + (seg - 1) * 6 + 3;
+        array[tail] = _arcP.x;
+        array[tail + 1] = _arcP.y;
+        array[tail + 2] = _arcP.z;
+      }
+      if (seg < TECH_ARC_SEGMENTS) {
+        const head = i * stride + seg * 6;
+        array[head] = _arcP.x;
+        array[head + 1] = _arcP.y;
+        array[head + 2] = _arcP.z;
+      }
+    }
   });
   attribute.needsUpdate = true;
 }
@@ -326,7 +410,7 @@ function writeStraightEndpoints(
  */
 function createStraightBatchGeometry(edgeList: Edge[]) {
   const attribute = new THREE.BufferAttribute(
-    new Float32Array(edgeList.length * 6),
+    new Float32Array(edgeList.length * TECH_ARC_SEGMENTS * 6),
     3,
   );
   writeStraightEndpoints(edgeList, attribute, false);

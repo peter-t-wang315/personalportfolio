@@ -209,9 +209,11 @@ content/
   layout.ts       // computed 3D positions (deterministic, seeded)
 ```
 
-`layout.ts` runs a deterministic seeded layout at build time, not at runtime, and produces the **initial arrangement only**. Same seed, same starting positions, every load — use a Fibonacci sphere for cluster centroids, then a small local force relaxation within each cluster, seeded from a constant.
+`layout.ts` runs a deterministic seeded layout at build time, not at runtime, and produces the **initial arrangement only**. Same seed, same starting positions, every load. It places every node on **one hollow shell** — see `05-phase-2.md`'s Layout section, which is the authority on how and why.
 
 Never use `Math.random()` in layout. Use a seeded PRNG.
+
+**The shell is a constraint, not just a starting point.** The runtime simulation's wander, its pair springs and hover attraction are all free 3-D displacements, so `stepSimulation` rescales each node back to its own seeded radius after applying them. That turns every one of those into motion *across* the surface: nodes drift over the sphere, and a neighbour attracted to a node arcs around toward it instead of tunnelling through the interior. Without it the middle refills within seconds and the composition is gone.
 
 **Positions diverge after that, on purpose.** Once mounted, a runtime force simulation takes over: nodes float freely, held only by weak springs between runtime-edge pairs, so the constellation is never at rest reload-to-reload the way `layout.ts`'s output alone would be. This is a deliberate tradeoff — floating nodes read as alive in a way fixed idle-drift positions didn't — traded against the earlier "stable across reloads" goal, which no longer holds past first paint. The seeded layout still guarantees the composition that matters (SEL clusters in the front hemisphere, nothing overlapping at the default heading); only the fine position of each node past that point is allowed to vary. See `05-phase-2.md`'s Nodes section for the simulation's mechanics and freeze rule.
 

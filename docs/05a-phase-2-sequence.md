@@ -175,6 +175,22 @@ The landing page as it now stands:
 `isSimulationFrozen()` were both dead — never written, never read — and are
 gone. 02-architecture.md's State section records when `mode` should come back.
 
+**In progress, ahead of 2.7 — the globe.** The owner's direction: the nebula is
+a hollow sphere with everything on the surface and nothing hidden underneath,
+"like the clouds over a globe". Entering `/nebula` should fly *into* the middle
+and let you look around from inside; `/work/[slug]` keeps the outside view and
+rotates the relevant cluster to face the viewer. Nodes wander across the
+surface on their own clocks, gather on hover, and disperse on release.
+
+Landed so far: the layout and the edges. Still to do, in order — the camera
+destination (inside, and **offset from dead centre**: a 50° fov from the exact
+middle covers 8.1% of the sphere's solid angle, so with 45 nodes you would see
+about four at a time, with no size variation because everything on a shell is
+equidistant from the centre); the `/work/[slug]` rotate-to-top, which replaces
+05-phase-2.md's "gathering"; and a decision about mobile, where the tier table
+makes the 3D ambient behind a bottom sheet and being inside a globe you can
+only leave by dragging may not suit.
+
 Not yet started: **2.7** (cluster labels and edge detail). The owner has said
 what they want from it: hover an edge and see the projects and technologies it
 connects — "look at C# and see all that I've done". The tech panel already
@@ -207,7 +223,9 @@ Verify the seeded generator produces identical positions across reloads — relo
 
 **Done when:** nothing overlaps or occludes badly from the default heading, and the SEL clusters occupy the front hemisphere. Full legibility as distinct clusters depends on the edge hierarchy, not this static view — re-evaluate that at 2.3.
 
-**This is the highest-risk step.** If the graph doesn't look good as plain grey spheres, no material work will save it. Tune `CLUSTER_RADIUS`, `CLUSTER_SPREAD`, and `TECH_SHELL_RADIUS` here until the composition is right, before anything else is built on top.
+**This is the highest-risk step.** If the graph doesn't look good as plain grey spheres, no material work will save it. Tune `SHELL_RADIUS`, `SHELL_THICKNESS` and `CLUSTER_SPREAD` here until the composition is right, before anything else is built on top.
+
+**Revised after 2.6**, which is what that warning was for. The layout was a filled ball; it is now a hollow shell — see 05-phase-2.md's Layout section. Measured before and after: nodes inside r = 8 went from ten of forty-five to zero, tech mean radius from 9.2 to 16.0, and the bounding radius landed at 17.62 against the old 17.60, so the landing-page footprint (derived from it) and the tuned fog band both survived untouched.
 
 ---
 

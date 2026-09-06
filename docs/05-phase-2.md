@@ -6,10 +6,15 @@ Estimated 25–35 hours. Turns the background cluster into a real graph.
 
 Deterministic and seeded — this produces the initial arrangement only. Same seed, same starting positions, every load; the runtime force simulation (see Nodes below) then takes over and positions diverge from there. See `02-architecture.md`'s Content pipeline section for that tradeoff.
 
-1. Place cluster centroids on a Fibonacci sphere, radius ~14 units, ordered by `Cluster.order` so SEL work occupies the front hemisphere at the default camera heading.
-2. Within each cluster, place project nodes in a small local sphere (radius ~3), relaxed with a few iterations of force repulsion seeded from a constant.
-3. Technology nodes sit in a wider outer shell (radius ~20), positioned near the centroid of the projects that use them.
-4. Cache the result. Run once at build, not on mount.
+**The constellation is a hollow sphere.** Every node, project and technology alike, sits on one shell at ~16 units, give or take ~1.2 of radial thickness. Nothing is inside it. This is an information-design rule before it is a look: on a single surface nothing can hide behind anything else, so the graph has no bad angle — and it gives `/nebula` an interior worth flying into and `/work/[slug]` an exterior worth rotating.
+
+1. Place cluster centroids on a Fibonacci sphere at the shell radius, ordered by `Cluster.order` so SEL work occupies the front hemisphere at the default camera heading.
+2. Within each cluster, place project nodes as a **patch on the surface**: local offsets laid out in the tangent plane at the centroid, with only a fraction of the third component becoming radial thickness.
+3. Technology nodes sit on the **same** shell, biased toward the projects that use them. The bias decides a *direction*, never a radius — it is projected back onto the surface, so a technology shared across many clusters keeps its Fibonacci slot rather than collapsing to the middle.
+4. One relaxation pass over all 45 nodes together, re-projecting to the shell each iteration so the repulsion stays tangential. Per-cluster relaxation is not enough: on one surface a technology pulled toward a popular cluster lands on top of the projects that attracted it.
+5. Cache the result. Run once at build, not on mount.
+
+This replaced a filled ball, where technology nodes were placed as `shell · 0.3 + averageOfUsers · 0.7` and the average of positions spread over a sphere lands near its centre. Measured on that layout: tech averaged r = 9.2 against a nominal shell of 20, TypeScript sat at r = 1.8, and ten of forty-five nodes were inside r = 8 — the middle was full of exactly what a visitor most wants to see.
 
 ## Nodes
 
@@ -30,6 +35,8 @@ Also attracts: every node connected to the hovered one is pulled toward it for a
 Per `03-content-model.md`. Runtime edges are `QuadraticBezierLine`, `--ink` at 52% and 1.9px wide, with an amber pulse traveling a ~4s loop. Shared-tech edges are a single batched `LineSegments`, `--ink-faint` at 45%, static.
 
 Those opacities started at 40% and 20% and measured too faint on a real screen — at 1440x900 only two or three runtime edges registered and the shared-tech layer was effectively invisible, worst in the far half where scene fog is already pulling everything toward paper. The original figures were picked against a still with no fog behind them. The ratio between the two is not preserved on purpose: `LineBasicMaterial.linewidth` is ignored by WebGL, so the batched hairlines can only be lifted by opacity while runtime edges can be lifted by width. The hierarchy the design depends on now lives in colour and width — a runtime edge sits ~110 luminance below paper against a hairline's ~35 — which is what 2.3's done-when is actually about.
+
+**Edges follow the surface**, rather than chording through the hollow interior. Runtime and dev-time edges are quadratic Beziers whose control point is solved so the curve's midpoint lands exactly on the shell — `shell · (2 − cos(θ/2))` along the outward axis, where θ is the pair's angular separation. A fixed outward bulge cannot do this: the push needed grows from almost nothing for neighbours to half the chord for antipodes. The shared-tech batch is interpolated spherically into ten pieces per edge, which puts it on the surface exactly and still costs one draw call.
 
 Undirected — no arrowheads.
 

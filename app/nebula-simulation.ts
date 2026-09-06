@@ -33,7 +33,7 @@ import { makeRng } from "@/lib/seeded-random";
  */
 
 const SIM_SEED = 0x51a7e5;
-// World units, per-node range — small relative to CLUSTER_SPREAD (2.5,
+// World units, per-node range — small relative to CLUSTER_SPREAD (3.2,
 // content/layout.ts) so nothing wanders into a neighbour's slot, but wide
 // enough that different nodes visibly drift by different amounts.
 const WANDER_AMPLITUDE_MIN = 0.35;
@@ -389,11 +389,25 @@ export function stepSimulation(clockTime: number, delta: number) {
   for (const node of nodeList) {
     const home = node.position;
     const offset = offsets[node.id];
-    livePositions[node.id].set(
-      home[0] + offset.x,
-      home[1] + offset.y,
-      home[2] + offset.z,
-    );
+    const live = livePositions[node.id];
+    live.set(home[0] + offset.x, home[1] + offset.y, home[2] + offset.z);
+
+    // **Everything above moves nodes in three dimensions; this puts them back
+    // on the shell.** The constellation is a hollow sphere (content/layout.ts)
+    // and the wander, the pair springs and hover attraction are all free 3-D
+    // displacements, so left alone they would push nodes through the surface —
+    // outward, and worse, inward, refilling the empty middle the layout exists
+    // to create. Rescaling to the node's *own* seeded radius turns every one
+    // of those into motion across the surface instead: the wander becomes a
+    // drift over the sphere, and a neighbour attracted to a node arcs around
+    // toward it rather than tunnelling through the interior.
+    //
+    // Per-node radius rather than one shared constant, because the shell has
+    // deliberate thickness (SHELL_THICKNESS) and flattening that would cost
+    // the surface its depth under fog.
+    const radius = Math.hypot(home[0], home[1], home[2]);
+    const length = live.length();
+    if (length > 1e-6) live.multiplyScalar(radius / length);
   }
 }
 
