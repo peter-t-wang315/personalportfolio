@@ -37,10 +37,25 @@ interface SceneState {
    */
   focusSettled: boolean;
   /**
-   * The Phase 1 decorative cluster's current parallax offset, in world
-   * units — written every frame from nebula-canvas.tsx's Cluster component
-   * (imperative `getState().setClusterParallax(...)`, not a subscription;
-   * that component doesn't need to re-render off its own write). Exists so
+   * Is a programmatic camera flight running right now — the arrival into the
+   * constellation, the departure back out, or a focus approach?
+   *
+   * Written by the camera rig, the only thing that knows. Two things read it,
+   * and both would otherwise have to re-derive the flight's timing: the
+   * constellation freezes the float simulation while it is true (05-phase-2.md
+   * asks for that during *any* programmatic camera movement, not just focus),
+   * and it withholds hover and click while it is true, because a raycast
+   * against a scene whose placement is mid-interpolation resolves to a node
+   * the viewer never aimed at.
+   */
+  flying: boolean;
+  /**
+   * The constellation's current parallax offset, in world
+   * units — written every frame from nebula-canvas.tsx's
+   * ConstellationPlacement (imperative `getState().setClusterParallax(...)`,
+   * not a subscription; that component doesn't need to re-render off its own
+   * write), and only while the constellation is in its landing placement.
+   * Exists so
    * DOM overlays (nebula-affordance.tsx's hover region, hover label, and
    * idle pulse ring) can track the cluster's real, currently-rendered
    * on-screen position instead of assuming it always sits at viewport
@@ -54,6 +69,7 @@ interface SceneState {
   focusNode: (id: string) => void;
   clearFocus: () => void;
   setFocusSettled: (settled: boolean) => void;
+  setFlying: (flying: boolean) => void;
   setClusterParallax: (offset: { x: number; y: number }) => void;
 }
 
@@ -64,6 +80,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   hoveredNodeId: null,
   focusedNodeId: null,
   focusSettled: false,
+  flying: false,
   clusterParallax: { x: 0, y: 0 },
   setMode: (mode) => set({ mode }),
   setPointer: (pointer) => set({ pointer }),
@@ -76,5 +93,6 @@ export const useSceneStore = create<SceneState>((set) => ({
     set({ focusedNodeId, hoveredNodeId: null, focusSettled: false }),
   clearFocus: () => set({ focusedNodeId: null, focusSettled: false }),
   setFocusSettled: (focusSettled) => set({ focusSettled }),
+  setFlying: (flying) => set({ flying }),
   setClusterParallax: (clusterParallax) => set({ clusterParallax }),
 }));

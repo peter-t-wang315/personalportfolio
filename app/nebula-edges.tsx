@@ -11,6 +11,7 @@ import { edges, type Edge } from "@/content";
 import { palette } from "@/lib/palette";
 import { nodeGeometry } from "@/lib/node-geometry";
 import { useSceneStore } from "@/lib/scene-store";
+import { getPlacement } from "./nebula-placement";
 import { getLivePosition } from "./nebula-simulation";
 
 /**
@@ -29,6 +30,19 @@ import { getLivePosition } from "./nebula-simulation";
  * seeded (non-live) positions, computed once — wander is small enough
  * relative to edge length that re-deriving those every frame would only
  * introduce jitter into the pulse rhythm for no visible benefit.
+ */
+/**
+ * Every edge opacity below is multiplied by the constellation's placement
+ * (nebula-placement.ts), so the whole layer fades with the flight.
+ *
+ * 04-phase-1.md gives the landing cluster no edges, and unmounting them off
+ * `/nebula` is what keeps their geometry and pulse loop out of the landing
+ * page's bundle-critical path. But an unmount is a step change, and once the
+ * cluster and the constellation became the same object it landed somewhere
+ * visible: dropped on the route commit it popped with the graph still
+ * life-size, and held until the departure landed it popped at the landing
+ * footprint, where 195px of graph still shows its edges perfectly well. Fading
+ * on placement means they are already at zero by the time the unmount happens.
  */
 const RUNTIME_COLOR = palette.ink;
 const RUNTIME_OPACITY = 0.4;
@@ -165,6 +179,11 @@ function RuntimeEdgeLine({
   const geo = useMemo(() => computeCurveGeometry(edge, false), [edge]);
   const baseRef = useRef<QuadraticBezierLineRef>(null);
   const pulseRef = useRef<QuadraticBezierLineRef>(null);
+  // The hover level, kept separately from the material's own opacity so the
+  // placement fade can multiply it rather than be chased by the hover lerp —
+  // easing toward `target * fade` would still be a fifth of the way from zero
+  // when the departure landed and the edges unmounted.
+  const hoverLevel = useRef(RUNTIME_OPACITY);
 
   const dashSize = geo ? geo.length * PULSE_DASH_FRACTION : 0;
   const gapSize = geo ? geo.length - dashSize : 0;
@@ -180,14 +199,16 @@ function RuntimeEdgeLine({
     // Brightening runs regardless of reduced motion — hover still
     // highlights, it just snaps instead of easing (same idiom as the node
     // hover lerp).
+    const fade = getPlacement();
+    hoverLevel.current = THREE.MathUtils.lerp(
+      hoverLevel.current,
+      connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
+      reducedMotion ? 1 : HOVER_EASE,
+    );
     const baseMaterial = baseRef.current?.material;
-    if (baseMaterial) {
-      baseMaterial.opacity = THREE.MathUtils.lerp(
-        baseMaterial.opacity,
-        connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
-        reducedMotion ? 1 : HOVER_EASE,
-      );
-    }
+    if (baseMaterial) baseMaterial.opacity = hoverLevel.current * fade;
+    const pulseMaterialFade = pulseRef.current?.material;
+    if (pulseMaterialFade) pulseMaterialFade.opacity = PULSE_OPACITY * fade;
 
     if (reducedMotion) return;
 
@@ -302,6 +323,7 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
+    material.opacity = TECH_OPACITY * getPlacement();
     if (useSceneStore.getState().reducedMotion) return;
     writeStraightEndpoints(edgeList, attribute, true);
   });
@@ -351,6 +373,7 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
+    material.opacity = TECH_HIGHLIGHT_OPACITY * getPlacement();
     if (connected.length === 0 || useSceneStore.getState().reducedMotion) {
       return;
     }

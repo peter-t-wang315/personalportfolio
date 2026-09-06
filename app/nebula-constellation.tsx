@@ -7,6 +7,7 @@ import { Html } from "@react-three/drei";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
+import { DESKTOP_MIN_WIDTH_PX } from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
 import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
@@ -61,6 +62,28 @@ const BREATHE_SEED = 0xb4ea7e;
 // fraction rather than a flat value so the tech layer stays recessed relative
 // to projects instead of every node collapsing onto one grey.
 const UNRELATED_OPACITY_FACTOR = 0.25;
+
+/**
+ * Off `/`, the constellation is ambient rather than the subject and dims to
+ * ~35% — but as a *factor* on each node's own base opacity, not a flat value,
+ * so the tech layer stays recessed relative to projects instead of every node
+ * collapsing onto one grey. 0.35/PROJECT_OPACITY reproduces exactly the 0.35
+ * the decorative cluster faded to, which is what 04-phase-1.md specifies.
+ *
+ * Below the desktop tier it stands down entirely instead. Ambient only works
+ * if there is somewhere to be ambient *in*, and at those widths the content
+ * column is nearly the whole viewport, so it would sit squarely behind body
+ * prose: measured 55% of the disc under text on /about at 768x1024, 59% on
+ * /work at 360x640, with the nodes plainly legible through the paragraphs. No
+ * opacity that is still visible survives that, because the problem is texture
+ * behind reading text rather than how strong the texture is. Desktop is
+ * unaffected and was measured clean (0-4%) — the column is narrow relative to
+ * the viewport, which is the whole premise. `/` always keeps its graph: there
+ * it is the affordance, not decoration.
+ */
+const AMBIENT_OPACITY_FACTOR = 0.35 / PROJECT_OPACITY;
+/** Route-change easing for the ambient fade. */
+const AMBIENT_EASE = 0.06;
 
 const CORE_SCALE = 0.8;
 const CORE_OPACITY = 0.22;
@@ -333,11 +356,45 @@ function HoverLabel() {
   );
 }
 
-export function Constellation() {
+/**
+ * The constellation, on every route.
+ *
+ * `isNebula` and `isHome` are the route, not a scene mode: the same graph is
+ * the landing page's distant cluster, the ambient texture behind `/about`, and
+ * the thing you fly into. What changes between them is what it costs and what
+ * it responds to — off `/nebula` it draws no edges, raycasts nothing, and
+ * fades toward ambient — not which nodes exist. nebula-canvas.tsx's
+ * ConstellationPlacement owns where it sits and how big it is.
+ */
+export function Constellation({
+  isNebula,
+  isHome,
+}: {
+  isNebula: boolean;
+  isHome: boolean;
+}) {
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
+  const groupRef = useRef<THREE.Group>(null);
+  const ambient = useRef(isHome || isNebula ? 1 : 0);
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
   const clearFocus = useSceneStore((s) => s.clearFocus);
+  const flying = useSceneStore((s) => s.flying);
+
+  /**
+   * Hover and click are withheld off `/nebula` and for the duration of every
+   * flight. Off the route because the landing page's way in is the affordance's
+   * window-level handler over the whole cluster (nebula-affordance.tsx), and a
+   * node that swallowed the pointer first would take the click from it; during
+   * a flight because a raycast against a scene whose placement is still
+   * interpolating resolves to whatever node happens to be under the cursor at
+   * that instant, which is not the one the viewer aimed at.
+   *
+   * Omitting the handlers rather than ignoring them inside is the point: R3F
+   * only raycasts objects that have them, so this is also what keeps 45 meshes
+   * off the pointer path on every non-nebula route.
+   */
+  const interactive = isNebula && !flying;
 
   // Who stays lit: the focused node and whatever it actually talks to.
   const related = useMemo(() => {
@@ -351,11 +408,17 @@ export function Constellation() {
    * off a specific node's surface, and a node that drifts out from under it
    * ruins the framing; and the neighbours are dimmed by identity, which only
    * reads as a stable statement if they stop moving too.
+   *
+   * It holds still for any flight as well, which is what 05-phase-2.md
+   * actually asks for — "during any programmatic camera movement", not just
+   * focus. Reading the rig's own `flying` rather than re-deriving it from a
+   * duration keeps this one effect the single writer, so there is no ordering
+   * question between the freeze and the flight that caused it.
    */
   useEffect(() => {
-    if (focusedNodeId) freezeSimulation();
+    if (focusedNodeId || flying) freezeSimulation();
     else resumeSimulation();
-  }, [focusedNodeId]);
+  }, [focusedNodeId, flying]);
 
   /**
    * Transmission waits for the flight to land — see shellMaterial. Derived
@@ -384,7 +447,12 @@ export function Constellation() {
   // default it will toggle from. Tech opacity's tier-dimming is folded into
   // the per-frame hover loop below (baseOpacity reads `tier` directly), so
   // it doesn't need its own effect.
-  const showTech = tier !== "mobile";
+  // Off /nebula this is a texture rather than a graph, and the tier rule is
+  // about keeping the graph legible on a small screen — so the whole
+  // population is drawn there. A phone's landing cluster would otherwise be
+  // 20 nodes where every other device sees 45, which reads as sparse rather
+  // than as restrained.
+  const showTech = !isNebula || tier !== "mobile";
 
   useFrame((state, delta) => {
     const { reducedMotion, hoveredNodeId, focusedNodeId: focused } =
@@ -393,6 +461,26 @@ export function Constellation() {
     // hover still highlights and scales, it just doesn't animate into place
     // (same idiom the Phase 1 cluster uses for its own opacity/scale lerp).
     const ease = reducedMotion ? 1 : HOVER_EASE;
+
+    // Ambient dimming off `/` (see AMBIENT_OPACITY_FACTOR), eased across route
+    // changes rather than switched. Applied as a multiplier on whatever each
+    // node's opacity would otherwise be, below, so hover and focus keep their
+    // relationships intact underneath it.
+    ambient.current = THREE.MathUtils.lerp(
+      ambient.current,
+      isNebula || isHome
+        ? 1
+        : state.size.width >= DESKTOP_MIN_WIDTH_PX
+          ? AMBIENT_OPACITY_FACTOR
+          : 0,
+      reducedMotion ? 1 : AMBIENT_EASE,
+    );
+    // Once faded out, stop drawing it: 45 transparent spheres a phone can't
+    // see are 45 draw calls it doesn't need. A threshold rather than equality
+    // because the fade is eased, so it fades and then goes quiet.
+    if (groupRef.current) {
+      groupRef.current.visible = ambient.current > 0.01;
+    }
 
     // Stop advancing the clock and the breathing displacement freezes in
     // place. Skipping stepSimulation the same way leaves every node at its
@@ -426,11 +514,13 @@ export function Constellation() {
 
       const material = materialByNodeId[node.id];
       const unrelated = related !== null && !related.has(node.id);
-      const targetOpacity = unrelated
-        ? baseOpacity(node, tier) * UNRELATED_OPACITY_FACTOR
-        : hovered && !focused
-          ? HOVER_OPACITY
-          : baseOpacity(node, tier);
+      const targetOpacity =
+        ambient.current *
+        (unrelated
+          ? baseOpacity(node, tier) * UNRELATED_OPACITY_FACTOR
+          : hovered && !focused
+            ? HOVER_OPACITY
+            : baseOpacity(node, tier));
       material.uniforms.opacity.value = THREE.MathUtils.lerp(
         material.uniforms.opacity.value,
         targetOpacity,
@@ -439,6 +529,75 @@ export function Constellation() {
     }
   });
 
+  return (
+    <group ref={groupRef}>
+      {/* Edges are the graph's information layer, and 04-phase-1.md is
+          explicit that the landing cluster has none. Unmounting rather than
+          hiding them also keeps their line geometry and pulse loop off every
+          non-nebula route, which is where the LCP budget is.
+          They outlast the route by one flight on the way out: dropping them on
+          the commit put a visible pop at the head of the departure, with the
+          graph still life-size. Kept until it lands, they go while it is a
+          cluster of hairlines too small to see them leave. */}
+      {(isNebula || flying) && <Edges showTech={showTech} />}
+      {nodeList.map((node) => {
+          if (node.kind === "tech" && !showTech) return null;
+          return (
+            <mesh
+              key={node.id}
+              ref={(el) => {
+                meshRefs.current[node.id] = el;
+              }}
+              position={node.position}
+              scale={node.radius}
+              geometry={sphereGeometry}
+              material={shellMaterial(node, tier, transmissiveNodeId)}
+              onPointerOver={
+                interactive ? (e) => handlePointerOver(e, node.id) : undefined
+              }
+              onPointerOut={
+                interactive ? (e) => handlePointerOut(e, node.id) : undefined
+              }
+              onClick={
+                interactive
+                  ? (e) => {
+                      e.stopPropagation();
+                      useSceneStore.getState().focusNode(node.id);
+                    }
+                  : undefined
+              }
+            >
+              {node.category === "professional" && (
+                <mesh
+                  scale={CORE_SCALE}
+                  geometry={sphereGeometry}
+                  material={coreMaterial}
+                />
+              )}
+            </mesh>
+          );
+        })}
+      {interactive && <HoverLabel />}
+    </group>
+  );
+}
+
+/**
+ * Scene-level environment, rendered outside the placement group that scales
+ * the constellation down for the landing page (nebula-canvas.tsx).
+ *
+ * It has to be outside it for two unrelated reasons. `attach="fog"` writes to
+ * its parent's `fog` property, and a group has no such property that anything
+ * reads — inside the group the fog silently stops existing. And a light's
+ * position is in its parent's space, so inside the group both lights would be
+ * scaled and translated along with the flight.
+ *
+ * Fog is also why the landing page looks unchanged by all of this: at the
+ * landing placement the whole graph sits 19.6-26.4 units from the camera,
+ * entirely in front of FOG_NEAR, so no fog applies. It engages over the course
+ * of the arrival as the constellation grows into its real depth.
+ */
+export function SceneEnvironment() {
   return (
     <>
       <fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />
@@ -451,39 +610,6 @@ export function Constellation() {
       */}
       <ambientLight intensity={1.6} />
       <directionalLight position={[4, 8, 6]} intensity={1.1} />
-      <group>
-        <Edges showTech={showTech} />
-        {nodeList.map((node) => {
-          if (node.kind === "tech" && !showTech) return null;
-          return (
-            <mesh
-              key={node.id}
-              ref={(el) => {
-                meshRefs.current[node.id] = el;
-              }}
-              position={node.position}
-              scale={node.radius}
-              geometry={sphereGeometry}
-              material={shellMaterial(node, tier, transmissiveNodeId)}
-              onPointerOver={(e) => handlePointerOver(e, node.id)}
-              onPointerOut={(e) => handlePointerOut(e, node.id)}
-              onClick={(e) => {
-                e.stopPropagation();
-                useSceneStore.getState().focusNode(node.id);
-              }}
-            >
-              {node.category === "professional" && (
-                <mesh
-                  scale={CORE_SCALE}
-                  geometry={sphereGeometry}
-                  material={coreMaterial}
-                />
-              )}
-            </mesh>
-          );
-        })}
-        <HoverLabel />
-      </group>
     </>
   );
 }

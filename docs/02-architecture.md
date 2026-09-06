@@ -28,11 +28,53 @@ app/layout.tsx
 
 The canvas never unmounts. Routes change the DOM above it and push a camera target into the store; the scene reacts.
 
-This is painful to retrofit. Build it this way from Phase 1, even though Phase 1 only renders a static drifting cluster.
+This is painful to retrofit. Build it this way from Phase 1, even though Phase 1 only renders the graph small, far off, and inert.
 
-**The arrival flight is what that decision buys, and it is built (2.5).** Entering `/nebula` starts the camera outside the constellation on its resting heading and closes to the framing pose over the standard 1400ms, widening the FOV from the landing page's 45 to the constellation's 50 so the two framings meet rather than snap. `app/nebula-canvas.tsx`'s `NebulaCameraRig` owns it; `CameraRig` deliberately does not touch the camera on `/nebula`, because two rigs writing it on the same commit is a race the flight loses.
+**One constellation, on every route.** The canvas persisting is necessary but
+not sufficient: the first version of 2.5 kept a separate 40-sphere decorative
+cluster for the Phase 1 routes and swapped it for the real graph on the route
+change, so the object the visitor clicked was destroyed and a different object
+appeared 64 units and 94 degrees away. The flight that followed was a short
+move from wherever that cut had landed, and the persistent canvas was
+preserving a WebGL context and nothing else.
 
-How far out it starts is bounded by the fog, not by taste: fog goes fully opaque at `FOG_FAR`, so starting beyond that opens the flight on a blank screen for a quarter-second and fades in late. It starts inside the fog instead, near side legible from the first frame, far side still hidden.
+So `app/nebula-constellation.tsx` draws the same graph everywhere, inside
+`ConstellationPlacement`, whose transform is the only difference between the
+routes: shrunk to the landing footprint at `CLUSTER_DEPTH` off `/nebula`,
+identity on it. The landing scale is derived, not chosen —
+`CLUSTER_BOUNDING_RADIUS / CONSTELLATION_BOUNDING_RADIUS`, where the second is
+**measured off the real computed layout** (17.6, not the nominal 20-unit tech
+shell) — so what is drawn projects to exactly the pixels the Landing cluster
+placement section below has always described, and every DOM overlay measured
+against those constants stays correct without knowing the geometry beneath it
+changed.
+
+**The arrival flight is what that decision buys.** It starts at the landing
+page's own camera pose, looking at the same cluster the visitor just clicked,
+and closes to the framing pose over the standard 1400ms while the placement
+grows to life-size around it, widening the FOV from 45 to 50 so the two
+framings meet rather than snap. Leaving plays the same flight in reverse.
+
+Two properties of that flight are load-bearing:
+
+- **The placement is state the camera rig owns, not a function of the route**
+  (`app/nebula-placement.ts`). Derived from the route it flipped to life-size on
+  the commit that changed the route, while the camera stayed at the landing pose
+  until the effect starting the flight ran — and the landing pose is *inside* a
+  life-size constellation, so every navigation slow enough to put a frame
+  between commit and effect painted the graph from within it first.
+- **The path is an orbit interpolation, not a straight line** (`orbitLerpPose`).
+  A straight line between two poses 9 and 41 units from their targets, 94
+  degrees apart, passes closer to the subject than it started; measured, the
+  camera's distance ran 23 -> 20 -> 44.5 and the approach read as a lurch
+  inward. Slerping the direction and lerping the distance makes it monotonic.
+
+There is now exactly **one** camera rig, mounted on every route. There used to
+be two, each commented to warn the other off `/nebula`, because two rigs writing
+the camera on one commit is a race a flight loses. One rig cannot race itself,
+and it is also the only arrangement in which leaving `/nebula` can be a flight
+rather than a cut — the rig that has to drive it is no longer the one that
+unmounts on the way out.
 
 Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholder that paints immediately. `three` + `drei` is a heavy bundle and LCP will suffer otherwise.
 
@@ -63,6 +105,12 @@ not, and a centred cluster lands inside the column. Measured before the fix,
 with hero text covering 43% of the cluster at 1024x768 and 22% at 1100x768 —
 the opposite of what 04-phase-1.md asks for.
 
+The cluster in question is the constellation itself under
+`ConstellationPlacement`'s landing transform, so these are the numbers that
+transform is built from — but the arithmetic below predates that and is
+unchanged by it, which is the point: the landing scale is chosen so the
+projection matches.
+
 So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
 
 - **Horizontally**, the cluster's left edge is placed just past the text
@@ -86,6 +134,12 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
 same functions, so the rendered cluster and every DOM overlay measured against
 it (hover region, pulse ring, phrase label) cannot drift apart.
 
+Parallax is computed only while the constellation is *in* that landing
+placement. During a flight it is held at its last value and carried out
+continuously by the placement interpolation, rather than being animated away
+separately — and on `/nebula`, where the pointer moves constantly during a drag,
+it stops writing to the store for overlays that aren't mounted.
+
 ## State
 
 One zustand store. Context does not cross the R3F reconciler boundary reliably; this is the standard answer and it matters here because the DOM overlay and the scene talk constantly.
@@ -97,6 +151,7 @@ interface SceneState {
   hoveredNodeId: string | null;
   focusedNodeId: string | null;      // 2.5: the flown-to node
   focusSettled: boolean;             // has the approach flight landed
+  flying: boolean;                   // is any programmatic flight running
   hoveredEdgeId: string | null;
   tourActive: boolean;
   tourIndex: number;
@@ -108,6 +163,12 @@ interface SceneState {
   setMode(m: SceneState['mode']): void;
 }
 ```
+
+`flying` is written by the same rig and read by the constellation, which
+freezes the float simulation while it is true (05-phase-2.md asks for that
+during *any* programmatic camera movement) and withholds hover and click, since
+a raycast against a scene whose placement is mid-interpolation resolves to a
+node the visitor never aimed at.
 
 `focusSettled` is written by the camera rig, the only thing that knows when a
 flight has landed. Anything that must wait for the arrival — 2.5's transmission

@@ -2,40 +2,53 @@
 
 ## Session status (update each session)
 
-> ### TEMPORARY — hand-off note, delete once read
->
-> Written at the end of the session of 2026-09-05. It records what happened
-> rather than what the code is; once you have read it and the summary below
-> looks right, **delete this blockquote**. The rest of this section is the
-> permanent status.
->
-> That session did a long run on the **Phase 1 landing page** and then built
-> **2.5**. Three things are worth knowing that the code does not say:
->
-> 1. **Two tilt-reactive behaviours were built and then deleted** — a phrase
->    nudge and a shader sheen driven by `deviceorientation`. They were not a
->    mistake and they were not a violation: neither moved the scene, so
->    01-design-system.md's prohibition on device-orientation *parallax* was
->    never in play. They went because they were the one piece of the work that
->    could not be verified without real hardware, and the owner did not want
->    the sensor. **Do not rediscover the idea as new.** All movement on touch
->    comes from the drag instead.
-> 2. **Verification in that session was headless Chromium**, driven with real
->    events and real touch gestures but no phone. The owner has been testing on
->    a real device in between and reports it good. Anything sensor- or
->    hardware-specific still deserves their eyes, not mine.
-> 3. **The landing page has never been deployed.** The owner runs `npx vercel`
->    themselves and knows.
-
 Last completed: **2.5** (fly-in + focus state), and the **Phase 1 landing
 page**. Committed and stable on `nebulustest`.
 
-**2.5 as built — two flights.** Entering `/nebula` from the landing page flies
-the camera in from outside the constellation to its framing pose, widening FOV
-45 -> 50 on the way. That is the flight the persistent canvas exists for; 2.1
-deferred it to 2.5 and 05a's step text only described the node half, so it was
-nearly missed. How far out it starts is bounded by `FOG_FAR`: start beyond the
-fog plane and the flight opens on a blank screen.
+**Two behaviours were built and deleted in the landing-page work, deliberately.**
+A phrase nudge and a shader sheen driven by `deviceorientation`. They were not a
+mistake and not a violation — neither moved the scene, so 01-design-system.md's
+prohibition on device-orientation *parallax* was never in play. They went
+because they were the one piece that could not be verified without real
+hardware, and the owner did not want the sensor. **Do not rediscover the idea as
+new.** All movement on touch comes from the drag instead. Anything else
+sensor- or hardware-specific deserves the owner's eyes on a real device, not an
+agent's headless browser.
+
+**2.5's arrival was rebuilt after it shipped.** As first built, the landing page
+drew a separate 40-sphere decorative cluster and `/nebula` swapped it for the
+real graph on the route change, so clicking the cluster destroyed the thing you
+clicked, cut the camera 64 units and 94 degrees to a synthesised pose outside
+the constellation, and flew 18.5 units from there — a cut three and a half times
+longer than the flight after it. The persistent canvas was buying nothing.
+
+There is now one constellation on every route, under a placement transform, and
+the arrival starts at the landing page's own camera pose. 02-architecture.md's
+persistent-canvas section is the authority on the shape of it; three things it
+records are worth knowing before touching this again:
+
+- **The placement belongs to the camera rig, not the route.** Derived from the
+  route, it went life-size on the commit while the camera was still at the
+  landing pose — which sits *inside* a life-size constellation. Every navigation
+  slow enough to put a frame between commit and effect painted the graph from
+  the inside first. Captured at 900x600 under software GL.
+- **There is one camera rig now**, mounted everywhere, because leaving
+  `/nebula` has to be a flight too and the rig that drives it can't be the one
+  that unmounts on the way out.
+- **The arrival path is an orbit interpolation.** A straight line between the
+  two poses passes closer to the subject than it started.
+
+Measured after the rebuild, at 900x600: entering, the constellation's projected
+spread grows monotonically from 69.8px to 140px with no frame from inside the
+graph; leaving, it shrinks back to 69.9px and is dead steady from 1550ms, with
+no step in the pixel count where the edge layer unmounts. Reduced motion is an
+instant cut in both directions, verified at 120ms after the click. Focus,
+transmission swap, and Escape all still behave as below.
+
+**A residual worth not re-investigating:** measuring the landing page by pixel
+mask picks up the affordance's idle pulse ring, a DOM element, which contracts
+and fades on a several-second loop. It looks exactly like the constellation
+still shrinking for a second after the flight lands. It isn't.
 
 Clicking a node flies the camera along the vector from the
 constellation's centre through that node, stopping outside its surface and
@@ -45,7 +58,10 @@ by hand rather than by camera-controls' `enableTransition`, because that
 smooths exponentially with no fixed duration and the spec asks for a specific
 curve over a specific time. The dolly clamp lifts for the flight; with it live,
 camera-controls drags the camera back out mid-flight and the arrival never
-lands. On focus the simulation freezes (2.3a's hook), unrelated nodes drop to
+lands. It is off on the Phase 1 routes too, now that `CameraControls` is mounted
+on all of them: the landing pose sits 9 units from its target, inside
+`DOLLY_MIN_DISTANCE`, so a live clamp would quietly pull the camera out of the
+framing the whole landing page is composed against. On focus the simulation freezes (2.3a's hook), unrelated nodes drop to
 25% of their own base opacity, and on desktop only the focused node swaps to
 real transmission once the flight has landed. Escape and a close control both
 leave. Reduced motion makes flights instant cuts.
@@ -82,7 +98,8 @@ The landing page as it now stands:
   column when centring would bury it, drops below the text on narrow
   viewports, and is not drawn at all off `/` below the desktop tier, where it
   would sit behind body prose. 02-architecture.md's Landing cluster placement
-  section is the authority.
+  section is the authority. All of it now applies as a transform on the real
+  constellation, and none of its arithmetic changed to make that work.
 - **Parallax** follows a finger on touch and is specified and implemented in
   pixels.
 
@@ -180,7 +197,10 @@ Escape and a close control both return to the constellation.
 
 **Done when:** the flight feels weighted rather than snappy or floaty, the simulation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
 
-**Landed**, both flights. See the session status block above for how, and for the traps in the transmissive material and in effect ordering.
+**Landed**, both flights — the node fly-in first, the landing-page arrival
+initially in a form that only looked like one. See the session status block
+above for the rebuild, and for the traps in the transmissive material and in
+effect ordering.
 
 ---
 

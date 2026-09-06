@@ -81,3 +81,63 @@ export function lerpPose(from: CameraPose, to: CameraPose, t: number): CameraPos
     target: from.target.clone().lerp(to.target, t),
   };
 }
+
+/** Scratch vectors for orbitLerpPose — it runs every frame of a flight. */
+const _fromDir = new THREE.Vector3();
+const _toDir = new THREE.Vector3();
+const _axis = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+
+/**
+ * Interpolation for a flight that crosses a large distance **and** a large
+ * heading change — the arrival from the landing page and its reverse.
+ *
+ * `lerpPose` walks the camera along a straight line, which is right for a
+ * focus hop (a short move that barely changes heading) and wrong here. The
+ * landing pose sits 9 units from its target and the constellation's resting
+ * pose sits 41 units from its, on a heading 94 degrees away; a straight line
+ * between them passes closer to the subject at t≈0.1 than it started, so the
+ * approach reads as a lurch inward before it pulls back out. Measured, the
+ * camera's distance from the constellation's centre went 23 -> 20 -> 44.5.
+ *
+ * Interpolating the orbit instead — slerp the direction, lerp the distance,
+ * both about the (also interpolating) target — makes that distance
+ * monotonic by construction, so the subject's apparent size only ever grows.
+ * Same endpoints, same duration, same easing: only the path between them
+ * differs.
+ */
+export function orbitLerpPose(
+  from: CameraPose,
+  to: CameraPose,
+  t: number,
+): CameraPose {
+  const target = from.target.clone().lerp(to.target, t);
+
+  _fromDir.copy(from.position).sub(from.target);
+  _toDir.copy(to.position).sub(to.target);
+  const distance = THREE.MathUtils.lerp(_fromDir.length(), _toDir.length(), t);
+  _fromDir.normalize();
+  _toDir.normalize();
+
+  // Rotate one direction toward the other about their common perpendicular.
+  // Parallel directions have no such axis to find, and a normalised cross
+  // product of two parallel vectors is NaN rather than zero, so that case
+  // takes the straight lerp it degenerates to anyway.
+  _axis.crossVectors(_fromDir, _toDir);
+  const direction =
+    _axis.lengthSq() < 1e-12
+      ? _fromDir.clone()
+      : _fromDir
+          .clone()
+          .applyQuaternion(
+            _quat.setFromAxisAngle(
+              _axis.normalize(),
+              _fromDir.angleTo(_toDir) * t,
+            ),
+          );
+
+  return {
+    position: target.clone().addScaledVector(direction, distance),
+    target,
+  };
+}

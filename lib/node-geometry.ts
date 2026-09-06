@@ -51,3 +51,21 @@ export const nodeGeometry: Record<string, NodeGeometry> = (() => {
 })();
 
 export const nodeList = Object.values(nodeGeometry);
+
+/**
+ * Radius of the sphere that contains the whole constellation, node surfaces
+ * included — **measured off the real computed layout**, not derived from
+ * `layout.ts`'s CLUSTER_RADIUS/TECH_SHELL_RADIUS inputs. Those are targets the
+ * relaxation pass and the "tech sits near the projects that use it" rule both
+ * pull away from: the nominal 20-unit tech shell actually lands at 17.6, and
+ * assuming 20 would scale the constellation 14% too small everywhere this is
+ * used.
+ *
+ * The landing page's cluster footprint is defined against this (see
+ * nebula-canvas.tsx's LANDING_SCALE), so it has to track the layout rather
+ * than an intention about the layout.
+ */
+export const CONSTELLATION_BOUNDING_RADIUS = nodeList.reduce(
+  (max, node) => Math.max(max, Math.hypot(...node.position) + node.radius),
+  0,
+);
