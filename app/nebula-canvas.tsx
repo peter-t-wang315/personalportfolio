@@ -3,9 +3,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
+import { nodeIdForPathname, routeForNode } from "@/lib/nebula-routes";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_BOUNDING_RADIUS,
@@ -356,9 +357,21 @@ function ConstellationPlacement({
  * interpolation: sample the easing, lerp the pose, push it in with transitions
  * off.
  */
-function CameraRig({ isNebula }: { isNebula: boolean }) {
+function CameraRig({
+  isNebula,
+  routeFocusId,
+}: {
+  isNebula: boolean;
+  /**
+   * The node the URL names, or null for the bare graph. **Flights key on the
+   * route, not on the store's focusedNodeId**, because the URL is the source
+   * of truth for focus (02-architecture.md) and the store is synced *from* it
+   * a beat later — keying on the store would make a cold entry look like a
+   * focus change and fly to a node the camera is already parked at.
+   */
+  routeFocusId: string | null;
+}) {
   const controlsRef = useRef<CameraControlsImpl>(null);
-  const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const flying = useSceneStore((s) => s.flying);
 
@@ -407,6 +420,7 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
    * of restarting the flight the first one began.
    */
   const lastRoute = useRef<boolean | undefined>(undefined);
+  const lastFocus = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
@@ -417,6 +431,20 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
     const { reducedMotion, focusedNodeId } = useSceneStore.getState();
 
     if (isNebula) {
+      // Cold entry to a node — a direct link or a reload of /nebula/[slug]:
+      // no approach flight. The page lands already inside, camera parked at
+      // the focus pose, constellation life-size around it (05-phase-2.md,
+      // Deep linking). Priming lastFocus is what keeps the focus effect below
+      // from reading the same route as a change and flying to where it is.
+      const coldFocus = wasNebula === undefined ? routeFocusId : null;
+      if (coldFocus) {
+        const pose = focusPose(coldFocus);
+        if (pose) {
+          lastFocus.current = coldFocus;
+          settle(controls, pose, CONSTELLATION_CAMERA_FOV, { free: true, at: 1 });
+          return;
+        }
+      }
       // Reduced motion makes flights instant cuts, per 01-design-system.md.
       if (reducedMotion) {
         settle(controls, RESTING_POSE, CONSTELLATION_CAMERA_FOV, {
@@ -460,7 +488,7 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
-  }, [isNebula]);
+  }, [isNebula, routeFocusId]);
 
   // Starting a focus flight is an effect on the focus edge, not something the
   // frame loop polls: the departure pose has to be sampled at the instant
@@ -472,23 +500,26 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
   // position camera-controls has not applied yet, and carrying no FOV
   // interpolation. That is exactly how the arrival lost its widening and
   // gained a lurch toward the target before settling back out.
-  const lastFocus = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
-    if (lastFocus.current === undefined || lastFocus.current === focusedNodeId) {
-      lastFocus.current = focusedNodeId;
+    if (lastFocus.current === undefined || lastFocus.current === routeFocusId) {
+      lastFocus.current = routeFocusId;
       return;
     }
-    lastFocus.current = focusedNodeId;
+    lastFocus.current = routeFocusId;
     if (!isNebula) return;
 
-    const to = focusedNodeId ? focusPose(focusedNodeId) : RESTING_POSE;
+    // Opening a node from the graph, moving sideways to a connected one, or
+    // leaving back to the constellation — one flight from wherever the camera
+    // is to wherever the route now says. Sideways travel never returns to
+    // the framing pose first because `from` is simply the current pose.
+    const to = routeFocusId ? focusPose(routeFocusId) : RESTING_POSE;
     if (!to) return;
 
     if (reducedMotion) {
       settle(controls, to, CONSTELLATION_CAMERA_FOV, {
-        free: focusedNodeId !== null,
+        free: routeFocusId !== null,
         at: 1,
       });
       return;
@@ -506,7 +537,7 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
       // path for it, and it is the one 2.5 was tuned against.
       orbit: false,
     });
-  }, [focusedNodeId, reducedMotion, isNebula]);
+  }, [routeFocusId, reducedMotion, isNebula]);
 
   // Priority -2, ahead of camera-controls' own -1 update: a pose pushed in
   // after that update is not on the camera until the *next* frame's update,
@@ -560,10 +591,39 @@ function CameraRig({ isNebula }: { isNebula: boolean }) {
   );
 }
 
+/**
+ * Syncs the store's focus *from* the route. The URL is the source of truth
+ * (02-architecture.md); this is the one place it is written into the store,
+ * for the things that read focus there — dimming, the freeze, the glass, the
+ * panel's fade gate. The camera does not read it: CameraRig keys on the route
+ * directly, see routeFocusId.
+ *
+ * Rendered before the rig so its effect runs first in the same commit.
+ */
+function RouteFocus({ id }: { id: string | null }) {
+  useEffect(() => {
+    const { focusNode, clearFocus, focusedNodeId } = useSceneStore.getState();
+    if (id && id !== focusedNodeId) focusNode(id);
+    else if (!id && focusedNodeId) clearFocus();
+  }, [id]);
+  return null;
+}
+
 export function NebulaCanvas() {
   const pathname = usePathname();
+  const router = useRouter();
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
   const isHome = pathname === "/";
+  const routeFocusId = isNebula ? nodeIdForPathname(pathname) : null;
+
+  // Node clicks push a route rather than setting focus; the route then sets
+  // focus. Defined here, outside <Canvas>, because next/navigation's router
+  // is not reachable from inside R3F's reconciler — the same boundary the
+  // zustand store exists to cross. A function prop crosses it fine.
+  function openNode(id: string) {
+    const href = routeForNode(id);
+    if (href && href !== pathname) router.push(href, { scroll: false });
+  }
 
   return (
     <Canvas
@@ -577,9 +637,14 @@ export function NebulaCanvas() {
           nothing reads, and the lights' positions are in their parent's space,
           so inside the group they would shrink with the landing placement. */}
       <SceneEnvironment />
-      <CameraRig isNebula={isNebula} />
+      <RouteFocus id={routeFocusId} />
+      <CameraRig isNebula={isNebula} routeFocusId={routeFocusId} />
       <ConstellationPlacement isNebula={isNebula} isHome={isHome}>
-        <Constellation isNebula={isNebula} isHome={isHome} />
+        <Constellation
+          isNebula={isNebula}
+          isHome={isHome}
+          onOpenNode={openNode}
+        />
       </ConstellationPlacement>
     </Canvas>
   );

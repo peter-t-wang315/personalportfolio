@@ -26,8 +26,11 @@ interface SceneState {
    * pointer moving on, focusing is a committed state that only Escape, the
    * close control, or focusing something else leaves.
    *
-   * 2.6 pairs this with a route push to `/nebula/[slug]`; today it is purely
-   * scene state, so setting it is the whole interaction.
+   * Written only by nebula-canvas.tsx's RouteFocus, from the URL: node clicks
+   * push `/nebula/[slug]` (or `/nebula/tech/[id]`) and the route sets this,
+   * never the reverse. That is what makes back and forward correct. The
+   * camera does not read it either — the rig keys its flights on the route
+   * directly, because this is synced a beat later than the route changes.
    */
   focusedNodeId: string | null;
   /**

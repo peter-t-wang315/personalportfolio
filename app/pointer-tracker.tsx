@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useSceneStore } from "@/lib/scene-store";
+import { markHydrated } from "@/lib/hydration";
 
 /**
  * Mounted once in the root layout. Writes normalised (-1..1) pointer
@@ -23,6 +24,10 @@ import { useSceneStore } from "@/lib/scene-store";
  * gone leaves nothing to be offset toward.
  */
 export function PointerTracker() {
+  useEffect(() => {
+    markHydrated();
+  }, []);
+
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncReducedMotion = () =>

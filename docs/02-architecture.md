@@ -89,6 +89,7 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/work/[slug]` | Full project page | Far, dimmed; the project's connected subgraph gathers toward a focal point, then the simulation stops |
 | `/nebula` | The graph | At the constellation's framing pose — outside it, whole composition in view. `05a-phase-2-sequence.md`'s 2.1 is the authority: "frames the whole constellation at roughly 70% of viewport height" (measured, 65%). Not *inside* it; that is where the node fly-in and hand-dollying go, below. |
 | `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
+| `/nebula/tech/[id]` | Graph with a technology node open: its blurb and every project that uses it, each linked onward | As `/nebula/[slug]`. Tech nodes have no `/work` page, so no canonical tag; without WebGL it falls back to `/work` |
 
 `/work/[slug]` and `/nebula/[slug]` render the **same content object**. One is a document, one is a node interior. Never duplicate the prose. `/nebula/[slug]` sets a canonical link tag pointing to `/work/[slug]` to avoid duplicate-content SEO; there's no visitor-facing redirect between them under normal conditions.
 
@@ -106,6 +107,8 @@ surface, well within the hull; hand-dollying reaches `DOLLY_MIN_DISTANCE` = 10,
 deliberately just inside the 14-unit cluster-centroid radius so zooming reads as
 flying toward a cluster; and 2.6 opens a node's interior. Arriving already
 inside would spend the overview before there was any reason to explore.
+
+The static `tech` segment wins over the dynamic `[slug]` beside it, so `/nebula/tech/csharp` can never be read as a project called "tech". Twelve of the twenty project ids differ from their slugs (`th-supervisor` is `/station-supervisor`); `lib/nebula-routes.ts` is the one mapping, both directions.
 
 **`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
@@ -189,7 +192,9 @@ flight has landed. Anything that must wait for the arrival — 2.5's transmissio
 swap, 2.6's panel — gates on it rather than re-deriving the duration, which
 would be a second copy of the flight's timing free to drift from the real one.
 
-Node clicks drive `focusedNodeId` **and** push a route via `router.push('/nebula/[slug]', { scroll: false })` so the URL always reflects the view.
+Node clicks push a route via `router.push('/nebula/[slug]', { scroll: false })` and **the route drives `focusedNodeId`**, never the reverse — `RouteFocus` in `nebula-canvas.tsx` is the only writer. Back and forward are correct for free. The camera rig keys its flights on the route directly rather than on the store, because the store is synced a beat after the route changes and a cold entry would otherwise read as a focus change.
+
+Entry path is detected without any state: a panel that mounts during hydration is the cold entry, since a client navigation renders after hydration by definition (`lib/hydration.ts`). The rig sees the same thing as "first mount with a node in the URL" and settles at the focus pose instead of flying.
 
 This section used to say route changes drove a `mode: 'distant' | 'constellation' | 'inside'`. Nothing ever did, and the field was removed: the canvas takes the route as props and derives everything else from `focusedNodeId`, so `mode` could only have been a second copy of facts already held elsewhere. Add it back when something needs a state the URL cannot express — Phase 3's guided tour and ⌘K search are the candidates, since neither changes the route.
 

@@ -55,7 +55,9 @@ DOM content fades in inside the shell's screen-space bounds, rendered with `moti
 
 Connected nodes remain visible past the panel edges and stay hoverable and clickable, so you can move sideways through the graph without zooming out. Clicking a connected node flies directly there without returning to the constellation first.
 
-**Exit.** A close control and `Escape` both return to the constellation. `router.push('/nebula')`. The float simulation resumes.
+**Exit.** A close control and `Escape` both return to the constellation. `router.push('/nebula')` — both go through the route, because the route is what clears focus. The float simulation resumes.
+
+**Technology nodes open too**, at `/nebula/tech/[id]`: the blurb, and every project that uses the technology grouped by cluster, each linked to its own node. There is no `/work` counterpart, so it is the one place a technology is read — and it is the "follow C# out of a project and see everything else written in it" move that makes sideways navigation mean something. The project panel's technology line links into it.
 
 ## Work-page gathering
 
@@ -70,7 +72,7 @@ On `/work/[slug]`, the project's connected subgraph — its runtime-edge neighbo
 
 `/nebula/[slug]` sets a canonical link tag pointing to `/work/[slug]` — the same prose exists at both URLs, and this is what prevents the duplication from being a duplicate-content SEO problem. There is no visitor-facing redirect between them under normal conditions.
 
-If WebGL is unavailable, or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document, and cold-entry's "already inside" state has nothing to animate out of on exit if it can't animate in the first place. Reduced-motion needs no special case for the cold-entry path beyond this redirect: it was already static-on-load, so there's nothing further to disable.
+If WebGL is unavailable, or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` (and `/nebula/tech/[id]` to `/work`) instead — a graph the visitor can't move through has no advantage over the document, and cold-entry's "already inside" state has nothing to animate out of on exit if it can't animate in the first place. Reduced-motion needs no special case for the cold-entry path beyond this redirect: it was already static-on-load, so there's nothing further to disable.
 
 ## Device tiers
 

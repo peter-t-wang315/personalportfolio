@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
-import { DESKTOP_MIN_WIDTH_PX } from "@/lib/cluster-geometry";
+import {
+  DESKTOP_MIN_WIDTH_PX,
+  SHORT_VIEWPORT_HEIGHT_PX,
+} from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
 import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
@@ -212,6 +215,62 @@ const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
 const GLASS_INSET = 0.995;
 
 /**
+ * 2.6 — the shell opens. After the glass has arrived it expands to the
+ * interior panel's screen-space rectangle and morphs from a sphere toward a
+ * rounded rectangle, and its tint drops toward near-full transparency so the
+ * content reads. Same 240ms, run *after* the fade rather than with it, so the
+ * arrival is two beats — glass, then open — instead of one blur.
+ *
+ * The morph is a morph target on the sphere geometry, which
+ * MeshPhysicalMaterial supports natively: each sphere vertex is projected
+ * along its own direction onto a superellipsoid (|x|^n+|y|^n+|z|^n = 1), so
+ * the target has the same vertex count and order and interpolates cleanly.
+ * n = 6 is a rounded box; the panel shape comes from scaling that box flat
+ * along the camera axis and wide to the panel's aspect. The mesh is turned to
+ * face the camera every frame, so "flat along Z" is flat toward the viewer.
+ *
+ * Panel size is the tier table's (02-architecture.md): 70% of the viewport on
+ * desktop, 85% below, as a fraction of the frustum at the node's depth — the
+ * same numbers nebula-panel.tsx uses in CSS, so the glass and the DOM agree.
+ * Under 500px of viewport height there is no morph at all: the panel is a
+ * full-height sheet and the glass stays a sphere (Orientation and short
+ * viewports).
+ */
+const MORPH_EXPONENT = 6;
+const PANEL_FRACTION_DESKTOP = 0.7;
+const PANEL_FRACTION_COMPACT = 0.85;
+/** Depth of the opened shell relative to the node's own radius. */
+const OPEN_DEPTH_FACTOR = 0.35;
+/** How much tint the opened shell keeps: 05-phase-2.md's "near-full transparency". */
+const OPEN_TINT_FACTOR = 0.12;
+
+const glassGeometry = (() => {
+  const geometry = sphereGeometry.clone();
+  const position = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const target = new THREE.BufferGeometry();
+  const targetPosition = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i), y = position.getY(i), z = position.getZ(i);
+    const n = MORPH_EXPONENT;
+    const radius =
+      1 /
+      Math.pow(
+        Math.pow(Math.abs(x), n) + Math.pow(Math.abs(y), n) + Math.pow(Math.abs(z), n),
+        1 / n,
+      );
+    targetPosition[i * 3] = x * radius;
+    targetPosition[i * 3 + 1] = y * radius;
+    targetPosition[i * 3 + 2] = z * radius;
+  }
+  target.setAttribute("position", new THREE.BufferAttribute(targetPosition, 3));
+  target.setIndex(geometry.getIndex());
+  target.computeVertexNormals();
+  geometry.morphAttributes.position = [target.getAttribute("position") as THREE.BufferAttribute];
+  geometry.morphAttributes.normal = [target.getAttribute("normal") as THREE.BufferAttribute];
+  return geometry;
+})();
+
+/**
  * Published for the main frame loop, which has to fade the focused node's own
  * fresnel shell out by the same amount — the other half of the cross-fade.
  * A module object rather than store state: it changes every frame of the fade
@@ -225,22 +284,30 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
   const [mountedNodeId, setMountedNodeId] = useState<string | null>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const progress = useRef(0);
+  const opening = useRef(0);
+  const camera = useThree((s) => s.camera);
 
   const wanted =
     tier === "desktop" && focusSettled && focusedNodeId !== null
       ? focusedNodeId
       : null;
 
-  useFrame((_state, delta) => {
+  useFrame((state, delta) => {
     const { reducedMotion } = useSceneStore.getState();
     // Reduced motion gets the instant swap, deliberately: the same rule that
     // makes flights cuts. There is no arrival for this to land on either.
     const step = reducedMotion ? 1 : (delta * 1000) / GLASS_FADE_MS;
-    progress.current = THREE.MathUtils.clamp(
-      progress.current + (wanted ? step : -step),
-      0,
-      1,
-    );
+
+    // Two beats, strictly ordered: the glass arrives, then it opens; on the
+    // way out it closes, then it clears. Each phase only advances once the
+    // one before it has finished.
+    if (wanted) {
+      if (progress.current < 1) progress.current = Math.min(1, progress.current + step);
+      else opening.current = Math.min(1, opening.current + step);
+    } else {
+      if (opening.current > 0) opening.current = Math.max(0, opening.current - step);
+      else progress.current = Math.max(0, progress.current - step);
+    }
 
     if (wanted && wanted !== mountedNodeId) setMountedNodeId(wanted);
     else if (!wanted && progress.current <= 0 && mountedNodeId !== null) {
@@ -248,23 +315,50 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
     }
 
     const fade = easeStandard(progress.current);
+    const short = state.size.height < SHORT_VIEWPORT_HEIGHT_PX;
+    const open = short ? 0 : easeStandard(opening.current);
     focusGlass.fade = fade;
     focusGlass.nodeId = mountedNodeId;
 
-    transmissionMaterial.thickness = GLASS_THICKNESS * fade;
+    // Arrive as glass, then thin and clear it as it opens.
+    const tint = fade * THREE.MathUtils.lerp(1, OPEN_TINT_FACTOR, open);
+    transmissionMaterial.thickness = GLASS_THICKNESS * tint;
     transmissionMaterial.attenuationDistance = THREE.MathUtils.lerp(
       GLASS_CLEAR_ATTENUATION,
       GLASS_ATTENUATION,
-      fade,
+      tint,
     );
 
     // The simulation is frozen while focused, but it resumes the instant focus
     // clears — and the glass is still fading out then, so it has to keep
     // tracking rather than sit at the position the node has just left.
     const mesh = meshRef.current;
-    if (mesh && mountedNodeId) {
+    const node = mountedNodeId ? nodeGeometry[mountedNodeId] : null;
+    if (mesh && mountedNodeId && node) {
       const live = getLivePosition(mountedNodeId);
       if (live) mesh.position.copy(live);
+
+      // The panel rectangle at the node's depth, in world units: the tier
+      // fraction of the frustum's half-extents at the camera's distance from
+      // the node. Recomputed every frame so a resize mid-open still lands on
+      // the panel the DOM is showing.
+      const fraction =
+        state.size.width >= DESKTOP_MIN_WIDTH_PX
+          ? PANEL_FRACTION_DESKTOP
+          : PANEL_FRACTION_COMPACT;
+      const distance = camera.position.distanceTo(mesh.position);
+      const halfHeight =
+        distance * Math.tan(((camera as THREE.PerspectiveCamera).fov * Math.PI) / 360);
+      const halfWidth = halfHeight * (state.size.width / state.size.height);
+      const r = node.radius * GLASS_INSET;
+
+      mesh.quaternion.copy(camera.quaternion);
+      mesh.scale.set(
+        THREE.MathUtils.lerp(r, halfWidth * fraction, open),
+        THREE.MathUtils.lerp(r, halfHeight * fraction, open),
+        THREE.MathUtils.lerp(r, r * OPEN_DEPTH_FACTOR, open),
+      );
+      if (mesh.morphTargetInfluences) mesh.morphTargetInfluences[0] = open;
     }
   });
 
@@ -274,10 +368,18 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
 
   return (
     <mesh
-      ref={meshRef}
+      // R3F constructs the Mesh before it assigns the geometry, so three's
+      // constructor-time updateMorphTargets() sees no morph attributes and
+      // leaves morphTargetInfluences undefined — which the renderer then
+      // reads the length of on the first frame, killing the whole loop. Doing
+      // it here, once the geometry is attached, is what makes influences exist.
+      ref={(mesh) => {
+        meshRef.current = mesh;
+        mesh?.updateMorphTargets();
+      }}
       position={node.position}
       scale={node.radius * GLASS_INSET}
-      geometry={sphereGeometry}
+      geometry={glassGeometry}
       material={transmissionMaterial}
       raycast={() => null}
     />
@@ -455,16 +557,18 @@ function HoverLabel() {
 export function Constellation({
   isNebula,
   isHome,
+  onOpenNode,
 }: {
   isNebula: boolean;
   isHome: boolean;
+  /** Pushes the node's route. Focus follows from the route, never from here. */
+  onOpenNode: (id: string) => void;
 }) {
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
   const groupRef = useRef<THREE.Group>(null);
   const ambient = useRef(isHome || isNebula ? 1 : 0);
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
-  const clearFocus = useSceneStore((s) => s.clearFocus);
   const flying = useSceneStore((s) => s.flying);
 
   /**
@@ -505,18 +609,6 @@ export function Constellation({
     if (focusedNodeId || flying) freezeSimulation();
     else resumeSimulation();
   }, [focusedNodeId, flying]);
-
-  // Escape leaves the focused node. Bound to the window rather than to any
-  // element because nothing here holds DOM focus — the thing the viewer is
-  // "in" is a mesh, and there is no element for a keydown to bubble from.
-  useEffect(() => {
-    if (!focusedNodeId) return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") clearFocus();
-    }
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [focusedNodeId, clearFocus]);
 
   // Tech node visibility is tier-dependent — see 02-architecture.md's
   // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
@@ -591,8 +683,13 @@ export function Constellation({
       const material = materialByNodeId[node.id];
       const unrelated = related !== null && !related.has(node.id);
       // The focused node's shell hands over to its glass rather than sitting
-      // behind it — the other half of FocusGlass's cross-fade.
+      // behind it — the other half of FocusGlass's cross-fade. Its core goes
+      // with it: once the glass has opened into a panel, a --mask sphere
+      // floating behind the text is exactly the "solid object" the core was
+      // designed not to read as.
       const handover = node.id === focusGlass.nodeId ? 1 - focusGlass.fade : 1;
+      const core = mesh.children[0];
+      if (core) core.visible = handover > 0.01;
       const targetOpacity =
         ambient.current *
         handover *
@@ -642,7 +739,7 @@ export function Constellation({
                 interactive
                   ? (e) => {
                       e.stopPropagation();
-                      useSceneStore.getState().focusNode(node.id);
+                      onOpenNode(node.id);
                     }
                   : undefined
               }

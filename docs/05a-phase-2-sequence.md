@@ -2,8 +2,49 @@
 
 ## Session status (update each session)
 
-Last completed: **2.5** (fly-in + focus state), and the **Phase 1 landing
-page**. Committed and stable on `nebulustest`.
+Last completed: **2.6** (interior panel and routing), on top of **2.5** and the
+**Phase 1 landing page**. Committed on `nebulustest`. **05a asks for a preview
+deploy after 2.6; the owner runs `npx vercel` themselves.**
+
+**2.6 as built.** The URL is the source of truth for focus: node clicks push
+`/nebula/[slug]` or `/nebula/tech/[id]`, `RouteFocus` syncs the store from the
+route, and the camera rig keys its flights on the route. Cold entry settles at
+the focus pose with the panel server-rendered at full opacity; navigation flies
+and fades the panel in on `focusSettled`; the two are told apart by whether the
+panel mounted during hydration (`lib/hydration.ts`). The panel is real DOM,
+sized by CSS from the tier table, a full-height sheet under 500px. The glass
+opens in a second 240ms beat after it arrives: a morph target on the sphere
+(superellipsoid, n=6) scaled to the panel's rectangle at the node's depth,
+turned to face the camera, tint dropped to 12%. Tech nodes got a route and a
+panel — the owner's call, over hover-only — listing every project that uses
+them. Escape moved out of the canvas to the close control, because the router
+is unreachable from inside R3F's reconciler.
+
+Verified, 23 checks at 1280x800 plus 844x390, 900x700 and 390x844: prose in
+the server HTML with the canonical tag; cold-entry panel at opacity 1 before
+and after settle; Escape → `/nebula`; back and forward restore the node and
+the graph; in-graph click pushes a route with the panel hidden during the
+flight and visible after; sideways project → tech → project through panel
+links; reduced motion redirects both routes to the document; panel measures
+70%/85%/100% by tier and height; unknown slug 404s; no console errors; no
+hydration warnings on any new route. Measured, the landing is two beats after
+the flight: ~20% of pixels for two frames as the glass arrives, ~13% for three
+as it opens, then 0.03%.
+
+**Three traps 2.6 hit, for 2.7.** A mesh whose geometry carries morph
+attributes must have `updateMorphTargets()` called after R3F attaches the
+geometry, or the renderer reads an undefined influences array on the first
+frame and the whole loop dies — silently, on desktop only, with the panel
+looking fine over a blank canvas. A "first mount" flag must be set by
+something mounted on every route, not by the component that needs it:
+opening a node from bare `/nebula` mounted the first panel the document had
+ever had, which read as cold. And a full-viewport sheet paints over corner
+chrome that is earlier in the DOM; the corners need their own stacking order.
+
+**Not 2.6's, still open:** the `/work/[slug]` gathering animation
+(05-phase-2.md, Work-page gathering) is in no step of this sequence. Leaving
+`/nebula/[slug]` straight to `/` is still a cut, now rarer since the corner
+link is the only way to do it.
 
 **Two behaviours were built and deleted in the landing-page work, deliberately.**
 A phrase nudge and a shader sheen driven by `deviceorientation`. They were not a
@@ -134,12 +175,11 @@ The landing page as it now stands:
 `isSimulationFrozen()` were both dead — never written, never read — and are
 gone. 02-architecture.md's State section records when `mode` should come back.
 
-**Known and deferred to 2.6:** leaving `/nebula` while a node is focused is
-still a cut rather than a flight. A departure from a focused pose would start
-the camera inside a shell that is about to shrink around it, and 2.6 owns that
-exit properly since it reverses the node's own arrival.
-
-Not yet started: **2.6** (interior panel and routing).
+Not yet started: **2.7** (cluster labels and edge detail). The owner has said
+what they want from it: hover an edge and see the projects and technologies it
+connects — "look at C# and see all that I've done". The tech panel already
+serves the second half; 2.7's edge tooltips (`protocol`, `detail`) are the
+first.
 
 Next session should: read this file plus 00, 01, 02, 04, 05 in full before
 continuing, then confirm current git state matches this summary before starting
@@ -255,6 +295,9 @@ Sideways navigation: connected nodes stay visible past the panel edges, hoverabl
 Under 500px viewport height, the panel becomes a full-height sheet with no morph.
 
 **Done when:** every project is readable inside its node, browser back and forward work correctly, a pasted `/nebula/[slug]` link lands already inside the right node with no flight, and clicking that same node from within the graph does play the flight.
+
+**Landed.** See the session status block above for how, the three traps, and
+what it deliberately does not cover.
 
 Deploy a preview. This is the first genuinely complete version.
 
