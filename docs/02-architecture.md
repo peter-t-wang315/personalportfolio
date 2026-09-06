@@ -87,10 +87,25 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
 | `/work/[slug]` | Full project page | Far, dimmed; the project's connected subgraph gathers toward a focal point, then the simulation stops |
-| `/nebula` | The graph | Inside the constellation |
+| `/nebula` | The graph | At the constellation's framing pose — outside it, whole composition in view. `05a-phase-2-sequence.md`'s 2.1 is the authority: "frames the whole constellation at roughly 70% of viewport height" (measured, 65%). Not *inside* it; that is where the node fly-in and hand-dollying go, below. |
 | `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
 
 `/work/[slug]` and `/nebula/[slug]` render the **same content object**. One is a document, one is a node interior. Never duplicate the prose. `/nebula/[slug]` sets a canonical link tag pointing to `/work/[slug]` to avoid duplicate-content SEO; there's no visitor-facing redirect between them under normal conditions.
+
+The `/nebula` row read "Inside the constellation" until it was corrected. That
+was a wording error, not a design that changed: the other rows in this column
+say "Far", and "Inside" was written to contrast with them rather than to
+specify a camera distance. Read literally it contradicts 2.1, which is the line
+carrying an actual number, and which the build has always followed — the camera
+rests 41.2 units from its target against a constellation bounding radius of
+17.6, so it sits ~23.6 units clear of the outermost node.
+
+Going **inside** the constellation is a thing the visitor does, not a thing the
+arrival does. Three routes in: the node fly-in stops ~1.9 units off a node's
+surface, well within the hull; hand-dollying reaches `DOLLY_MIN_DISTANCE` = 10,
+deliberately just inside the 14-unit cluster-centroid radius so zooming reads as
+flying toward a cluster; and 2.6 opens a node's interior. Arriving already
+inside would spend the overview before there was any reason to explore.
 
 **`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 

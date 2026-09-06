@@ -125,6 +125,8 @@ Full behavioural spec is in `05-phase-2.md`. Device tier rules are in `02-archit
 
 Build `layout.ts` into the scene. The shared fresnel node material and `--paper`-matched scene fog for depth (both pulled forward from 2.2 by revision), correct radius per type. Project nodes at `major` 0.85 and `standard` 0.6, tech nodes at 0.34. Camera parked at a fixed position that frames the whole constellation at roughly 70% of viewport height.
 
+**This sentence is the authority on the `/nebula` resting camera**, and it means what it says: the camera is *outside* the graph with the whole composition in view. 02-architecture.md's routes table used to say "Inside the constellation", which contradicted it; that was a wording error and has been corrected to point here. Going inside is something the visitor does — the 2.5 node fly-in, hand-dollying to `DOLLY_MIN_DISTANCE`, 2.6's node interior — not something the arrival does. Measured on the built scene: 65% of viewport height, camera 41.2 units from its target against a bounding radius of 17.6.
+
 Verify the seeded generator produces identical positions across reloads — reload ten times and confirm nothing moves.
 
 **Done when:** nothing overlaps or occludes badly from the default heading, and the SEL clusters occupy the front hemisphere. Full legibility as distinct clusters depends on the edge hierarchy, not this static view — re-evaluate that at 2.3.
