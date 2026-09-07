@@ -71,6 +71,14 @@ const BREATHE_SEED = 0xb4ea7e;
 // fraction rather than a flat value so the tech layer stays recessed relative
 // to projects instead of every node collapsing onto one grey.
 const UNRELATED_OPACITY_FACTOR = 0.25;
+/**
+ * Harder on a spotlit `/work/[slug]`, where the graph has one job: show what
+ * this project connects to. Inside the nebula an unrelated node is still
+ * somewhere you might go next and stays legible at 0.25; beside an article it
+ * is context the reader did not ask for, and letting it recede further is what
+ * makes the subgraph the thing you actually see.
+ */
+const SPOTLIT_UNRELATED_FACTOR = 0.12;
 
 /**
  * Off `/`, the constellation is ambient rather than the subject and dims to
@@ -557,8 +565,10 @@ export function Constellation({
       // While focused, hover scaling stands down: the camera is inches from
       // one node and a neighbour swelling under a stray pointer reads as the
       // scene twitching, not as a preview.
+      const spotlit = node.id === spotlightNodeId;
       const targetScale =
-        node.radius * (hovered && !focused ? HOVER_SCALE_FACTOR : 1);
+        node.radius *
+        ((hovered && !focused) || spotlit ? HOVER_SCALE_FACTOR : 1);
 
       const material = materialByNodeId[node.id];
       const open = node.id === focusOpen.nodeId && canOpen ? openEased : 0;
@@ -609,6 +619,9 @@ export function Constellation({
       }
 
       const unrelated = related !== null && !related.has(node.id);
+      const unrelatedFactor = spotlightNodeId
+        ? SPOTLIT_UNRELATED_FACTOR
+        : UNRELATED_OPACITY_FACTOR;
       // The professional core goes as the node opens: a --mask sphere
       // floating behind the text is exactly the "solid object" it was designed
       // not to read as.
@@ -617,7 +630,7 @@ export function Constellation({
       const targetOpacity =
         ambient.current *
         (unrelated
-          ? baseOpacity(node, tier) * UNRELATED_OPACITY_FACTOR
+          ? baseOpacity(node, tier) * unrelatedFactor
           : hovered && !focused
             ? HOVER_OPACITY
             : baseOpacity(node, tier));

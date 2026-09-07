@@ -66,9 +66,16 @@ export function pxPerWorldUnitFor(viewportHeight: number) {
 export function clusterScaleForViewport(
   viewportWidth: number,
   viewportHeight: number,
+  /**
+   * Multiplier on the drawn radius. `/work/[slug]` enlarges the globe to make
+   * the turn and the subgraph readable, and the placement solve has to know:
+   * the whole point of it is clearing the text column by a real margin, which
+   * it cannot do against a radius that is not the one being rendered.
+   */
+  radiusScale = 1,
 ) {
   const naturalDiameter =
-    2 * CLUSTER_BOUNDING_RADIUS * pxPerWorldUnitFor(viewportHeight);
+    2 * CLUSTER_BOUNDING_RADIUS * radiusScale * pxPerWorldUnitFor(viewportHeight);
   if (naturalDiameter <= 0) return 1;
   return Math.min(
     1,
@@ -97,8 +104,9 @@ export const NARROW_CLUSTER_CENTER_Y_FRACTION = 0.62;
 export function clusterCenterYFraction(
   viewportWidth: number,
   viewportHeight: number,
+  radiusScale = 1,
 ) {
-  return clusterScaleForViewport(viewportWidth, viewportHeight) < 1
+  return clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale) < 1
     ? NARROW_CLUSTER_CENTER_Y_FRACTION
     : 0.5;
 }
@@ -162,6 +170,7 @@ const HERO_EDGE_MARGIN_PX = 32;
 export function clusterCenterXFraction(
   viewportWidth: number,
   viewportHeight: number,
+  radiusScale = 1,
 ) {
   const besideAColumn =
     viewportWidth >= DESKTOP_MIN_WIDTH_PX ||
@@ -170,8 +179,9 @@ export function clusterCenterXFraction(
 
   const radiusPx =
     CLUSTER_BOUNDING_RADIUS *
+    radiusScale *
     pxPerWorldUnitFor(viewportHeight) *
-    clusterScaleForViewport(viewportWidth, viewportHeight);
+    clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale);
 
   const clearOfText = HERO_TEXT_RIGHT_PX + HERO_CLUSTER_GAP_PX + radiusPx;
   const rightmost = viewportWidth - radiusPx - HERO_EDGE_MARGIN_PX;

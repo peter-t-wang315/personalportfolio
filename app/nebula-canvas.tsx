@@ -92,11 +92,21 @@ const PARALLAX_WRITE_EPSILON = 0.0005;
 const AMBIENT_EASE = 0.06;
 
 /**
- * Where a spotlit node is turned to, in the group's own space: toward the
- * reader and tilted up, so the cluster it belongs to sits in the upper front
- * of the globe rather than dead centre. Looking at the earth from above.
+ * Where a spotlit node is turned to, in the group's own space: high on the
+ * globe and tilted toward the reader, so the project sits near the top of the
+ * disc on the near side — looking at the earth from above, rather than at its
+ * equator. An earlier value was mostly +Z, which put the node dead centre and
+ * read as facing rather than topping.
  */
-const SPOTLIGHT_FACING = new THREE.Vector3(0, 0.35, 1).normalize();
+const SPOTLIGHT_FACING = new THREE.Vector3(0, 0.72, 0.7).normalize();
+/** Layout up, kept as close to screen up as the facing allows — see below. */
+const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
+/**
+ * How much larger the globe is drawn on a spotlit work page. The placement
+ * solve is told about it (clusterScaleForViewport), so it still clears the
+ * text column by a real margin rather than growing across it.
+ */
+const SPOTLIGHT_ZOOM = 1.32;
 /**
  * Per-frame slerp toward that orientation. Exponential rather than a fixed
  * curve over a fixed time, matching the ambient scale and the pointer parallax
@@ -105,6 +115,14 @@ const SPOTLIGHT_FACING = new THREE.Vector3(0, 0.35, 1).normalize();
  * would have to restart.
  */
 const SPOTLIGHT_EASE = 0.055;
+
+/** Scratch for the roll solve below; it runs every frame. */
+const _rollUp = new THREE.Vector3();
+const _rollWanted = new THREE.Vector3();
+const _rollAxis = new THREE.Vector3();
+const _rollQuat = new THREE.Quaternion();
+/** The layout's own orientation, which is what `/nebula` is composed against. */
+const UNROTATED = new THREE.Quaternion();
 
 /**
  * Elevated, near-top-down heading, tilted slightly off pure vertical.
@@ -403,19 +421,23 @@ function ConstellationPlacement({
     // origin leaves that untouched. Y is negated because world +Y is up while
     // CSS +Y is down; X needs no flip, since this camera has no roll.
     const pxPerWorldUnit = pxPerWorldUnitFor(state.size.height);
+    const zoom = spotlightNodeId ? SPOTLIGHT_ZOOM : 1;
     const landingScale =
       LANDING_SCALE *
+      zoom *
       ambientScale.current *
-      clusterScaleForViewport(state.size.width, state.size.height);
+      clusterScaleForViewport(state.size.width, state.size.height, zoom);
     const landingX =
       parallax.current.x +
       (state.size.width *
-        (clusterCenterXFraction(state.size.width, state.size.height) - 0.5)) /
+        (clusterCenterXFraction(state.size.width, state.size.height, zoom) -
+          0.5)) /
         pxPerWorldUnit;
     const landingY =
       parallax.current.y -
       (state.size.height *
-        (clusterCenterYFraction(state.size.width, state.size.height) - 0.5)) /
+        (clusterCenterYFraction(state.size.width, state.size.height, zoom) -
+          0.5)) /
         pxPerWorldUnit;
 
     // `/work/[slug]` turns the globe so its project's cluster faces the
@@ -435,11 +457,53 @@ function ConstellationPlacement({
         spotlightDirection.current,
         SPOTLIGHT_FACING,
       );
+
+      // ...and then settle the roll, which the step above leaves undecided.
+      //
+      // setFromUnitVectors returns the *shortest* rotation carrying one
+      // direction onto another. That fixes where the node lands and says
+      // nothing about the twist around it, so the surrounding cluster arrived
+      // somewhere different on every project — sometimes below the node,
+      // sometimes behind it — and the graph read as re-shuffling rather than
+      // turning. Rolling about the facing axis until the layout's own up axis
+      // is as near screen-up as it can be makes the orientation a function of
+      // which node was chosen and nothing else, so the geography holds still
+      // between pages.
+      const facing = SPOTLIGHT_FACING;
+      const up = _rollUp.copy(LAYOUT_UP).applyQuaternion(spotlightTarget.current);
+      up.addScaledVector(facing, -up.dot(facing));
+      const wanted = _rollWanted
+        .copy(LAYOUT_UP)
+        .addScaledVector(facing, -LAYOUT_UP.dot(facing));
+      if (up.lengthSq() > 1e-6 && wanted.lengthSq() > 1e-6) {
+        up.normalize();
+        wanted.normalize();
+        const angle = Math.acos(THREE.MathUtils.clamp(up.dot(wanted), -1, 1));
+        const sign = Math.sign(_rollAxis.crossVectors(up, wanted).dot(facing));
+        spotlightTarget.current.premultiply(
+          _rollQuat.setFromAxisAngle(facing, angle * (sign || 1)),
+        );
+      }
     } else {
       spotlightTarget.current.identity();
     }
-    if (reducedMotion) group.quaternion.copy(spotlightTarget.current);
-    else group.quaternion.slerp(spotlightTarget.current, SPOTLIGHT_EASE);
+    // **The turn unwinds as the flight goes in, and is exactly undone by the
+    // time it lands.** `/nebula`'s heading was chosen against the layout's own
+    // orientation — it is the one that keeps all four SEL centroids
+    // front-facing and the seven cluster centroids furthest apart in screen
+    // space — so arriving with the globe still turned for some work page puts
+    // every cluster somewhere that composition does not expect. Tying the
+    // rotation to the placement rather than easing it separately means the two
+    // cannot disagree: at placement 1 the orientation is exactly the layout's,
+    // whatever the reader was looking at before, and a departure winds it back
+    // up in step.
+    if (placement > 0) {
+      group.quaternion.copy(spotlightTarget.current).slerp(UNROTATED, placement);
+    } else if (reducedMotion) {
+      group.quaternion.copy(spotlightTarget.current);
+    } else {
+      group.quaternion.slerp(spotlightTarget.current, SPOTLIGHT_EASE);
+    }
 
     group.scale.setScalar(THREE.MathUtils.lerp(landingScale, 1, placement));
     group.position.set(
