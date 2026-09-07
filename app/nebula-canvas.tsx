@@ -112,9 +112,11 @@ const SPOTLIGHT_ZOOM = 1.32;
  * curve over a fixed time, matching the ambient scale and the pointer parallax
  * beside it: this is background motion that has to survive being re-aimed
  * mid-turn when the reader moves to another project, which a timed curve
- * would have to restart.
+ * would have to restart. Exponential easing is also duration-invariant, so a
+ * small correction and a swing to the far side of the globe take the same
+ * time — about a second to close 90% of either.
  */
-const SPOTLIGHT_EASE = 0.055;
+const SPOTLIGHT_EASE = 0.04;
 
 /** Scratch for the roll solve below; it runs every frame. */
 const _rollUp = new THREE.Vector3();
@@ -808,8 +810,14 @@ export function NebulaCanvas() {
   const isHome = pathname === "/";
   const routeFocusId = isNebula ? nodeIdForPathname(pathname) : null;
   // The route wins; a hovered row in the list stands in until there is one.
+  // The preview is confined to `/work` — it is never cleared on hover-out, so
+  // that a reader scanning the list gets one continuous re-aim rather than a
+  // lurch toward neutral between every row, and without this gate the last row
+  // they happened to touch would follow them onto `/about`.
   const previewNodeId = useSceneStore((s) => s.previewNodeId);
-  const spotlightNodeId = nodeIdForWorkPathname(pathname) ?? previewNodeId;
+  const routeSpotlight = nodeIdForWorkPathname(pathname);
+  const spotlightNodeId =
+    routeSpotlight ?? (pathname === "/work" ? previewNodeId : null);
 
   // Node clicks push a route rather than setting focus; the route then sets
   // focus. Defined here, outside <Canvas>, because next/navigation's router
@@ -843,6 +851,7 @@ export function NebulaCanvas() {
           isNebula={isNebula}
           isHome={isHome}
           spotlightNodeId={spotlightNodeId}
+          gatherNodeId={routeSpotlight}
           onOpenNode={openNode}
         />
       </ConstellationPlacement>

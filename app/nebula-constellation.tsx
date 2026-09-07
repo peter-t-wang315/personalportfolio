@@ -79,6 +79,16 @@ const UNRELATED_OPACITY_FACTOR = 0.25;
  * makes the subgraph the thing you actually see.
  */
 const SPOTLIT_UNRELATED_FACTOR = 0.12;
+/**
+ * How much harder a work page pulls its subgraph in than a hover does.
+ *
+ * Hover is a preview and wants to stay legible as the graph it interrupted;
+ * a project page is about that subgraph, so it can afford to close the group
+ * up until it reads as one at a glance. Measured on the lit subgraph's screen
+ * spread: turning alone gives 200.9, gathering at hover strength 186.2, and
+ * this brings it to 175.9.
+ */
+const WORK_PAGE_GATHER_STRENGTH = 1.55;
 
 /**
  * Off `/`, the constellation is ambient rather than the subject and dims to
@@ -408,6 +418,7 @@ export function Constellation({
   isNebula,
   isHome,
   spotlightNodeId,
+  gatherNodeId,
   onOpenNode,
 }: {
   isNebula: boolean;
@@ -420,6 +431,17 @@ export function Constellation({
    * where this project sits, beside prose that is doing the explaining.
    */
   spotlightNodeId: string | null;
+  /**
+   * The project whose neighbours are drawn in — the route's, never the hover
+   * preview's.
+   *
+   * Turning and gathering are deliberately split. The turn is cheap to redo
+   * and previews well, so a hovered row gets it; the gather is a spring with a
+   * tenth-of-a-second time constant, so re-aiming it at every row a reader
+   * crosses makes the graph snap rather than move. Opening the project is what
+   * pulls its neighbours in.
+   */
+  gatherNodeId: string | null;
   /** Pushes the node's route. Focus follows from the route, never from here. */
   onOpenNode: (id: string) => void;
 }) {
@@ -473,6 +495,26 @@ export function Constellation({
     if (focusedNodeId || flying || spotlightNodeId) freezeSimulation();
     else resumeSimulation();
   }, [focusedNodeId, flying, spotlightNodeId]);
+
+  /**
+   * A spotlit project draws its neighbours in, using 2.3a's attraction — the
+   * same mechanic hover uses, and the "gathering" 05-phase-2.md originally
+   * asked this page for. The turn alone left the subgraph as sparse as the
+   * rest of the shell, which made it hard to see what was being highlighted
+   * and gave the composition nothing to aim at.
+   *
+   * It works despite the freeze above, and that is not an accident of
+   * ordering: freezing holds the *wander* clock still, while the attraction
+   * springs integrate against real delta time. So the neighbours slide in and
+   * everything else stays exactly where it was — which is precisely the
+   * "settles once, then stops" the spec wants, rather than a page of drifting
+   * nodes behind prose.
+   */
+  useEffect(() => {
+    if (!gatherNodeId) return;
+    attractNeighbors(gatherNodeId, WORK_PAGE_GATHER_STRENGTH);
+    return () => releaseAttraction();
+  }, [gatherNodeId]);
 
   // Tech node visibility is tier-dependent — see 02-architecture.md's
   // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the

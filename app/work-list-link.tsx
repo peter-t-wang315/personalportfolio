@@ -16,6 +16,14 @@ import { useSceneStore } from "@/lib/scene-store";
  * Focus counts as well as hover — a keyboard reader tabbing the list gets the
  * same preview, which is the only way the graph means anything to them at all.
  *
+ * **Nothing is cleared on the way out**, and that is the whole difference
+ * between this reading as a turn and reading as a jitter. Clearing on
+ * mouse-leave aimed the globe back at the layout's own orientation in the gap
+ * between one row and the next, so scanning a list made it lurch toward
+ * neutral and then reverse for every row crossed. Holding the last previewed
+ * node means moving down the list is one continuous re-aim. The route takes
+ * over on arrival, and leaving the list drops it (nebula-canvas.tsx).
+ *
  * Only the id is published, never the whole project: the scene already has
  * every node's geometry and needs nothing else to aim at one.
  */
@@ -36,8 +44,6 @@ export function WorkListLink({
       className="group block"
       onMouseEnter={() => setPreviewNodeId(nodeId)}
       onFocus={() => setPreviewNodeId(nodeId)}
-      onMouseLeave={() => setPreviewNodeId(null)}
-      onBlur={() => setPreviewNodeId(null)}
     >
       {children}
     </Link>

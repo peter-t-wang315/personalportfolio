@@ -230,6 +230,13 @@ interface NeighborSpring {
   /** Whichever node this one is currently being pulled toward. */
   targetId: string;
   active: boolean;
+  /**
+   * Multiplier on this node's own pull, set by whoever asked for the
+   * attraction. Hover uses 1; `/work/[slug]` asks for more, because there the
+   * subgraph is the subject of the page rather than a preview of one, and the
+   * gather has to be strong enough to read as a group at a glance.
+   */
+  strength: number;
 }
 
 /**
@@ -242,7 +249,7 @@ interface NeighborSpring {
 const neighborSprings = new Map<string, NeighborSpring>();
 
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
-export function attractNeighbors(nodeId: string) {
+export function attractNeighbors(nodeId: string, strength = 1) {
   const neighbors = new Set(neighborsOf(nodeId));
 
   // Anything currently active that isn't a neighbour of the new target
@@ -259,8 +266,15 @@ export function attractNeighbors(nodeId: string) {
       // never pops, it just continues toward the new direction.
       existing.targetId = nodeId;
       existing.active = true;
+      existing.strength = strength;
     } else {
-      neighborSprings.set(id, { value: 0, velocity: 0, targetId: nodeId, active: true });
+      neighborSprings.set(id, {
+        value: 0,
+        velocity: 0,
+        targetId: nodeId,
+        active: true,
+        strength,
+      });
     }
   }
 }
@@ -382,7 +396,7 @@ export function stepSimulation(clockTime: number, delta: number) {
         targetHome[1] - home[1],
         targetHome[2] - home[2],
       )
-      .multiplyScalar(params.pull * spring.value);
+      .multiplyScalar(params.pull * spring.strength * spring.value);
     offsets[neighborId].add(_pull);
   }
 
