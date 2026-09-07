@@ -62,6 +62,14 @@ interface SceneState {
    */
   travellingBetween: { from: string; to: string } | null;
   /**
+   * The project the reader is pointing at in the `/work` list, as a node id.
+   *
+   * The globe begins turning toward it on hover, so the list previews the page
+   * it leads to and the turn is already half-made by the time the reader gets
+   * there. Cleared on hover-out; superseded by the route once they arrive.
+   */
+  previewNodeId: string | null;
+  /**
    * The constellation's current parallax offset, in world
    * units — written every frame from nebula-canvas.tsx's
    * ConstellationPlacement (imperative `getState().setClusterParallax(...)`,
@@ -82,6 +90,7 @@ interface SceneState {
   setFocusSettled: (settled: boolean) => void;
   setFlying: (flying: boolean) => void;
   setTravellingBetween: (pair: { from: string; to: string } | null) => void;
+  setPreviewNodeId: (id: string | null) => void;
   setClusterParallax: (offset: { x: number; y: number }) => void;
 }
 
@@ -93,6 +102,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   focusSettled: false,
   flying: false,
   travellingBetween: null,
+  previewNodeId: null,
   clusterParallax: { x: 0, y: 0 },
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
@@ -106,5 +116,6 @@ export const useSceneStore = create<SceneState>((set) => ({
   setFocusSettled: (focusSettled) => set({ focusSettled }),
   setFlying: (flying) => set({ flying }),
   setTravellingBetween: (travellingBetween) => set({ travellingBetween }),
+  setPreviewNodeId: (previewNodeId) => set({ previewNodeId }),
   setClusterParallax: (clusterParallax) => set({ clusterParallax }),
 }));

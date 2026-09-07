@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { clusters, projectsInCluster } from "@/content";
 import { HomeLink } from "../home-link";
+import { WorkListLink } from "../work-list-link";
 
 export const metadata: Metadata = {
   title: "Work | Peter Wang",
@@ -44,14 +44,17 @@ export default function WorkList() {
               <ul className="mt-6 divide-y divide-ink-faint/30">
                 {clusterProjects.map((project) => (
                   <li key={project.id} className="py-5">
-                    <Link href={`/work/${project.slug}`} className="group block">
+                    <WorkListLink
+                      nodeId={project.id}
+                      href={`/work/${project.slug}`}
+                    >
                       <p className="text-[1.0625rem] font-medium inline-block link-underline">
                         {project.title}
                       </p>
                       <p className="text-[0.875rem] text-ink-muted mt-1">
                         {project.oneLine}
                       </p>
-                    </Link>
+                    </WorkListLink>
                   </li>
                 ))}
               </ul>

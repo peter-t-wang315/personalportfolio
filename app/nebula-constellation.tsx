@@ -632,14 +632,22 @@ export function Constellation({
   return (
     <group ref={groupRef}>
       {/* Edges are the graph's information layer, and 04-phase-1.md is
-          explicit that the landing cluster has none. Unmounting rather than
+          explicit that the landing cluster has none. A spotlit work page is
+          the exception: there they are the answer to "what does this project
+          talk to", so its own subgraph is drawn and nothing else. Unmounting rather than
           hiding them also keeps their line geometry and pulse loop off every
           non-nebula route, which is where the LCP budget is.
           They outlast the route by one flight on the way out: dropping them on
           the commit put a visible pop at the head of the departure, with the
           graph still life-size. Kept until it lands, they go while it is a
           cluster of hairlines too small to see them leave. */}
-      {(isNebula || flying) && <Edges showTech={showTech} />}
+      {(isNebula || flying || spotlightNodeId) && (
+        <Edges
+          showTech={showTech}
+          // On a work page, only what this project connects to.
+          subgraphOf={!isNebula && !flying ? spotlightNodeId : null}
+        />
+      )}
       {nodeList.map((node) => {
           if (node.kind === "tech" && !showTech) return null;
           return (

@@ -743,7 +743,9 @@ export function NebulaCanvas() {
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
   const isHome = pathname === "/";
   const routeFocusId = isNebula ? nodeIdForPathname(pathname) : null;
-  const spotlightNodeId = nodeIdForWorkPathname(pathname);
+  // The route wins; a hovered row in the list stands in until there is one.
+  const previewNodeId = useSceneStore((s) => s.previewNodeId);
+  const spotlightNodeId = nodeIdForWorkPathname(pathname) ?? previewNodeId;
 
   // Node clicks push a route rather than setting focus; the route then sets
   // focus. Defined here, outside <Canvas>, because next/navigation's router

@@ -116,6 +116,10 @@ On `/work/[slug]` the globe is seen **from outside** — the counterpart to `/ne
 
 The node is aimed at its seeded layout position rather than its live wandering one, so the target does not drift while the turn is converging, and the orientation is eased per-frame rather than run over a fixed duration — it has to survive being re-aimed mid-turn when the reader moves to another project, which a timed curve would have to restart.
 
+**The list previews it.** Hovering a row in `/work` — or tabbing to it, so a keyboard reader gets the same thing — starts the globe turning toward that project, so the list shows where each entry sits and the turn is already half-made by the time the reader arrives. The route wins over the preview once they do. Measured: hovering a row changes 8.5k pixels of the graph region against idle, and two different rows differ from each other by 9.9k.
+
+**A spotlit page draws that project's connections**, and only those. The whole edge population would be wrong beside prose — a hundred-plus shared-tech hairlines over an article is a texture, not information — so `Edges` takes a `subgraphOf` and renders what touches the node. Those edges also need their own weight: everywhere else the layer is scaled by the constellation's placement so it fades out with the departure flight, but a work page sits at the landing placement where that value is zero, and the subgraph would be drawn perfectly and invisibly.
+
 **A spotlit page sits between ambient and subject.** It keeps full scale, like `/`, rather than the 0.7 every other non-landing route gets, and its opacity is lifted from 0.35 to 0.55 — the graph is doing a job there, and the turn has to be large enough to read as a turn. It stays well below the landing page's weight, since the prose is still what is being read. Below the desktop tier it is not drawn at all, as everywhere else off `/`.
 
 ## Deep linking

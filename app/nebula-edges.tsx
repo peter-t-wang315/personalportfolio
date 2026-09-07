@@ -240,9 +240,11 @@ function computeStraightGeometry(
 function RuntimeEdgeLine({
   edge,
   devTime,
+  spotlit,
 }: {
   edge: Edge;
   devTime: boolean;
+  spotlit: boolean;
 }) {
   const geo = useMemo(() => computeCurveGeometry(edge, false), [edge]);
   const baseRef = useRef<QuadraticBezierLineRef>(null);
@@ -272,7 +274,7 @@ function RuntimeEdgeLine({
     // Brightening runs regardless of reduced motion — hover still
     // highlights, it just snaps instead of easing (same idiom as the node
     // hover lerp).
-    const fade = getPlacement();
+    const fade = edgeFade(spotlit);
     hoverLevel.current = THREE.MathUtils.lerp(
       hoverLevel.current,
       connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
@@ -346,6 +348,23 @@ function RuntimeEdgeLine({
  * which is what 02-architecture.md's performance budget asks for.
  */
 const TECH_ARC_SEGMENTS = 10;
+
+/**
+ * Edge visibility on a spotlit `/work/[slug]`.
+ *
+ * Everywhere else the layer is scaled by the constellation's placement, so it
+ * fades out with the departure flight — but a work page sits at the landing
+ * placement, where that value is zero, so the subgraph drawn there would be
+ * rendered perfectly and invisibly. It gets a fixed weight instead, pitched to
+ * sit with the lifted node opacity on those pages rather than to dominate the
+ * prose beside it.
+ */
+const SPOTLIT_EDGE_FADE = 0.6;
+
+/** How strongly to draw the edge layer this frame. */
+function edgeFade(spotlit: boolean) {
+  return spotlit ? SPOTLIT_EDGE_FADE : getPlacement();
+}
 
 const _arcA = new THREE.Vector3();
 const _arcB = new THREE.Vector3();
@@ -433,7 +452,13 @@ function createStraightBatchGeometry(edgeList: Edge[]) {
 }
 
 /** All shared-tech edges batched into a single LineSegments draw call. */
-function TechEdges({ edgeList }: { edgeList: Edge[] }) {
+function TechEdges({
+  edgeList,
+  spotlit,
+}: {
+  edgeList: Edge[];
+  spotlit: boolean;
+}) {
   const { geometry, attribute } = useMemo(
     () => createStraightBatchGeometry(edgeList),
     [edgeList],
@@ -451,7 +476,7 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
-    material.opacity = TECH_OPACITY * getPlacement();
+    material.opacity = TECH_OPACITY * edgeFade(spotlit);
     if (useSceneStore.getState().reducedMotion) return;
     writeStraightEndpoints(edgeList, attribute, true);
   });
@@ -472,7 +497,13 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
  * (a React re-render, not a per-frame cost); positions still track drift
  * every frame while it's non-empty.
  */
-function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
+function TechEdgeHighlights({
+  edgeList,
+  spotlit,
+}: {
+  edgeList: Edge[];
+  spotlit: boolean;
+}) {
   const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
   const travellingBetween = useSceneStore((s) => s.travellingBetween);
   // Subscribed rather than read per frame, because this batch's geometry is
@@ -506,7 +537,7 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
-    material.opacity = TECH_HIGHLIGHT_OPACITY * getPlacement();
+    material.opacity = TECH_HIGHLIGHT_OPACITY * edgeFade(spotlit);
     if (connected.length === 0 || useSceneStore.getState().reducedMotion) {
       return;
     }
@@ -519,30 +550,62 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   );
 }
 
-export function Edges({ showTech }: { showTech: boolean }) {
+export function Edges({
+  showTech,
+  subgraphOf = null,
+}: {
+  showTech: boolean;
+  /**
+   * When set, only edges touching this node are drawn.
+   *
+   * `/work/[slug]` uses it to show what the project it is about connects to.
+   * The whole population would be wrong there: a hundred-plus shared-tech
+   * hairlines over a page of prose is a texture, not information, and the
+   * point of the graph beside an article is to answer "what does this one
+   * talk to" rather than to redraw the entire architecture.
+   */
+  subgraphOf?: string | null;
+}) {
+  // A subgraph is only ever drawn for a spotlit work page, where the placement
+  // is zero and cannot be what sets the layer's weight.
+  const spotlit = subgraphOf !== null;
+  const touches = useMemo(
+    () => (edge: Edge) =>
+      subgraphOf === null ||
+      edge.from === subgraphOf ||
+      edge.to === subgraphOf,
+    [subgraphOf],
+  );
   const runtimeEdges = useMemo(
-    () => edges.filter((e) => e.kind === "runtime"),
-    [],
+    () => edges.filter((e) => e.kind === "runtime" && touches(e)),
+    [touches],
   );
   const devTimeEdges = useMemo(
-    () => edges.filter((e) => e.kind === "dev-time"),
-    [],
+    () => edges.filter((e) => e.kind === "dev-time" && touches(e)),
+    [touches],
   );
   const techEdges = useMemo(
-    () => edges.filter((e) => e.kind === "shared-tech"),
-    [],
+    () => edges.filter((e) => e.kind === "shared-tech" && touches(e)),
+    [touches],
   );
 
   return (
     <>
       {runtimeEdges.map((edge) => (
-        <RuntimeEdgeLine key={edge.id} edge={edge} devTime={false} />
+        <RuntimeEdgeLine
+          key={edge.id}
+          edge={edge}
+          devTime={false}
+          spotlit={spotlit}
+        />
       ))}
       {devTimeEdges.map((edge) => (
-        <RuntimeEdgeLine key={edge.id} edge={edge} devTime />
+        <RuntimeEdgeLine key={edge.id} edge={edge} devTime spotlit={spotlit} />
       ))}
-      {showTech && <TechEdges edgeList={techEdges} />}
-      {showTech && <TechEdgeHighlights edgeList={techEdges} />}
+      {showTech && <TechEdges edgeList={techEdges} spotlit={spotlit} />}
+      {showTech && (
+        <TechEdgeHighlights edgeList={techEdges} spotlit={spotlit} />
+      )}
     </>
   );
 }
