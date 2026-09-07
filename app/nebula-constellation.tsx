@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame, type ThreeEvent } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
@@ -11,6 +11,8 @@ import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import {
   DESKTOP_MIN_WIDTH_PX,
   SHORT_VIEWPORT_HEIGHT_PX,
+  clusterBesideTextColumn,
+  textColumnRightPx,
 } from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
 import {
@@ -280,6 +282,25 @@ function hoverLabelTitle(nodeId: string): string | null {
 // halo to stay legible — confirmed by testing with the halo removed once
 // the core became translucent, and it's no longer needed.
 const LABEL_Y_OFFSET_FACTOR = -0.5;
+/** Scratch for the spotlight labels' facing test, which runs every frame. */
+const _labelCentre = new THREE.Vector3();
+const _labelWorld = new THREE.Vector3();
+const _labelEdge = new THREE.Vector3();
+const _labelRight = new THREE.Vector3();
+const _labelScale = new THREE.Vector3();
+/** Scratch for the label de-collision pass; reused so it allocates nothing. */
+const placed: {
+  label: HTMLDivElement;
+  anchorX: number;
+  anchorY: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  hidden: boolean;
+}[] = [];
+/** Enough to separate the worst measured case; see the pass for why >1. */
+const SPOTLIGHT_LABEL_PASSES = 4;
 // Scales the label with the node's own (hover-grown) radius and camera
 // distance via Html's distanceFactor, the same "content sized as if it
 // lived in 3D space" technique 2.6's interior panel will need for content
@@ -392,6 +413,251 @@ function HoverLabel() {
           {title}
         </div>
       </Html>
+    </group>
+  );
+}
+
+
+/**
+ * Clearance between a node's drawn edge and its name, in screen pixels.
+ *
+ * Added to the node's *measured* on-screen radius rather than used as a flat
+ * offset. The nodes here are 5-11px across depending on kind and route, and a
+ * single offset that clears the big ones wastes space around the small ones
+ * while a single offset that suits the small ones lands text on top of the
+ * big ones — which is what a flat 16px did to the subject node.
+ */
+const SPOTLIGHT_LABEL_GAP_PX = 9;
+
+/**
+ * The names of a spotlit project and everything it connects to, drawn beside
+ * the nodes themselves.
+ *
+ * **Always visible, not on hover.** The whole reason the graph is on a work
+ * page is to show what the project is built from, and a connection you have to
+ * discover one node at a time does not say that — it makes the reader do
+ * lookup work to recover something the page already knows. Hover also has no
+ * answer on touch, where there is nothing to hover with, and it would hide the
+ * labels behind the one gesture that route now uses to spin the globe.
+ *
+ * Only the lit subgraph is named. All 45 at once is not a diagram, it is a
+ * wall of text over a sphere — and the other 36 are dimmed to an eighth of
+ * their opacity precisely because they are not part of this project's story.
+ *
+ * Sized in CSS rather than through `Html`'s `distanceFactor`, which is what
+ * the hover label inside `/nebula` uses. That one is read from within the
+ * shell, where a node fills much of the view and text should grow with it.
+ * Here the globe is a small object beside an article and its nodes are 5-11px
+ * across; text scaled to *them* would be unreadable, so the label keeps a
+ * constant screen size and only its position tracks the node.
+ */
+function SpotlightLabels({
+  nodeIds,
+  subjectId,
+}: {
+  nodeIds: string[];
+  subjectId: string;
+}) {
+  const size = useThree((state) => state.size);
+  const groupRef = useRef<THREE.Group>(null);
+  const holders = useRef<Record<string, THREE.Group | null>>({});
+  const labels = useRef<Record<string, HTMLDivElement | null>>({});
+  /**
+   * Each label's rendered box, measured once and then read from here every
+   * frame. `offsetWidth` forces a synchronous layout, and eight of those per
+   * frame for text whose size never changes is a reflow loop for nothing.
+   */
+  const sizes = useRef<Record<string, { width: number; height: number }>>({});
+
+  // Cleared when the spotlight moves, so the next frame re-measures the new
+  // set's text rather than laying it out against the old one's boxes.
+  useEffect(() => {
+    sizes.current = {};
+  }, [nodeIds]);
+
+  useFrame((state) => {
+    const group = groupRef.current;
+    if (!group) return;
+    // The globe's own centre, as a distance from the camera. Anything further
+    // than this is on the far side of the sphere, where its node is behind the
+    // shell and a name floating over the front would point at nothing.
+    group.getWorldPosition(_labelCentre);
+    const centreDistance = _labelCentre.distanceTo(state.camera.position);
+    const scale = group.getWorldScale(_labelScale).x;
+    const halfWidth = state.size.width / 2;
+    // The camera's own right vector, so a node's radius can be measured across
+    // the screen rather than along whichever world axis happens to face it.
+    _labelRight.setFromMatrixColumn(state.camera.matrixWorld, 0);
+
+    for (const id of nodeIds) {
+      const holder = holders.current[id];
+      if (!holder) continue;
+      const live = getLivePosition(id);
+      if (live) holder.position.copy(live);
+      else holder.position.fromArray(nodeGeometry[id].position);
+    }
+
+    placed.length = 0;
+
+    // The subject's projected position is the origin every other label is
+    // pushed away from, so it has to be resolved before any of them.
+    const subjectHolder = holders.current[subjectId];
+    let subjectX = 0;
+    let subjectY = 0;
+    if (subjectHolder) {
+      subjectHolder.getWorldPosition(_labelWorld).project(state.camera);
+      subjectX = (_labelWorld.x * 0.5 + 0.5) * state.size.width;
+      subjectY = (-_labelWorld.y * 0.5 + 0.5) * state.size.height;
+    }
+
+    for (const id of nodeIds) {
+      const holder = holders.current[id];
+      const label = labels.current[id];
+      if (!holder || !label) continue;
+
+      holder.getWorldPosition(_labelWorld);
+      const behind =
+        _labelWorld.distanceTo(state.camera.position) > centreDistance;
+
+      // How big this node actually is on screen: project its centre and a
+      // point one radius to the camera's right, and measure between them.
+      _labelEdge
+        .copy(_labelWorld)
+        .addScaledVector(_labelRight, nodeGeometry[id].radius * scale);
+      _labelWorld.project(state.camera);
+      _labelEdge.project(state.camera);
+      const x = (_labelWorld.x * 0.5 + 0.5) * state.size.width;
+      const y = (-_labelWorld.y * 0.5 + 0.5) * state.size.height;
+      const radiusPx = Math.abs(_labelEdge.x - _labelWorld.x) * halfWidth;
+
+      // **Pushed outward from the subject, not downward.** The neighbours
+      // settle as a ring around it, so radial offsets fan out with the ring
+      // and the names separate on their own; a shared downward offset stacked
+      // them into each other and onto the node in the middle.
+      let dx = x - subjectX;
+      let dy = y - subjectY;
+      const length = Math.hypot(dx, dy);
+      if (length < 1) {
+        // The subject itself, and anything sitting on top of it: straight down.
+        dx = 0;
+        dy = 1;
+      } else {
+        dx /= length;
+        dy /= length;
+      }
+      // Offset the label's *near edge*, not its centre. These boxes are up to
+      // 120px wide and two lines tall, so pushing the centre out by the node's
+      // radius still left half a label lying across the node it names.
+      // Measured on the first frame the label has a box, not in an effect:
+      // drei's Html mounts its portal in an effect of its own, so an effect
+      // here runs while the div still has no layout and every label caches a
+      // zero-sized box — which silently disabled both the offset below and the
+      // de-collision pass, leaving names overlapping by up to 730px^2.
+      let size = sizes.current[id];
+      if (!size && label.offsetWidth > 0) {
+        size = { width: label.offsetWidth, height: label.offsetHeight };
+        sizes.current[id] = size;
+      }
+      const ownExtent = size
+        ? Math.abs(dx) * (size.width / 2) + Math.abs(dy) * (size.height / 2)
+        : 0;
+      const distance = radiusPx + SPOTLIGHT_LABEL_GAP_PX + ownExtent;
+      placed.push({
+        label,
+        anchorX: x,
+        anchorY: y,
+        x: x + dx * distance,
+        y: y + dy * distance,
+        width: size ? size.width : 0,
+        height: size ? size.height : 0,
+        hidden: behind,
+      });
+    }
+
+    // **Then push the names off each other.** Fanning them outward separates
+    // the ring, but two neighbours that happen to share a bearing from the
+    // subject get the same direction and land on top of each other anyway.
+    // This is the node separation pass in two dimensions: resolve each
+    // overlapping pair along its shallower axis, half the correction each, a
+    // few times. The labels drift off their exact radial line rather than
+    // overlapping, which is the right trade — a name a few pixels off its
+    // spoke still reads as belonging to its node; two names on top of each
+    // other read as neither.
+    for (let pass = 0; pass < SPOTLIGHT_LABEL_PASSES; pass++) {
+      let collided = false;
+      for (let i = 0; i < placed.length; i++) {
+        const a = placed[i];
+        if (a.hidden) continue;
+        for (let j = i + 1; j < placed.length; j++) {
+          const b = placed[j];
+          if (b.hidden) continue;
+          const overlapX =
+            (a.width + b.width) / 2 + SPOTLIGHT_LABEL_GAP_PX - Math.abs(a.x - b.x);
+          const overlapY =
+            (a.height + b.height) / 2 + SPOTLIGHT_LABEL_GAP_PX - Math.abs(a.y - b.y);
+          if (overlapX <= 0 || overlapY <= 0) continue;
+          collided = true;
+          if (overlapY <= overlapX) {
+            const push = (Math.sign(a.y - b.y) || 1) * (overlapY / 2);
+            a.y += push;
+            b.y -= push;
+          } else {
+            const push = (Math.sign(a.x - b.x) || 1) * (overlapX / 2);
+            a.x += push;
+            b.x -= push;
+          }
+        }
+      }
+      if (!collided) break;
+    }
+
+    // A name may not be drawn across the article. Even where the globe itself
+    // clears the measure, its labels reach up to 130px further in, and on the
+    // narrower desktop widths that is enough to put half of them over the
+    // prose — measured, 6 of 12 at 1024x768 and 11 of 12 at 844x390. Hiding
+    // only the ones that cross keeps every name there is room for, rather than
+    // dropping the whole set at a breakpoint.
+    const textRight = textColumnRightPx(state.size.width);
+    for (const p of placed) {
+      p.label.style.transform = `translate(${(p.x - p.anchorX).toFixed(1)}px, ${(p.y - p.anchorY).toFixed(1)}px)`;
+      p.label.style.opacity =
+        p.hidden || p.x - p.width / 2 < textRight ? "0" : "1";
+    }
+  });
+
+  // Nothing at all where the page is a vertical stack: there the globe sits
+  // *behind* the prose rather than beside it, so every name lands on top of a
+  // sentence and neither can be read. Measured at 390x844, all twelve.
+  if (!clusterBesideTextColumn(size.width, size.height)) return null;
+
+  return (
+    <group ref={groupRef}>
+      {nodeIds.map((id) => {
+        const node = nodeGeometry[id];
+        const title = hoverLabelTitle(id);
+        if (!node || !title) return null;
+        return (
+          <group
+            key={id}
+            ref={(el) => {
+              holders.current[id] = el;
+            }}
+            position={node.position}
+          >
+            <Html center style={{ pointerEvents: "none" }} zIndexRange={[5, 0]}>
+              <div
+                ref={(el) => {
+                  labels.current[id] = el;
+                }}
+                className="w-max max-w-[130px] text-center text-[0.6875rem] font-medium leading-tight text-ink-muted transition-opacity duration-300"
+                style={{ opacity: 0 }}
+              >
+                {title}
+              </div>
+            </Html>
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -693,6 +959,13 @@ export function Constellation({
           the commit put a visible pop at the head of the departure, with the
           graph still life-size. Kept until it lands, they go while it is a
           cluster of hairlines too small to see them leave. */}
+      {/* Names for the spotlit subgraph. Not inside the graph, where the
+          hover label already answers this at a size suited to reading a node
+          from within the shell, and not while a flight is in the air, where
+          they would be text pinned to nodes mid-flight. */}
+      {!isNebula && !flying && spotlightNodeId && related && (
+        <SpotlightLabels nodeIds={[...related]} subjectId={spotlightNodeId} />
+      )}
       {(isNebula || flying || spotlightNodeId) && (
         <Edges
           showTech={showTech}

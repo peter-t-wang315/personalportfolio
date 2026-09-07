@@ -131,7 +131,23 @@ export const SHORT_VIEWPORT_HEIGHT_PX = 500;
  * Only has to be approximately right — it feeds a clearance gap, and
  * HERO_CLUSTER_GAP_PX absorbs a few px of drift either way.
  */
-const HERO_TEXT_RIGHT_PX = 64 + 700;
+const TEXT_MEASURE_PX = 700;
+
+/**
+ * Right edge of the page's text column, in px, at a given viewport width.
+ *
+ * Approximate by design — it feeds clearance decisions that absorb a few px
+ * of drift — but shared, because two different things now need it: the hero's
+ * cluster placement, and the spotlight labels, which hide rather than draw a
+ * project's name across the article beside it.
+ */
+export function textColumnRightPx(viewportWidth: number) {
+  // Mirrors `px-6 md:px-16` — Tailwind's md breakpoint is 768px.
+  const gutter = viewportWidth >= 768 ? 64 : 24;
+  return Math.min(viewportWidth, gutter + TEXT_MEASURE_PX);
+}
+
+const HERO_TEXT_RIGHT_PX = 64 + TEXT_MEASURE_PX;
 /** Breathing room between the text column and the cluster's near edge. */
 const HERO_CLUSTER_GAP_PX = 32;
 /** Keeps the cluster off the right edge when it is pushed as far as it goes. */
@@ -167,15 +183,35 @@ const HERO_EDGE_MARGIN_PX = 32;
  * Where neither holds (a portrait phone, a tablet held upright) the hero really
  * is a vertical stack with no column to clear, and the cluster stays centred.
  */
+/**
+ * Is the page laid out as a text column with the cluster beside it, rather
+ * than as a vertical stack with the cluster behind the prose?
+ *
+ * Desktop width is one way to be the former. A **short** viewport is the
+ * other: a landscape phone is a wide, short strip with its text in a left-hand
+ * column, which is this case exactly even though it is not a desktop.
+ *
+ * Named and exported because it is not only a placement question. Anything
+ * that draws next to the globe has to know whether there is clear space to
+ * draw into — the spotlight labels ask this before rendering at all, since
+ * over a stacked layout they land on the article text.
+ */
+export function clusterBesideTextColumn(
+  viewportWidth: number,
+  viewportHeight: number,
+) {
+  return (
+    viewportWidth >= DESKTOP_MIN_WIDTH_PX ||
+    viewportHeight < SHORT_VIEWPORT_HEIGHT_PX
+  );
+}
+
 export function clusterCenterXFraction(
   viewportWidth: number,
   viewportHeight: number,
   radiusScale = 1,
 ) {
-  const besideAColumn =
-    viewportWidth >= DESKTOP_MIN_WIDTH_PX ||
-    viewportHeight < SHORT_VIEWPORT_HEIGHT_PX;
-  if (!besideAColumn) return 0.5;
+  if (!clusterBesideTextColumn(viewportWidth, viewportHeight)) return 0.5;
 
   const radiusPx =
     CLUSTER_BOUNDING_RADIUS *
