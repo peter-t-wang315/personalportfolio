@@ -240,10 +240,14 @@ Fog matched to `--paper` is the primary depth cue in the constellation — it's 
 | | Desktop — 1024px+ | Tablet — 768–1024px | Mobile — under 768px |
 |---|---|---|---|
 | Tech nodes | Always visible | Visible, reduced opacity, toggleable | Hidden by default, toggleable |
-| Transmission | Focused node only, real transmission, after the fly-in completes | None. Fresnel shader throughout, including the focused node | None. Fresnel shader throughout, including the focused node |
+| Transmission | **None, on any tier — see below.** The focused node's shell is a `--mask` `MeshPhysicalMaterial` with transmission off | None | None |
 | Particle count | ~600 | 350 | 200 |
 | Interaction | `CameraControls`: drag to rotate, scroll to dolly. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | Persistent bottom sheet is the primary navigation; the 3D is ambient. Tap to select, tap again to open. |
 | Interior panel size | 70% of viewport | 85% of viewport | 85% of viewport — no separate mobile value has been specified; inherits the tablet override |
+
+**Real transmission was removed from every tier**, having been desktop-only before. It cannot work in this scene: the canvas is `alpha: true` over the page's `--paper` background, so the paper is CSS *behind* a transparent canvas and is not in the WebGL scene — transmission had nothing to transmit. It looked correct on the focused sphere only because a thick, short attenuation distance tinted the result `--mask` whatever lay behind it. The moment the shell flattened into a panel and cleared for legibility that tint went, the empty backdrop came through, and the opened node rendered as a bright white plate over the paper — the one colour not in the palette. Moving the camera inside the shell made it worse, since a focused node's backdrop is now mostly nothing.
+
+The performance budget's cap on transmissive meshes therefore no longer binds anything, and the two lights added for that material now light the shell that replaced it. Giving the scene an opaque backdrop would make transmission workable again, but that is a change to how the canvas composites over the page rather than a material swap.
 
 ### Orientation and short viewports
 

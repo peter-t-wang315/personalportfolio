@@ -160,48 +160,26 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
 }
 
 /**
- * Real transmission for the focused node. **One instance, reused** — the
- * performance budget in 02-architecture.md caps transmissive meshes at two
- * because each one costs an extra scene render pass, and only ever one node
- * is focused, so a single shared material is both sufficient and the only
- * thing that keeps the cap honest as node count grows.
- */
-const transmissionMaterial = new THREE.MeshPhysicalMaterial({
-  // White, **not** --mask. `color` multiplies transmitted light, so a dark
-  // green base tints everything seen through the glass toward black and the
-  // node renders as a flat opaque disc — which is exactly what it did first
-  // time. The green belongs in `attenuation*` instead, which is the physical
-  // model for a tinted medium: light picks up the colour with the distance it
-  // travels through the volume, so thin edges stay pale and the thick centre
-  // reads --mask. Same colour, arrived at correctly.
-  color: 0xffffff,
-  transmission: 1,
-  thickness: 1.1,
-  attenuationColor: new THREE.Color(palette.mask),
-  attenuationDistance: 1.4,
-  roughness: 0.14,
-  ior: 1.4,
-  // Transmission does its own blending; `transparent` on top of it double-
-  // counts and re-introduces the sorting problems transmission exists to
-  // avoid.
-  transparent: false,
-});
-
-/**
- * The opened shell on tablet and mobile, where 02-architecture.md's tier table
- * forbids transmission.
+ * The opened shell, on every tier.
  *
- * **The shell opens on every tier; only its material is tiered.** That
- * distinction was missed the first time and the opening was built inside the
- * transmission branch, so below desktop a focused node stayed a sphere sitting
- * behind the prose — the "circular content areas fight lists, code and links"
- * problem the morph exists to solve, and worse once focus began approaching
- * from inside the shell, which put that sphere directly behind the text.
+ * **Real transmission was removed here, and 02-architecture.md's tier table
+ * updated with it.** It cannot work in this scene: the canvas is `alpha: true`
+ * over the page's `--paper` background, so the paper is CSS *behind* a
+ * transparent canvas and is not in the WebGL scene at all. Transmission had
+ * nothing to transmit. It looked right on the focused sphere only because a
+ * thick, short attenuation distance tinted the result `--mask` whatever was
+ * behind it — and the moment the shell flattened into a panel and cleared for
+ * legibility, that tint went and the empty backdrop came through as a bright
+ * white plate laid over the paper. Moving the camera inside the shell made it
+ * worse, since the backdrop behind a focused node is now mostly nothing.
  *
- * Still a MeshPhysicalMaterial with transmission left at zero: the same class
- * as the desktop shell, so one mesh and one set of morph targets serve both,
- * and no second render pass is incurred. It fades on plain opacity, which the
- * transmissive one cannot use — see transmissionMaterial.
+ * A `MeshPhysicalMaterial` with no transmission instead: `--mask`, the colour
+ * the node already is, fading on plain opacity — which the transmissive
+ * material could not use, since `transparent` double-counts its blending. One
+ * material, one mesh, one set of morph targets, and no second render pass on
+ * any tier. Giving the scene an opaque backdrop would make transmission
+ * workable again, but that changes how the whole canvas composites over the
+ * page, not just a material.
  */
 const plainShellMaterial = new THREE.MeshPhysicalMaterial({
   color: palette.mask,
@@ -211,32 +189,6 @@ const plainShellMaterial = new THREE.MeshPhysicalMaterial({
   depthWrite: false,
 });
 
-/**
- * The focused node's real glass, cross-faded in over the fresnel shell rather
- * than swapped for it.
- *
- * Transmission is desktop-only and focused-only per 02-architecture.md's
- * Responsive tiers table — the tier branch 2.2 asked for lives here now — and
- * it is still withheld until the flight lands, because the extra render pass
- * is what a moving camera can least afford. What changed is the *arrival* of
- * it: an instant swap at that moment changed 30% of the frame's pixels in one
- * frame, measured, which is a pop at exactly the beat the landing is supposed
- * to settle on.
- *
- * It cannot be cross-faded the obvious way. `opacity` needs `transparent`, and
- * `transparent` on a transmissive material double-counts its blending and
- * washes the glass out (see transmissionMaterial). But **thickness and
- * attenuation are plain uniforms**, and a transmissive sphere with no
- * thickness and no attenuation is clear: it passes the background through
- * undistorted and untinted, so it is invisible apart from its specular rim.
- * So the glass fades in by *becoming* glass — thickening and picking up its
- * tint — while the fresnel shell fades out over it. Two draws for 240ms, one
- * after.
- */
-const GLASS_THICKNESS = 1.1;
-const GLASS_ATTENUATION = 1.4;
-/** Effectively infinite: light picks up no colour crossing the volume. */
-const GLASS_CLEAR_ATTENUATION = 1e4;
 /** The plain shell's opacity when fully arrived, before opening thins it. */
 const PLAIN_SHELL_OPACITY = 0.3;
 /** 01-design-system.md's standard UI duration and easing. Not the 1400ms
@@ -274,8 +226,25 @@ const PANEL_FRACTION_DESKTOP = 0.7;
 const PANEL_FRACTION_COMPACT = 0.85;
 /** Depth of the opened shell relative to the node's own radius. */
 const OPEN_DEPTH_FACTOR = 0.35;
-/** How much tint the opened shell keeps: 05-phase-2.md's "near-full transparency". */
-const OPEN_TINT_FACTOR = 0.12;
+/**
+ * How much of itself the shell keeps once open. Effectively none, and that is
+ * 05-phase-2.md's "near-full transparency" taken at its word.
+ *
+ * It used to stop at 0.12, which looked fine on the sphere and was wrong on
+ * the panel: a transmissive material that has lost its thickness and tint is
+ * still a smooth dielectric, and a smooth dielectric lit by the scene goes
+ * bright white at grazing angles. Flattened into a rounded rectangle that
+ * grazing band becomes the whole outline, so the opened node read as a white
+ * glowing plate laid over the paper — a new object, and the one colour in the
+ * design system that is not in the design system.
+ *
+ * So the shell carries the morph and then hands off. What draws the opened
+ * node's edge afterwards is the panel itself, which wears the same `--mask`
+ * rim the node had (nebula-panel.tsx) and is clipped to the same shape, so the
+ * rim stretches with it.
+ */
+const OPEN_TINT_FACTOR = 0;
+
 
 const glassGeometry = (() => {
   const geometry = sphereGeometry.clone();
@@ -322,7 +291,7 @@ export function snapFocusShellOpen() {
   focusGlass.snap = true;
 }
 
-function FocusGlass({ tier }: { tier: DeviceTier }) {
+function FocusGlass() {
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
   const focusSettled = useSceneStore((s) => s.focusSettled);
   const [mountedNodeId, setMountedNodeId] = useState<string | null>(null);
@@ -332,7 +301,6 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
   const camera = useThree((s) => s.camera);
 
   const wanted = focusSettled && focusedNodeId !== null ? focusedNodeId : null;
-  const transmissive = tier === "desktop";
 
   useFrame((state, delta) => {
     const { reducedMotion } = useSceneStore.getState();
@@ -374,17 +342,12 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
     // different routes: the transmissive one cannot use opacity at all, so it
     // becomes glass by gaining thickness and tint, while the plain one simply
     // fades. Both land on the same near-transparency once open.
-    const tint = fade * THREE.MathUtils.lerp(1, OPEN_TINT_FACTOR, open);
-    if (transmissive) {
-      transmissionMaterial.thickness = GLASS_THICKNESS * tint;
-      transmissionMaterial.attenuationDistance = THREE.MathUtils.lerp(
-        GLASS_CLEAR_ATTENUATION,
-        GLASS_ATTENUATION,
-        tint,
-      );
-    } else {
-      plainShellMaterial.opacity = PLAIN_SHELL_OPACITY * tint;
-    }
+    // Arrives as a soft `--mask` form the same colour as the node, then thins
+    // to nothing as it opens, handing its edge to the panel's own rim.
+    plainShellMaterial.opacity =
+      PLAIN_SHELL_OPACITY *
+      fade *
+      THREE.MathUtils.lerp(1, OPEN_TINT_FACTOR, open);
 
     // The simulation is frozen while focused, but it resumes the instant focus
     // clears — and the glass is still fading out then, so it has to keep
@@ -437,7 +400,7 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
       position={node.position}
       scale={node.radius * GLASS_INSET}
       geometry={glassGeometry}
-      material={transmissive ? transmissionMaterial : plainShellMaterial}
+      material={plainShellMaterial}
       raycast={() => null}
     />
   );
@@ -811,7 +774,7 @@ export function Constellation({
             </mesh>
           );
         })}
-      <FocusGlass tier={tier} />
+      <FocusGlass />
       {interactive && <HoverLabel />}
     </group>
   );

@@ -74,7 +74,7 @@ The article is always laid out at its final size, so text never reflows; a `clip
 
 Two beats, matching the shell behind it: the content fades up inside the closed circle while the shell arrives, then the clip opens as the shell morphs. `lib/focus-framing.ts` holds the geometry all three share.
 
-**The shell opens on every tier; only its material is tiered.** The tier table gates transmission, not the morph — tablet and mobile get an 85% panel and need the same silhouette behind it. Below desktop the shell is the same `MeshPhysicalMaterial` with transmission left at zero, so one mesh and one set of morph targets serve both and no second render pass is incurred.
+**The shell opens on every tier, with one material.** The tier table gated transmission, not the morph — tablet and mobile get an 85% panel and need the same silhouette behind it — and transmission has since been removed from every tier (see 02-architecture.md), because a transparent canvas over a CSS background gives it nothing to transmit and the opened shell rendered white. The shell is a `--mask` `MeshPhysicalMaterial` with transmission off: the colour the node already is, arriving as a soft form, morphing, then fading out and handing its edge to the panel's own rim so the opened node keeps the node's colour rather than becoming a new object.
 
 Connected nodes remain visible past the panel edges and stay hoverable and clickable, so you can move sideways through the graph without zooming out. Clicking a connected node flies directly there without returning to the constellation first.
 

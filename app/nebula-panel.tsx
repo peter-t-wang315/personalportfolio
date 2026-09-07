@@ -41,6 +41,15 @@ import { hasWebgl } from "@/lib/webgl";
  * fades up inside the closed circle while the shell arrives, then the clip
  * opens as the shell morphs.
  *
+ * **It wears the node's own rim.** The 3-D shell carries the morph and then
+ * hands off — see OPEN_TINT_FACTOR — so from that point the edge of the opened
+ * node is drawn here, as a `--mask` hairline and a soft inner wash in the same
+ * colour the node was. Both are *inset* shadows, which is not a detail: an
+ * outer shadow is outside the border box and `clip-path` would cut it away,
+ * while inset shadows are painted within it and are clipped to the same
+ * stretching shape, so the rim opens with the node instead of being a
+ * rectangle that appears around it.
+ *
  * **Two entry paths, per 05-phase-2.md's Deep linking.** On a cold entry —
  * a direct link or a reload — the content must be visible at first paint, so
  * the server renders it at full opacity and nothing waits for anything. On a
@@ -140,7 +149,8 @@ export function NebulaPanel({
           "pointer-events-auto overflow-y-auto overscroll-contain " +
           "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
           "px-8 py-10 md:px-14 md:py-14 " +
-          "bg-paper/85 " +
+          "bg-paper/90 " +
+          "shadow-[inset_0_0_0_1px_rgba(31,74,58,0.16),inset_0_0_90px_rgba(31,74,58,0.07)] " +
           "[@media(max-height:500px)]:w-screen [@media(max-height:500px)]:h-screen " +
           "[@media(max-height:500px)]:pt-20"
         }
