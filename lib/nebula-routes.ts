@@ -33,6 +33,19 @@ export function nodeIdForPathname(pathname: string): string | null {
   return null;
 }
 
+/**
+ * The project a `/work/[slug]` pathname is about, as a node id.
+ *
+ * `/work/[slug]` shows the globe from outside and turns it so this node's
+ * cluster faces the reader — the counterpart to `/nebula`, where you are
+ * inside it. The list page `/work` has no single subject, so it gets none.
+ */
+export function nodeIdForWorkPathname(pathname: string): string | null {
+  const match = pathname.match(/^\/work\/([^/]+)\/?$/);
+  if (!match) return null;
+  return projectBySlug(match[1])?.id ?? null;
+}
+
 /** Where `/nebula/...` sends a visitor who cannot use the graph. */
 export function documentRouteForNode(id: string): string {
   const project = projectById(id);

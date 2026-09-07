@@ -108,9 +108,15 @@ This section used to ask instead for connected nodes to remain visible past the 
 
 **Technology nodes open too**, at `/nebula/tech/[id]`: the blurb, and every project that uses the technology grouped by cluster, each linked to its own node. There is no `/work` counterpart, so it is the one place a technology is read — and it is the "follow C# out of a project and see everything else written in it" move that makes sideways navigation mean something. The project panel's technology line links into it.
 
-## Work-page gathering
+## Work-page rotate-to-top
 
-On `/work/[slug]`, the project's connected subgraph — its runtime-edge neighbours plus its tech nodes — gathers toward a focal point using the same attraction mechanic as hover, viewed from outside the constellation rather than flown into. Unrelated nodes stay dimmed and uninvolved. It settles once and the simulation loop stops completely — no ongoing motion or GPU cost beside the body text. Under `prefers-reduced-motion`, it renders already-settled with no animation.
+On `/work/[slug]` the globe is seen **from outside** — the counterpart to `/nebula`, where you are inside it — and it **turns so the project's cluster faces the reader**, as if looking at the earth from above. Its connected subgraph stays lit and everything else recedes to a quarter of its own opacity. It settles once and the simulation stops completely: no ongoing motion or GPU cost beside the body text, and drifting nodes behind prose are the texture-behind-reading-text problem the ambient rules exist to avoid anyway. Under `prefers-reduced-motion` it renders already-turned, with no animation.
+
+**Turning, not gathering.** This section previously asked for the connected subgraph to *gather* toward a focal point using the hover attraction. Turning the whole sphere is better: gathering moves the nodes, so a cluster is somewhere different on every page, while a rotation preserves the layout and leaves each cluster in the same place relative to its neighbours. The geography becomes learnable across pages instead of rearranged on each one.
+
+The node is aimed at its seeded layout position rather than its live wandering one, so the target does not drift while the turn is converging, and the orientation is eased per-frame rather than run over a fixed duration — it has to survive being re-aimed mid-turn when the reader moves to another project, which a timed curve would have to restart.
+
+**A spotlit page sits between ambient and subject.** It keeps full scale, like `/`, rather than the 0.7 every other non-landing route gets, and its opacity is lifted from 0.35 to 0.55 — the graph is doing a job there, and the turn has to be large enough to read as a turn. It stays well below the landing page's weight, since the prose is still what is being read. Below the desktop tier it is not drawn at all, as everywhere else off `/`.
 
 ## Deep linking
 

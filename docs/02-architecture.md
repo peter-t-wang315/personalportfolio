@@ -86,7 +86,7 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/about` | Bio, photo, skills prose, mentoring, on-call, Claude Code | Far, slightly offset |
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
-| `/work/[slug]` | Full project page | Far, dimmed; the project's connected subgraph gathers toward a focal point, then the simulation stops |
+| `/work/[slug]` | Full project page | Outside the globe, turned so the project's cluster faces the reader. Full scale and lifted opacity, its connected subgraph lit and the rest receded, simulation stopped. See `05-phase-2.md`'s Work-page rotate-to-top |
 | `/nebula` | The graph | At the constellation's framing pose — outside it, whole composition in view. `05a-phase-2-sequence.md`'s 2.1 is the authority: "frames the whole constellation at roughly 70% of viewport height" (measured, 65%). Not *inside* it; that is where the node fly-in and hand-dollying go, below. |
 | `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
 | `/nebula/tech/[id]` | Graph with a technology node open: its blurb and every project that uses it, each linked onward | As `/nebula/[slug]`. Tech nodes have no `/work` page, so no canonical tag; without WebGL it falls back to `/work` |

@@ -6,7 +6,12 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { usePathname, useRouter } from "next/navigation";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
-import { nodeIdForPathname, routeForNode } from "@/lib/nebula-routes";
+import {
+  nodeIdForPathname,
+  nodeIdForWorkPathname,
+  routeForNode,
+} from "@/lib/nebula-routes";
+import { nodeGeometry } from "@/lib/node-geometry";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_BOUNDING_RADIUS,
@@ -85,6 +90,21 @@ const PARALLAX_EASE = 0.09;
 const PARALLAX_WRITE_EPSILON = 0.0005;
 /** Route-change easing for the ambient scale, matching the opacity fade. */
 const AMBIENT_EASE = 0.06;
+
+/**
+ * Where a spotlit node is turned to, in the group's own space: toward the
+ * reader and tilted up, so the cluster it belongs to sits in the upper front
+ * of the globe rather than dead centre. Looking at the earth from above.
+ */
+const SPOTLIGHT_FACING = new THREE.Vector3(0, 0.35, 1).normalize();
+/**
+ * Per-frame slerp toward that orientation. Exponential rather than a fixed
+ * curve over a fixed time, matching the ambient scale and the pointer parallax
+ * beside it: this is background motion that has to survive being re-aimed
+ * mid-turn when the reader moves to another project, which a timed curve
+ * would have to restart.
+ */
+const SPOTLIGHT_EASE = 0.055;
 
 /**
  * Elevated, near-top-down heading, tilted slightly off pure vertical.
@@ -281,13 +301,18 @@ function currentPose(controls: CameraControlsImpl): CameraPose {
 function ConstellationPlacement({
   isNebula,
   isHome,
+  spotlightNodeId,
   children,
 }: {
   isNebula: boolean;
   isHome: boolean;
+  /** On `/work/[slug]`, the node whose cluster is turned to face the reader. */
+  spotlightNodeId: string | null;
   children: ReactNode;
 }) {
   const groupRef = useRef<THREE.Group>(null);
+  const spotlightTarget = useRef(new THREE.Quaternion());
+  const spotlightDirection = useRef(new THREE.Vector3());
   const parallax = useRef(new THREE.Vector2());
   const ambientScale = useRef(1);
   const lastWrittenParallax = useRef({ x: 0, y: 0 });
@@ -311,9 +336,13 @@ function ConstellationPlacement({
     // constellation made the graph land 30% too small and then grow back over
     // the following second. Measured as a spread still shrinking 1.1s after
     // the flight had ended.
+    // A spotlit work page keeps full size, like `/`. The graph is doing a job
+    // there — showing where the project being read sits — and the turn that
+    // brings its cluster forward has to be big enough to read as a turn.
+    // Everywhere else off `/` it is decoration and shrinks.
     ambientScale.current = THREE.MathUtils.lerp(
       ambientScale.current,
-      isNebula || isHome ? 1 : AMBIENT_SCALE,
+      isNebula || isHome || spotlightNodeId ? 1 : AMBIENT_SCALE,
       reducedMotion ? 1 : AMBIENT_EASE,
     );
 
@@ -388,6 +417,29 @@ function ConstellationPlacement({
       (state.size.height *
         (clusterCenterYFraction(state.size.width, state.size.height) - 0.5)) /
         pxPerWorldUnit;
+
+    // `/work/[slug]` turns the globe so its project's cluster faces the
+    // reader. The layout is preserved rather than deformed — 05-phase-2.md
+    // originally had the connected subgraph *gather* toward a focal point,
+    // which moves the nodes; turning the whole sphere instead means a cluster
+    // is always in the same place relative to its neighbours, so the geography
+    // is learnable across pages rather than rearranged on each one.
+    //
+    // Aimed at the seeded layout position, not the live wandering one, so the
+    // target does not drift while the turn is converging on it.
+    if (spotlightNodeId && nodeGeometry[spotlightNodeId]) {
+      spotlightDirection.current
+        .fromArray(nodeGeometry[spotlightNodeId].position)
+        .normalize();
+      spotlightTarget.current.setFromUnitVectors(
+        spotlightDirection.current,
+        SPOTLIGHT_FACING,
+      );
+    } else {
+      spotlightTarget.current.identity();
+    }
+    if (reducedMotion) group.quaternion.copy(spotlightTarget.current);
+    else group.quaternion.slerp(spotlightTarget.current, SPOTLIGHT_EASE);
 
     group.scale.setScalar(THREE.MathUtils.lerp(landingScale, 1, placement));
     group.position.set(
@@ -691,6 +743,7 @@ export function NebulaCanvas() {
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
   const isHome = pathname === "/";
   const routeFocusId = isNebula ? nodeIdForPathname(pathname) : null;
+  const spotlightNodeId = nodeIdForWorkPathname(pathname);
 
   // Node clicks push a route rather than setting focus; the route then sets
   // focus. Defined here, outside <Canvas>, because next/navigation's router
@@ -715,10 +768,15 @@ export function NebulaCanvas() {
       <SceneEnvironment />
       <RouteFocus id={routeFocusId} />
       <CameraRig isNebula={isNebula} routeFocusId={routeFocusId} />
-      <ConstellationPlacement isNebula={isNebula} isHome={isHome}>
+      <ConstellationPlacement
+        isNebula={isNebula}
+        isHome={isHome}
+        spotlightNodeId={spotlightNodeId}
+      >
         <Constellation
           isNebula={isNebula}
           isHome={isHome}
+          spotlightNodeId={spotlightNodeId}
           onOpenNode={openNode}
         />
       </ConstellationPlacement>

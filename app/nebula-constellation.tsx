@@ -91,6 +91,15 @@ const UNRELATED_OPACITY_FACTOR = 0.25;
  * it is the affordance, not decoration.
  */
 const AMBIENT_OPACITY_FACTOR = 0.35 / PROJECT_OPACITY;
+/**
+ * `/work/[slug]` sits between ambient and subject. The graph there is not
+ * decoration the way it is on `/about` — it is showing the reader where the
+ * project they are reading about sits, and the turn that brings its cluster
+ * forward has to be visible for that to mean anything. So it is lifted above
+ * the ambient value, while staying well below the landing page's, since prose
+ * is still the thing being read.
+ */
+const SPOTLIGHT_OPACITY_FACTOR = 0.55 / PROJECT_OPACITY;
 /** Route-change easing for the ambient fade. */
 const AMBIENT_EASE = 0.06;
 
@@ -390,10 +399,19 @@ function HoverLabel() {
 export function Constellation({
   isNebula,
   isHome,
+  spotlightNodeId,
   onOpenNode,
 }: {
   isNebula: boolean;
   isHome: boolean;
+  /**
+   * On `/work/[slug]`, the project the page is about. Its connected subgraph
+   * stays lit while everything else recedes, and the placement turns the globe
+   * so it faces the reader. Distinct from `focusedNodeId`: nothing is opened,
+   * no camera flies, and the panel is not involved — the graph is here to say
+   * where this project sits, beside prose that is doing the explaining.
+   */
+  spotlightNodeId: string | null;
   /** Pushes the node's route. Focus follows from the route, never from here. */
   onOpenNode: (id: string) => void;
 }) {
@@ -421,9 +439,10 @@ export function Constellation({
 
   // Who stays lit: the focused node and whatever it actually talks to.
   const related = useMemo(() => {
-    if (!focusedNodeId) return null;
-    return new Set([focusedNodeId, ...neighborsOf(focusedNodeId)]);
-  }, [focusedNodeId]);
+    const subject = focusedNodeId ?? spotlightNodeId;
+    if (!subject) return null;
+    return new Set([subject, ...neighborsOf(subject)]);
+  }, [focusedNodeId, spotlightNodeId]);
 
   /**
    * The simulation holds still while focused, per 2.3a's freeze hook and 05a's
@@ -439,9 +458,13 @@ export function Constellation({
    * question between the freeze and the flight that caused it.
    */
   useEffect(() => {
-    if (focusedNodeId || flying) freezeSimulation();
+    // A spotlit work page freezes too. 05-phase-2.md asks for that page to
+    // settle once and then stop completely — "no ongoing motion or GPU cost
+    // beside the body text" — and drifting nodes behind prose is exactly the
+    // texture-behind-reading-text problem the ambient rules exist to avoid.
+    if (focusedNodeId || flying || spotlightNodeId) freezeSimulation();
     else resumeSimulation();
-  }, [focusedNodeId, flying]);
+  }, [focusedNodeId, flying, spotlightNodeId]);
 
   // Tech node visibility is tier-dependent — see 02-architecture.md's
   // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
@@ -496,9 +519,11 @@ export function Constellation({
       ambient.current,
       isNebula || isHome
         ? 1
-        : state.size.width >= DESKTOP_MIN_WIDTH_PX
-          ? AMBIENT_OPACITY_FACTOR
-          : 0,
+        : state.size.width < DESKTOP_MIN_WIDTH_PX
+          ? 0
+          : spotlightNodeId
+            ? SPOTLIGHT_OPACITY_FACTOR
+            : AMBIENT_OPACITY_FACTOR,
       reducedMotion ? 1 : AMBIENT_EASE,
     );
     // Once faded out, stop drawing it: 45 transparent spheres a phone can't
