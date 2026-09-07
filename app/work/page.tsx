@@ -14,7 +14,7 @@ export default function WorkList() {
   return (
     <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
-        <HomeLink />
+        <HomeLink pinned />
 
         <h1
           className="font-display lowercase mt-4"

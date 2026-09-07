@@ -23,7 +23,7 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-20 bg-paper border-b border-ink-faint/30">
-      <div className="px-6 md:px-16 py-5 flex items-center justify-between">
+      <div className="px-6 md:px-16 h-header flex items-center justify-between">
         <Link href="/" className="text-[0.9375rem] font-medium inline-block link-underline">
           {site.name}
         </Link>
