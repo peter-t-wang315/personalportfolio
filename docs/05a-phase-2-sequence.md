@@ -50,10 +50,14 @@ opening a node from bare `/nebula` mounted the first panel the document had
 ever had, which read as cold. And a full-viewport sheet paints over corner
 chrome that is earlier in the DOM; the corners need their own stacking order.
 
-**Not 2.6's, still open:** the `/work/[slug]` gathering animation
-(05-phase-2.md, Work-page gathering) is in no step of this sequence. Leaving
-`/nebula/[slug]` straight to `/` is still a cut, now rarer since the corner
-link is the only way to do it.
+**Both of this block's open items are now closed.** The `/work/[slug]`
+gathering is built — neighbours gather to a ring at `GATHER_RADIUS`, strangers
+inside it are pushed out to `CLEAR_RADIUS`. And leaving `/nebula/[slug]`
+straight to `/` is a flight rather than a cut: `clearFocus` closes the shell
+while a single 1400ms departure carries the camera out, starting from the
+camera's own FOV rather than the graph's, which is what made the exit worth
+cutting before — assuming `INSIDE_CAMERA_FOV` opened it by snapping 22 degrees
+wider.
 
 **Two behaviours were built and deleted in the landing-page work, deliberately.**
 A phrase nudge and a shader sheen driven by `deviceorientation`. They were not a

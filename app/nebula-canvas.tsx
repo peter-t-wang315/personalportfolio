@@ -938,7 +938,7 @@ function CameraRig({
     if (wasNebula === isNebula) return;
     lastRoute.current = isNebula;
 
-    const { reducedMotion, focusedNodeId } = useSceneStore.getState();
+    const { reducedMotion } = useSceneStore.getState();
 
     if (isNebula) {
       // Cold entry to a node — a direct link or a reload of /nebula/[slug]:
@@ -977,13 +977,14 @@ function CameraRig({
       return;
     }
 
+    // Clearing focus first is what closes the shell: the node reads its own
+    // open state from the store, so by the time the flight below starts, the
+    // panel has gone and the rectangle is already contracting back toward a
+    // sphere. That is the "shell contracts" half of the exit; the flight is
+    // the "camera pulls back" half, and they run together.
     useSceneStore.getState().clearFocus();
-    // A first mount off /nebula has nowhere to depart from, and a departure
-    // from a focused node would start with the camera parked inside a shell
-    // that is about to shrink around it — leaving from inside the geometry
-    // rather than from the framing pose. 2.6 owns that exit properly (it
-    // reverses the node's own arrival); until then it stays a cut.
-    if (wasNebula === undefined || reducedMotion || focusedNodeId) {
+    // A first mount off /nebula has nowhere to depart from.
+    if (wasNebula === undefined || reducedMotion) {
       settle(controls, HOME_POSE, HOME_CAMERA_FOV, { free: true, at: 0 });
       return;
     }
@@ -991,10 +992,19 @@ function CameraRig({
       from: currentPose(controls),
       to: HOME_POSE,
       start: performance.now(),
-      fovFrom: INSIDE_CAMERA_FOV,
+      // Read off the camera rather than assumed to be the graph's. Leaving
+      // from inside a node starts at FOCUS_CAMERA_FOV, not INSIDE_CAMERA_FOV,
+      // and assuming the latter opened the departure by snapping 22 degrees
+      // wider — which is what made this exit worth cutting rather than flying
+      // in the first place.
+      fovFrom: (controls.camera as THREE.PerspectiveCamera).fov,
       fovTo: HOME_CAMERA_FOV,
       placementFrom: 1,
       placementTo: 0,
+      // Orbits out around the shell rather than cutting across its middle,
+      // which matters more from a focused node than from the graph's resting
+      // pose: the camera is parked against the inside of the surface there, so
+      // a straight line to the landing pose would leave through the wall.
       path: "orbit",
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
