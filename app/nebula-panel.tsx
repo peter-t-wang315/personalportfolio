@@ -6,6 +6,7 @@ import { motion } from "motion/react";
 import { useSceneStore } from "@/lib/scene-store";
 import { wasHydratedBefore } from "@/lib/hydration";
 import { focusedNodeHeightFraction } from "@/lib/focus-framing";
+import { clearPanelScroll, reportPanelScroll } from "@/lib/focus-scroll";
 import {
   DESKTOP_MIN_WIDTH_PX,
   SHORT_VIEWPORT_HEIGHT_PX,
@@ -103,13 +104,18 @@ export function NebulaPanel({
     if (!el) return;
     const scrollable = el.scrollHeight - el.clientHeight;
     if (scrollable <= 1) {
+      clearPanelScroll();
       setThumb((t) => (t.shown ? { ...t, shown: false } : t));
       return;
     }
-    const ratio = el.clientHeight / el.scrollHeight;
-    const height = Math.max(ratio, 0.08);
-    const top = (el.scrollTop / scrollable) * (1 - height);
-    setThumb({ shown: true, top, height });
+    const length = Math.max(el.clientHeight / el.scrollHeight, 0.08);
+    const progress = el.scrollTop / scrollable;
+    // Where the node should paint it: the thumb's centre, as a fraction of
+    // the node's height from the top.
+    reportPanelScroll(length / 2 + progress * (1 - length), length);
+    // The DOM fallback below only runs on the short-viewport sheet, where
+    // there is no opened node to paint on.
+    setThumb({ shown: true, top: progress * (1 - length), height: length });
     clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(
       () => setThumb((t) => ({ ...t, shown: false })),
@@ -118,6 +124,7 @@ export function NebulaPanel({
   }, []);
 
   useEffect(() => () => clearTimeout(hideTimer.current), []);
+  useEffect(() => clearPanelScroll, []);
 
   // The clip is in percentages of the panel, but the circle it starts from is
   // sized against the viewport, so converting between them needs real pixels.
@@ -216,17 +223,22 @@ export function NebulaPanel({
           {children}
         </div>
         {/*
-          The track is inset from the panel's edge, and stops short of its
-          corners, because the wall it rides is not a rectangle.
+          The DOM thumb is the **short-viewport fallback only**. Everywhere
+          else the node paints its own, onto its rim, from the scroll position
+          published in lib/focus-scroll.ts — which is the only way it can be
+          occluded by the shape. A DOM element always paints above the canvas,
+          so when the breathing outline wandered inward past a thumb laid over
+          the top, the thumb was left hanging outside the blob with nowhere to
+          go. Painted on the rim it *is* the wall, and stops being drawn
+          wherever the wall turns away.
 
-          Measured against a rendered panel: the blob's right edge sits at
-          x=1223 where the panel's own edge is at 1224 — a pixel *inside* it —
-          and above about 6% of the panel's height it curves away hard, to
-          1148 by 2%. A thumb flush to the panel edge therefore pokes out of
-          the shape near the top and bottom. Six pixels in and a track spanning
-          8% to 92% keeps it on the wall for the whole of its travel.
+          Under 500px of viewport height the node deliberately does not open,
+          so there is no wall to paint on and the sheet — which has its own
+          rectangular paper surface — takes an ordinary edge indicator.
         */}
-        <div className="pointer-events-none absolute right-1.5 top-[8%] h-[84%] w-[3px]">
+        <div
+          className="pointer-events-none absolute right-1.5 top-[8%] h-[84%] w-[3px] [@media(min-height:500px)]:hidden"
+        >
           <motion.div
             aria-hidden="true"
             className="absolute w-full rounded-full bg-mask/45"

@@ -13,6 +13,11 @@ import {
   SHORT_VIEWPORT_HEIGHT_PX,
 } from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
+import {
+  focusScroll,
+  SCROLL_FADE_MS,
+  SCROLL_HOLD_MS,
+} from "@/lib/focus-scroll";
 import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
@@ -533,6 +538,24 @@ export function Constellation({
       const material = materialByNodeId[node.id];
       const open = node.id === focusOpen.nodeId && canOpen ? openEased : 0;
       material.uniforms.uOpen.value = open;
+      // The opened node draws the panel's scroll thumb on its own rim, so the
+      // indicator is part of the wall rather than laid over it — see
+      // lib/focus-scroll.ts. Held while scrolling, then faded.
+      if (open > 0) {
+        const since = performance.now() - focusScroll.lastMoveAt;
+        material.uniforms.uScrollPos.value = focusScroll.position;
+        material.uniforms.uScrollLen.value = focusScroll.length;
+        material.uniforms.uScrollFade.value =
+          focusScroll.length > 0
+            ? THREE.MathUtils.clamp(
+                1 - (since - SCROLL_HOLD_MS) / SCROLL_FADE_MS,
+                0,
+                1,
+              )
+            : 0;
+      } else if (material.uniforms.uScrollFade.value !== 0) {
+        material.uniforms.uScrollFade.value = 0;
+      }
       if (open > 0) {
         // Face the camera, so "flattened along Z" means flattened toward the
         // viewer, and scale to the panel's rectangle at this node's depth.
