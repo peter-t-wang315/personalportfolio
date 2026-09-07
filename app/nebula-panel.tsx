@@ -142,15 +142,13 @@ export function NebulaPanel({
         }}
         transition={{
           opacity: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
-          // Delayed by one beat so the content is already legible inside the
-          // node before it starts pulling open, and so the clip runs with the
-          // shell's own morph rather than against its arrival.
-          // No delay any more: there is no separate shell to arrive first, so
-          // the text is revealed by the same 240ms the node spends stretching.
+          // Same 240ms the node spends stretching, and no delay: there is no
+          // separate shell that has to arrive first, so the text is revealed
+          // by the node's own opening.
           clipPath: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
         }}
         className={
-          "pointer-events-auto overflow-y-auto overscroll-contain " +
+          "pointer-events-auto flex justify-center " +
           "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
           "px-8 py-10 md:px-14 md:py-14 " +
 
@@ -163,7 +161,31 @@ export function NebulaPanel({
           "[@media(max-height:500px)]:pt-20"
         }
       >
-        <div className="max-w-[66ch] mx-auto pb-6">{children}</div>
+        {/*
+          The scroll lives on the text column, not on the panel.
+
+          On the panel, the native scrollbar sits at the panel's rectangular
+          right edge — and the node it opened out of has an organic, breathing
+          outline that wanders well away from that rectangle, so the scrollbar
+          appeared stranded on bare paper beside the shape. Scrolling the
+          column instead puts it at the right margin of the text, comfortably
+          inside the silhouette at every point of the wobble.
+
+          Styled to the palette while it is here: a `--mask` thumb on no
+          track, which is the same hairline vocabulary as everything else.
+        */}
+        <div
+          className={
+            "h-full w-full max-w-[66ch] overflow-y-auto overscroll-contain pb-6 " +
+            "[scrollbar-color:rgba(31,74,58,0.28)_transparent] [scrollbar-width:thin] " +
+            "[&::-webkit-scrollbar]:w-1.5 " +
+            "[&::-webkit-scrollbar-track]:bg-transparent " +
+            "[&::-webkit-scrollbar-thumb]:rounded-full " +
+            "[&::-webkit-scrollbar-thumb]:bg-mask/25"
+          }
+        >
+          {children}
+        </div>
       </motion.article>
     </div>
   );
