@@ -231,12 +231,14 @@ interface NeighborSpring {
   targetId: string;
   active: boolean;
   /**
-   * Multiplier on this node's own pull, set by whoever asked for the
-   * attraction. Hover uses 1; `/work/[slug]` asks for more, because there the
-   * subgraph is the subject of the page rather than a preview of one, and the
-   * gather has to be strong enough to read as a group at a glance.
+   * Multiplier on this node's own pull, for the fractional mode below.
    */
   strength: number;
+  /**
+   * Distance to settle at, in world units, when gathering to a ring instead
+   * of pulling by a fraction. Undefined keeps the fractional behaviour.
+   */
+  gatherRadius?: number;
 }
 
 /**
@@ -249,7 +251,28 @@ interface NeighborSpring {
 const neighborSprings = new Map<string, NeighborSpring>();
 
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
-export function attractNeighbors(nodeId: string, strength = 1) {
+/**
+ * How far a gathered neighbour ends up from its subject, and how strictly.
+ *
+ * The fractional pull that hover uses moves each neighbour a share of *its
+ * own* separation, which preserves the spread it started with: a node already
+ * beside the subject ends up almost inside it, while one across the globe is
+ * still across the globe, only less so. Read as a group that looks lopsided —
+ * some nodes crushed in, others barely moved.
+ *
+ * Gathering to a radius instead gives every neighbour the same destination
+ * distance, keeping only the direction it came from, so the subgraph settles
+ * as a ring around its subject. Blended rather than absolute, so the original
+ * arrangement still shows through and the ring does not read as a dial.
+ */
+export const GATHER_RADIUS = 3.4;
+const GATHER_EQUALISING = 0.8;
+
+export function attractNeighbors(
+  nodeId: string,
+  options: { strength?: number; gatherRadius?: number } = {},
+) {
+  const { strength = 1, gatherRadius } = options;
   const neighbors = new Set(neighborsOf(nodeId));
 
   // Anything currently active that isn't a neighbour of the new target
@@ -267,6 +290,7 @@ export function attractNeighbors(nodeId: string, strength = 1) {
       existing.targetId = nodeId;
       existing.active = true;
       existing.strength = strength;
+      existing.gatherRadius = gatherRadius;
     } else {
       neighborSprings.set(id, {
         value: 0,
@@ -274,6 +298,7 @@ export function attractNeighbors(nodeId: string, strength = 1) {
         targetId: nodeId,
         active: true,
         strength,
+        gatherRadius,
       });
     }
   }
@@ -390,13 +415,33 @@ export function stepSimulation(clockTime: number, delta: number) {
     const targetHome = nodeGeometry[spring.targetId]?.position;
     const home = nodeGeometry[neighborId]?.position;
     if (!targetHome || !home) continue;
-    _pull
-      .set(
-        targetHome[0] - home[0],
-        targetHome[1] - home[1],
-        targetHome[2] - home[2],
-      )
-      .multiplyScalar(params.pull * spring.strength * spring.value);
+    if (spring.gatherRadius === undefined) {
+      // Fractional: a share of this node's own separation. Hover's behaviour.
+      _pull
+        .set(
+          targetHome[0] - home[0],
+          targetHome[1] - home[1],
+          targetHome[2] - home[2],
+        )
+        .multiplyScalar(params.pull * spring.strength * spring.value);
+    } else {
+      // To a radius: same destination distance for every neighbour, keeping
+      // only the direction it came from, so they settle as a ring rather than
+      // a squashed copy of how they were already arranged.
+      _pull.set(
+        home[0] - targetHome[0],
+        home[1] - targetHome[1],
+        home[2] - targetHome[2],
+      );
+      const distance = _pull.length();
+      if (distance > 1e-4) {
+        const wanted =
+          distance + (spring.gatherRadius - distance) * GATHER_EQUALISING;
+        _pull.multiplyScalar((wanted / distance - 1) * spring.value);
+      } else {
+        _pull.set(0, 0, 0);
+      }
+    }
     offsets[neighborId].add(_pull);
   }
 

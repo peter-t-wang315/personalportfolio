@@ -23,6 +23,7 @@ import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
 import {
+  GATHER_RADIUS,
   stepSimulation,
   getLivePosition,
   attractNeighbors,
@@ -79,16 +80,7 @@ const UNRELATED_OPACITY_FACTOR = 0.25;
  * makes the subgraph the thing you actually see.
  */
 const SPOTLIT_UNRELATED_FACTOR = 0.12;
-/**
- * How much harder a work page pulls its subgraph in than a hover does.
- *
- * Hover is a preview and wants to stay legible as the graph it interrupted;
- * a project page is about that subgraph, so it can afford to close the group
- * up until it reads as one at a glance. Measured on the lit subgraph's screen
- * spread: turning alone gives 200.9, gathering at hover strength 186.2, and
- * this brings it to 175.9.
- */
-const WORK_PAGE_GATHER_STRENGTH = 1.55;
+
 
 /**
  * Off `/`, the constellation is ambient rather than the subject and dims to
@@ -512,7 +504,12 @@ export function Constellation({
    */
   useEffect(() => {
     if (!gatherNodeId) return;
-    attractNeighbors(gatherNodeId, WORK_PAGE_GATHER_STRENGTH);
+    // To a ring rather than a share of each node's own distance — see
+    // GATHER_RADIUS. The fractional pull hover uses keeps whatever spread the
+    // nodes started with, so the ones already beside the subject ended up
+    // almost inside it while the far ones stayed far, and the group looked
+    // lopsided rather than assembled.
+    attractNeighbors(gatherNodeId, { gatherRadius: GATHER_RADIUS });
     return () => releaseAttraction();
   }, [gatherNodeId]);
 
