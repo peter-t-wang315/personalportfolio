@@ -129,17 +129,63 @@ const SPOTLIGHT_ZOOM = 1.32;
  */
 const CAMERA_TO_CLUSTER = HOME_CAMERA_POSITION[2] - CLUSTER_DEPTH;
 /**
- * Per-frame slerp toward that orientation. Exponential rather than a fixed
- * curve over a fixed time, matching the ambient scale and the pointer parallax
- * beside it: this is background motion that has to survive being re-aimed
- * mid-turn when the reader moves to another project, which a timed curve
- * would have to restart. Exponential easing is also duration-invariant, so a
- * small correction and a swing to the far side of the globe take the same
- * time — about a second to close 90% of either.
+ * Roughly how long the globe takes to turn to a new project, in seconds.
+ *
+ * The turn is a **critically damped spring**, not the fixed-fraction-per-frame
+ * slerp this used to be. That slerp was exponential, which has its whole
+ * problem in the first frame: it moves fastest when it is furthest away, so a
+ * 144-degree swing to the far side of the globe opened with about 350 deg/s
+ * and then spent more than a second crawling through the last tenth. Measured
+ * per frame it was a genuine ease; watched, it was a snap followed by a drift,
+ * which is what "it teleports over rather than flies over" describes.
+ *
+ * A spring starts from rest instead. It accelerates out of the old
+ * orientation, carries its speed across the middle of the turn, and decelerates
+ * into the new one — the shape of something travelling. Critical damping is
+ * what keeps that from overshooting into a wobble, which on a globe full of
+ * labels would read as sloppy rather than lively.
+ *
+ * It keeps the one property the exponential was chosen for: there is no
+ * timeline to restart, so re-aiming mid-turn just moves the target and the
+ * existing velocity carries into the new path. Scanning a list of projects
+ * stays one continuous movement.
  */
-const SPOTLIGHT_EASE = 0.04;
+const SPOTLIGHT_TURN_SECONDS = 0.85;
 
-/** Scratch for the roll solve and the centring below; both run every frame. */
+/**
+ * Damp `current` toward zero over roughly `smoothTime` seconds, advancing
+ * `velocity` with it. The exponential-integrator form of a critically damped
+ * spring — unconditionally stable at any frame length, which a plain
+ * `v += (kx - cv)dt` is not: this runs at 9fps under software GL in the
+ * verification harness, where that form flips sign and oscillates.
+ *
+ * Works on any vector-like axis set, so the orientation (as a rotation vector)
+ * and the centring offset can share one implementation and one duration, and
+ * therefore arrive together.
+ */
+function smoothDampToZero(
+  current: THREE.Vector3,
+  velocity: THREE.Vector3,
+  smoothTime: number,
+  dt: number,
+) {
+  const omega = 2 / smoothTime;
+  const x = omega * dt;
+  const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  // `temp` is where an undamped spring would carry the offset this step. The
+  // velocity is corrected by it *before* both are decayed, which is what makes
+  // this stable at any frame length rather than merely accurate at short ones.
+  _dampTemp.copy(velocity).addScaledVector(current, omega).multiplyScalar(dt);
+  velocity.addScaledVector(_dampTemp, -omega).multiplyScalar(decay);
+  current.add(_dampTemp).multiplyScalar(decay);
+}
+
+/** Scratch for the roll solve, the turn and the centring; all run every frame. */
+const _dampTemp = new THREE.Vector3();
+const _turnDelta = new THREE.Quaternion();
+const _turnRel = new THREE.Vector3();
+const _turnAxis = new THREE.Vector3();
+const _turnStep = new THREE.Quaternion();
 const _spotCentre = new THREE.Vector3();
 const _spotNode = new THREE.Vector3();
 const _rollUp = new THREE.Vector3();
@@ -367,12 +413,20 @@ function ConstellationPlacement({
     [spotlightNodeId],
   );
   const parallax = useRef(new THREE.Vector2());
+  /** Damped distance from the landing solve's centre to the lit cluster's. */
+  const centreOffset = useRef(new THREE.Vector3());
+  const centreVelocity = useRef(new THREE.Vector3());
+  /** Angular velocity of the turn, as a rotation vector in radians/second. */
+  const turnVelocity = useRef(new THREE.Vector3());
   const ambientScale = useRef(1);
   const lastWrittenParallax = useRef({ x: 0, y: 0 });
 
-  useFrame((state) => {
+  useFrame((state, delta) => {
     const group = groupRef.current;
     if (!group) return;
+    // Clamped so a dropped frame or a backgrounded tab cannot fire the spring
+    // through its target in one step.
+    const dt = Math.min(delta, 1 / 20);
     const { pointer, reducedMotion } = useSceneStore.getState();
     // Written by the rig at frame priority -2, ahead of this callback's
     // default 0, so a flight's camera and its placement are always the same
@@ -534,10 +588,51 @@ function ConstellationPlacement({
     // up in step.
     if (placement > 0) {
       group.quaternion.copy(spotlightTarget.current).slerp(UNROTATED, placement);
+      turnVelocity.current.set(0, 0, 0);
     } else if (reducedMotion) {
       group.quaternion.copy(spotlightTarget.current);
+      turnVelocity.current.set(0, 0, 0);
     } else {
-      group.quaternion.slerp(spotlightTarget.current, SPOTLIGHT_EASE);
+      // The spring runs in the tangent space around the target: express where
+      // the globe currently is as a rotation vector *from* the orientation it
+      // wants, damp that toward zero, and put it back. Recomputed from the
+      // real quaternion every frame, so it cannot drift out of step with what
+      // is drawn, and re-aiming is just a different target next frame.
+      _turnDelta
+        .copy(spotlightTarget.current)
+        .invert()
+        .multiply(group.quaternion);
+      // Shortest arc: q and -q are the same orientation, and only one of them
+      // is the short way round. Without this a swing across the far side of
+      // the globe sometimes took the 250-degree path.
+      if (_turnDelta.w < 0) {
+        _turnDelta.set(-_turnDelta.x, -_turnDelta.y, -_turnDelta.z, -_turnDelta.w);
+      }
+      const sinHalf = Math.sqrt(Math.max(1 - _turnDelta.w * _turnDelta.w, 0));
+      if (sinHalf > 1e-6) {
+        const angle = 2 * Math.atan2(sinHalf, _turnDelta.w);
+        _turnRel
+          .set(_turnDelta.x, _turnDelta.y, _turnDelta.z)
+          .multiplyScalar(angle / sinHalf);
+      } else {
+        _turnRel.set(0, 0, 0);
+      }
+      smoothDampToZero(
+        _turnRel,
+        turnVelocity.current,
+        SPOTLIGHT_TURN_SECONDS,
+        dt,
+      );
+      const remaining = _turnRel.length();
+      if (remaining > 1e-6) {
+        _turnStep.setFromAxisAngle(
+          _turnAxis.copy(_turnRel).divideScalar(remaining),
+          remaining,
+        );
+        group.quaternion.copy(spotlightTarget.current).multiply(_turnStep);
+      } else {
+        group.quaternion.copy(spotlightTarget.current);
+      }
     }
 
     const scale = THREE.MathUtils.lerp(landingScale, 1, placement);
@@ -568,8 +663,15 @@ function ConstellationPlacement({
     //
     // Only x and y. Shifting z would move the globe toward or away from the
     // camera and change its apparent size, which is not what centring means.
-    // The current quaternion is used rather than the facing it is converging
-    // on, so the centring tracks the turn instead of arriving ahead of it.
+    //
+    // Solved against the orientation the globe is turning *to*, not the one it
+    // currently holds. Against the current one the target moves for as long as
+    // the turn does, and a spring chasing a moving target never catches it —
+    // measured, the offset was still 0.6 world units short a second after the
+    // rotation had finished, so the composition kept creeping. Aiming at the
+    // settled orientation makes it a fixed target the moment the hover
+    // changes, so the slide across and the turn are one movement that ends at
+    // one moment. The two agree once the turn lands, which is when it matters.
     let placedX = landingX;
     let placedY = landingY;
     if (spotlightGroup.length > 0) {
@@ -581,7 +683,7 @@ function ConstellationPlacement({
         const live = getLivePosition(id);
         _spotCentre
           .copy(live ?? _spotNode.fromArray(nodeGeometry[id].position))
-          .applyQuaternion(group.quaternion)
+          .applyQuaternion(spotlightTarget.current)
           .multiplyScalar(scale);
         const d = Math.max(CAMERA_TO_CLUSTER - _spotCentre.z, 1);
         const r = nodeGeometry[id].radius;
@@ -600,9 +702,44 @@ function ConstellationPlacement({
         ((landingY / CAMERA_TO_CLUSTER) * sumW - sumYoverD) / sumWoverD;
     }
 
+    // **The centring is eased, not applied.** Solved directly it is a
+    // single-frame jump, and that jump is what made moving between projects
+    // read as a teleport: the moment the hover changed, the offset that
+    // centres the new cluster was applied whole, so the new project arrived
+    // already lit and already in the middle of the frame and the only thing
+    // left to watch was the globe turning behind it. Nothing travelled.
+    //
+    // Easing the offset toward its solved value at the same rate the turn
+    // eases means the cluster is carried across the frame as the sphere brings
+    // it around — the two converge together, so the project swings in and
+    // settles instead of appearing. Only the centring is smoothed; the landing
+    // solve underneath keeps its own parallax easing, which must not be
+    // double-damped.
+    const targetOffsetX = placedX - landingX;
+    const targetOffsetY = placedY - landingY;
+    if (reducedMotion) {
+      centreOffset.current.set(targetOffsetX, targetOffsetY, 0);
+      centreVelocity.current.set(0, 0, 0);
+    } else {
+      // Damped on the same clock as the turn, so the globe stops sliding at
+      // the moment it stops rotating. Under the old per-frame fraction the
+      // offset was still 0.5 world units short of its target eight seconds
+      // after the turn had visually finished, and the composition crept.
+      centreOffset.current.x -= targetOffsetX;
+      centreOffset.current.y -= targetOffsetY;
+      smoothDampToZero(
+        centreOffset.current,
+        centreVelocity.current,
+        SPOTLIGHT_TURN_SECONDS,
+        dt,
+      );
+      centreOffset.current.x += targetOffsetX;
+      centreOffset.current.y += targetOffsetY;
+    }
+
     group.position.set(
-      THREE.MathUtils.lerp(placedX, 0, placement),
-      THREE.MathUtils.lerp(placedY, 0, placement),
+      THREE.MathUtils.lerp(landingX + centreOffset.current.x, 0, placement),
+      THREE.MathUtils.lerp(landingY + centreOffset.current.y, 0, placement),
       THREE.MathUtils.lerp(CLUSTER_DEPTH, 0, placement),
     );
   });
