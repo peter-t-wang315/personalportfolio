@@ -43,10 +43,19 @@
   --font-body: var(--font-geist-sans), ui-sans-serif, sans-serif;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
+/*
+ * There is deliberately no `scroll-behavior: smooth` here.
+ *
+ * It used to be on `html`, which made it the behaviour of *every* scroll the
+ * document ever performs — including the one that returns a reader to their
+ * place in the work list, where it animated 2,147px past the whole list on
+ * arrival instead of simply being there. Returning to where you were should
+ * look like never having left.
+ *
+ * The one scroll that genuinely wants easing is the landing page's cue, and it
+ * asks for it itself (app/scroll-cue.tsx), where it can also honour reduced
+ * motion without a second rule here having to remember to.
+ */
 /*
  * The graph's cursor states, set by app/nebula-cursor.tsx.
  *
@@ -81,12 +90,6 @@ html[data-globe-cursor="grabbing"],
 html[data-globe-cursor="grabbing"] * {
   user-select: none !important;
   -webkit-user-select: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
 }
 
 body {

@@ -43,7 +43,17 @@ export default function WorkList() {
 
               <ul className="mt-6 divide-y divide-ink-faint/30">
                 {clusterProjects.map((project) => (
-                  <li key={project.id} className="py-5">
+                  // The slug is the anchor a project's own page links back to,
+                  // so leaving one returns to its row rather than to the top of
+                  // a list it may be a long way down. `scroll-mt` clears both
+                  // sticky bars — the banner and the back-link pinned under it
+                  // — which a bare anchor would otherwise scroll the row
+                  // underneath. It also makes `/work#slug` a real address.
+                  <li
+                    key={project.id}
+                    id={project.slug}
+                    className="scroll-mt-[calc(var(--spacing-header)+3.5rem)] py-5"
+                  >
                     <WorkListLink
                       nodeId={project.id}
                       href={`/work/${project.slug}`}
