@@ -5,6 +5,11 @@ import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useSceneStore } from "@/lib/scene-store";
 import { wasHydratedBefore } from "@/lib/hydration";
+import { focusedNodeHeightFraction } from "@/lib/focus-framing";
+import {
+  DESKTOP_MIN_WIDTH_PX,
+  SHORT_VIEWPORT_HEIGHT_PX,
+} from "@/lib/cluster-geometry";
 import { hasWebgl } from "@/lib/webgl";
 
 /**
@@ -16,6 +21,25 @@ import { hasWebgl } from "@/lib/webgl";
  * of viewport height a full-height sheet with no morph in any tier. Media
  * queries are correct in the very first painted frame, which a JS tier switch
  * is not — the same reason hero-stats.tsx gives for its own layout.
+ *
+ * **It is revealed by the node opening, not faded in over it.** 05-phase-2.md
+ * asks for the content to appear "inside the shell's screen-space bounds", and
+ * the first version ignored the bounds half: the panel arrived at its final
+ * size whatever the shell was doing, which read as a new screen dropped on top
+ * of the graph rather than as the node showing you its inside.
+ *
+ * So the article is always laid out at its final size — text never reflows —
+ * and a `clip-path` reveals it, starting as a circle exactly the size of the
+ * focused node's silhouette (lib/focus-framing.ts) and stretching to the
+ * panel's rounded rectangle. Because the camera stops at a fixed standoff, that
+ * circle is already ~70% of viewport height for a major project node, so the
+ * motion is mostly a horizontal stretch — the node pulling open sideways. A
+ * technology node starts at ~35% and stretches further, which is right: it is
+ * a smaller thing opening.
+ *
+ * The two halves run as two beats, matching the shell behind it: the content
+ * fades up inside the closed circle while the shell arrives, then the clip
+ * opens as the shell morphs.
  *
  * **Two entry paths, per 05-phase-2.md's Deep linking.** On a cold entry —
  * a direct link or a reload — the content must be visible at first paint, so
@@ -42,6 +66,17 @@ export function NebulaPanel({
 }) {
   const router = useRouter();
   const [cold] = useState(() => !wasHydratedBefore());
+  const [viewport, setViewport] = useState({ width: 0, height: 0 });
+
+  // The clip is in percentages of the panel, but the circle it starts from is
+  // sized against the viewport, so converting between them needs real pixels.
+  useEffect(() => {
+    const measure = () =>
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
   const focusSettled = useSceneStore((s) => s.focusSettled);
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
 
@@ -60,21 +95,54 @@ export function NebulaPanel({
   // landing for one commit before the rig resets it.
   const visible = cold || (focusSettled && focusedNodeId === nodeId);
 
+  // Panel geometry, mirroring the CSS below and 02-architecture.md's tier
+  // table: 70% of the viewport on desktop, 85% under it, a full sheet under
+  // 500px of height.
+  const short = viewport.height > 0 && viewport.height < SHORT_VIEWPORT_HEIGHT_PX;
+  const fraction = viewport.width >= DESKTOP_MIN_WIDTH_PX ? 0.7 : 0.85;
+  const panelWidth = short ? viewport.width : viewport.width * fraction;
+  const panelHeight = short ? viewport.height : viewport.height * fraction;
+  const nodeDiameter = focusedNodeHeightFraction(nodeId) * viewport.height;
+  const insetX = Math.max(0, (panelWidth - nodeDiameter) / 2);
+  const insetY = Math.max(0, (panelHeight - nodeDiameter) / 2);
+  // Every value on both ends is a pixel length, which is what lets them
+  // interpolate: a `circle()` will not tween into an `inset()`, and a `round`
+  // given as a percentage on one end and a length on the other will not
+  // either. 9999px is simply "as round as this box allows" — CSS clamps a
+  // corner radius to half the shorter side, so on the square closed region it
+  // resolves to a circle.
+  const closedClip = `inset(${insetY}px ${insetX}px ${insetY}px ${insetX}px round 9999px)`;
+  const openClip = `inset(0px 0px 0px 0px round ${short ? 0 : 40}px)`;
+  // Until the viewport has been measured there is no circle to open from, and
+  // guessing one produces a full-panel ellipse that reads as a corner-radius
+  // tween rather than a stretch. The panel is still invisible at that point on
+  // every path that animates, so starting open costs nothing.
+  const measured = viewport.height > 0;
+
   return (
     <div className="pointer-events-none fixed inset-0 grid place-items-center">
       <motion.article
         data-nebula-panel
         aria-live="polite"
-        initial={cold ? false : { opacity: 0 }}
-        animate={{ opacity: visible ? 1 : 0 }}
-        transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+        initial={cold ? false : { opacity: 0, clipPath: openClip }}
+        animate={{
+          opacity: visible ? 1 : 0,
+          clipPath: visible || !measured ? openClip : closedClip,
+        }}
+        transition={{
+          opacity: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+          // Delayed by one beat so the content is already legible inside the
+          // node before it starts pulling open, and so the clip runs with the
+          // shell's own morph rather than against its arrival.
+          clipPath: { duration: 0.24, delay: 0.24, ease: [0.32, 0.72, 0, 1] },
+        }}
         className={
           "pointer-events-auto overflow-y-auto overscroll-contain " +
           "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
-          "rounded-[2.5rem] px-8 py-10 md:px-14 md:py-14 " +
+          "px-8 py-10 md:px-14 md:py-14 " +
           "bg-paper/85 " +
           "[@media(max-height:500px)]:w-screen [@media(max-height:500px)]:h-screen " +
-          "[@media(max-height:500px)]:rounded-none [@media(max-height:500px)]:pt-20"
+          "[@media(max-height:500px)]:pt-20"
         }
       >
         <div className="max-w-[66ch] mx-auto pb-6">{children}</div>

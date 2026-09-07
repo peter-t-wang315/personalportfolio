@@ -188,6 +188,30 @@ const transmissionMaterial = new THREE.MeshPhysicalMaterial({
 });
 
 /**
+ * The opened shell on tablet and mobile, where 02-architecture.md's tier table
+ * forbids transmission.
+ *
+ * **The shell opens on every tier; only its material is tiered.** That
+ * distinction was missed the first time and the opening was built inside the
+ * transmission branch, so below desktop a focused node stayed a sphere sitting
+ * behind the prose — the "circular content areas fight lists, code and links"
+ * problem the morph exists to solve, and worse once focus began approaching
+ * from inside the shell, which put that sphere directly behind the text.
+ *
+ * Still a MeshPhysicalMaterial with transmission left at zero: the same class
+ * as the desktop shell, so one mesh and one set of morph targets serve both,
+ * and no second render pass is incurred. It fades on plain opacity, which the
+ * transmissive one cannot use — see transmissionMaterial.
+ */
+const plainShellMaterial = new THREE.MeshPhysicalMaterial({
+  color: palette.mask,
+  transparent: true,
+  opacity: 0,
+  roughness: 0.35,
+  depthWrite: false,
+});
+
+/**
  * The focused node's real glass, cross-faded in over the fresnel shell rather
  * than swapped for it.
  *
@@ -213,6 +237,8 @@ const GLASS_THICKNESS = 1.1;
 const GLASS_ATTENUATION = 1.4;
 /** Effectively infinite: light picks up no colour crossing the volume. */
 const GLASS_CLEAR_ATTENUATION = 1e4;
+/** The plain shell's opacity when fully arrived, before opening thins it. */
+const PLAIN_SHELL_OPACITY = 0.3;
 /** 01-design-system.md's standard UI duration and easing. Not the 1400ms
  * camera-flight duration — this is a material transition, not a flight. */
 const GLASS_FADE_MS = 240;
@@ -283,7 +309,18 @@ const glassGeometry = (() => {
  * A module object rather than store state: it changes every frame of the fade
  * and nothing outside this file reads it.
  */
-const focusGlass = { fade: 0, nodeId: null as string | null };
+const focusGlass = { fade: 0, nodeId: null as string | null, snap: false };
+
+/**
+ * Tells the shell to be open already rather than opening. Called by the camera
+ * rig when it settles a cold entry, which is the one arrival with nothing to
+ * animate from — the panel is server-rendered at full opacity and the camera
+ * never flies, so a shell ramping out of a sphere behind it is the only thing
+ * still moving, and it reads as the page assembling itself late.
+ */
+export function snapFocusShellOpen() {
+  focusGlass.snap = true;
+}
 
 function FocusGlass({ tier }: { tier: DeviceTier }) {
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
@@ -294,16 +331,22 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
   const opening = useRef(0);
   const camera = useThree((s) => s.camera);
 
-  const wanted =
-    tier === "desktop" && focusSettled && focusedNodeId !== null
-      ? focusedNodeId
-      : null;
+  const wanted = focusSettled && focusedNodeId !== null ? focusedNodeId : null;
+  const transmissive = tier === "desktop";
 
   useFrame((state, delta) => {
     const { reducedMotion } = useSceneStore.getState();
     // Reduced motion gets the instant swap, deliberately: the same rule that
     // makes flights cuts. There is no arrival for this to land on either.
     const step = reducedMotion ? 1 : (delta * 1000) / GLASS_FADE_MS;
+
+    if (focusGlass.snap) {
+      focusGlass.snap = false;
+      if (wanted) {
+        progress.current = 1;
+        opening.current = 1;
+      }
+    }
 
     // Two beats, strictly ordered: the glass arrives, then it opens; on the
     // way out it closes, then it clears. Each phase only advances once the
@@ -327,14 +370,21 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
     focusGlass.fade = fade;
     focusGlass.nodeId = mountedNodeId;
 
-    // Arrive as glass, then thin and clear it as it opens.
+    // Arrive, then thin out as it opens. The two materials get there by
+    // different routes: the transmissive one cannot use opacity at all, so it
+    // becomes glass by gaining thickness and tint, while the plain one simply
+    // fades. Both land on the same near-transparency once open.
     const tint = fade * THREE.MathUtils.lerp(1, OPEN_TINT_FACTOR, open);
-    transmissionMaterial.thickness = GLASS_THICKNESS * tint;
-    transmissionMaterial.attenuationDistance = THREE.MathUtils.lerp(
-      GLASS_CLEAR_ATTENUATION,
-      GLASS_ATTENUATION,
-      tint,
-    );
+    if (transmissive) {
+      transmissionMaterial.thickness = GLASS_THICKNESS * tint;
+      transmissionMaterial.attenuationDistance = THREE.MathUtils.lerp(
+        GLASS_CLEAR_ATTENUATION,
+        GLASS_ATTENUATION,
+        tint,
+      );
+    } else {
+      plainShellMaterial.opacity = PLAIN_SHELL_OPACITY * tint;
+    }
 
     // The simulation is frozen while focused, but it resumes the instant focus
     // clears — and the glass is still fading out then, so it has to keep
@@ -387,7 +437,7 @@ function FocusGlass({ tier }: { tier: DeviceTier }) {
       position={node.position}
       scale={node.radius * GLASS_INSET}
       geometry={glassGeometry}
-      material={transmissionMaterial}
+      material={transmissive ? transmissionMaterial : plainShellMaterial}
       raycast={() => null}
     />
   );

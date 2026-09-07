@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { cubicBezier } from "motion/react";
 import { nodeGeometry } from "@/lib/node-geometry";
+import { SURFACE_STANDOFF } from "@/lib/focus-framing";
 import { getLivePosition } from "./nebula-simulation";
 
 /**
@@ -29,17 +30,6 @@ export const flightEase = cubicBezier(0.32, 0.72, 0, 1);
  */
 export const CONSTELLATION_CENTER = new THREE.Vector3(0, 0, 0);
 
-/**
- * How far off a node's own surface the camera stops, in world units.
- *
- * **Never fly to the node's exact position** (05a is emphatic, and it is
- * right): the camera would end up inside the node's shell, which clips through
- * the geometry and renders the inside of a sphere. So the stopping point is the
- * node's live position pushed back along the approach vector by its radius
- * plus this — far enough that the node reads as a whole object rather than a
- * wall, close enough that it fills the frame.
- */
-const SURFACE_STANDOFF = 1.9;
 
 /**
  * A fallback direction for the degenerate case where a node sits exactly at

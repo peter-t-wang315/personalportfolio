@@ -31,6 +31,15 @@ hydration warnings on any new route. Measured, the landing is two beats after
 the flight: ~20% of pixels for two frames as the glass arrives, ~13% for three
 as it opens, then 0.03%.
 
+**Two 2.6 defects fixed later, during the globe work.** The shell only opened
+on desktop, because the opening was built inside the transmission branch — so
+below desktop a focused node stayed a sphere behind the prose, which got worse
+once focus began approaching from inside the shell. And the panel arrived at
+its final size whatever the shell was doing, which read as a new screen rather
+than the node opening; it is now revealed by a clip-path stretching from the
+node's own silhouette. Cold entry snaps both to open, as 05-phase-2.md always
+asked.
+
 **Three traps 2.6 hit, for 2.7.** A mesh whose geometry carries morph
 attributes must have `updateMorphTargets()` called after R3F attaches the
 geometry, or the renderer reads an undefined influences array on the first

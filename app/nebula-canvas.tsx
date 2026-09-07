@@ -28,7 +28,12 @@ import {
   type CameraPose,
 } from "./nebula-flight";
 import { getPlacement, setPlacement } from "./nebula-placement";
-import { Constellation, SceneEnvironment } from "./nebula-constellation";
+import { FOCUS_CAMERA_FOV } from "@/lib/focus-framing";
+import {
+  Constellation,
+  SceneEnvironment,
+  snapFocusShellOpen,
+} from "./nebula-constellation";
 
 /**
  * The canvas lives in the root layout and never unmounts (02-architecture.md),
@@ -147,12 +152,6 @@ const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
  */
 const INSIDE_DISTANCE = 5.5;
 const INSIDE_CAMERA_FOV = 72;
-/**
- * Focus narrows back down. A node approached at 90 degrees sits in a lot of
- * distorted periphery; 50 puts it in the middle of a calm frame, and the
- * widening and narrowing become part of entering and reading.
- */
-const FOCUS_CAMERA_FOV = 50;
 
 const INSIDE_POSE: CameraPose = (() => {
   const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
@@ -495,6 +494,10 @@ function CameraRig({
         const pose = focusPose(coldFocus);
         if (pose) {
           lastFocus.current = coldFocus;
+          // 05-phase-2.md: a cold entry lands "shell expanded, panel open,
+          // content visible at first paint". The shell has to be told, or it
+          // ramps open from a sphere over its usual two beats.
+          snapFocusShellOpen();
           settle(controls, pose, FOCUS_CAMERA_FOV, { free: true, at: 1 });
           return;
         }

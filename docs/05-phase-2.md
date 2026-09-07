@@ -68,7 +68,13 @@ Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, the float si
 
 Under 500px of viewport height, in any tier, this morph doesn't happen at all: the panel is a full-height sheet instead, with no circular-to-rounded-rect transition. See `02-architecture.md`'s Orientation and short viewports.
 
-DOM content fades in inside the shell's screen-space bounds, rendered with `motion`. Real HTML: selectable, scrollable, keyboard-accessible, crawlable. Contains exactly what `/work/[slug]` contains, from the same content object.
+DOM content is revealed **by the node opening**, inside the shell's screen-space bounds, rendered with `motion`. Real HTML: selectable, scrollable, keyboard-accessible, crawlable. Contains exactly what `/work/[slug]` contains, from the same content object.
+
+The article is always laid out at its final size, so text never reflows; a `clip-path` reveals it, starting as a circle exactly the size of the focused node's silhouette and stretching to the panel's rounded rectangle. Because the camera stops at a fixed standoff, that circle is already ~70% of viewport height for a major project node and ~53% for a standard one, so the motion is mostly a **horizontal stretch** — the node pulling open sideways to show its inside, rather than a new screen arriving over the graph. A technology node starts at ~35% and stretches further, which is right: it is a smaller thing opening.
+
+Two beats, matching the shell behind it: the content fades up inside the closed circle while the shell arrives, then the clip opens as the shell morphs. `lib/focus-framing.ts` holds the geometry all three share.
+
+**The shell opens on every tier; only its material is tiered.** The tier table gates transmission, not the morph — tablet and mobile get an 85% panel and need the same silhouette behind it. Below desktop the shell is the same `MeshPhysicalMaterial` with transmission left at zero, so one mesh and one set of morph targets serve both and no second render pass is incurred.
 
 Connected nodes remain visible past the panel edges and stay hoverable and clickable, so you can move sideways through the graph without zooming out. Clicking a connected node flies directly there without returning to the constellation first.
 
