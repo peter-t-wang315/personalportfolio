@@ -250,6 +250,9 @@ interface NeighborSpring {
  */
 const neighborSprings = new Map<string, NeighborSpring>();
 
+/** Scratch for the separation pass, which runs over every pair every frame. */
+const _separation = new THREE.Vector3();
+
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
 /**
  * How far a gathered neighbour ends up from its subject, and how strictly.
@@ -266,6 +269,20 @@ const neighborSprings = new Map<string, NeighborSpring>();
  * arrangement still shows through and the ring does not read as a dial.
  */
 export const GATHER_RADIUS = 3.4;
+
+/**
+ * Clear space kept between any two node surfaces, in world units.
+ *
+ * Sized against what the layout already does rather than picked to taste: the
+ * seeded arrangement's tightest pair sits about 0.45 apart and the wander only
+ * dips below that occasionally, so this is close enough to the natural floor
+ * to leave the composition alone and only act where something has genuinely
+ * been pushed too close. On `/work` it reads as about 6px of daylight at the
+ * globe's drawn size, which is what separates two nodes from one lumpy one.
+ */
+const SEPARATION_GAP = 0.35;
+/** Enough to clear every overlap measured; see the pass itself for why >1. */
+const SEPARATION_PASSES = 3;
 const GATHER_EQUALISING = 0.8;
 
 export function attractNeighbors(
@@ -467,6 +484,49 @@ export function stepSimulation(clockTime: number, delta: number) {
     const radius = Math.hypot(home[0], home[1], home[2]);
     const length = live.length();
     if (length > 1e-6) live.multiplyScalar(radius / length);
+  }
+
+  // **Nothing above stops two nodes occupying the same place.** The wander is
+  // per-node noise that knows nothing of its neighbours, and the gather is
+  // worse: it holds each neighbour's *direction* from the subject and only
+  // equalises the distance, so two neighbours that happen to lie on the same
+  // bearing are sent to the same point. Measured on /work, that put
+  // maintenance-client and rest 0.19 units *inside* each other, and the
+  // ambient wander alone closed a pair to a 0.09 gap.
+  //
+  // So the surface gets a collision pass: push any overlapping pair apart
+  // along the line between them, half the correction each, then put everyone
+  // back on the shell. Re-projecting can reintroduce a shallower overlap, so
+  // it repeats — three passes clears every case measured, and the loop exits
+  // early on the common frame where nothing touches at all.
+  for (let pass = 0; pass < SEPARATION_PASSES; pass++) {
+    let collided = false;
+    for (let i = 0; i < nodeList.length; i++) {
+      const a = livePositions[nodeList[i].id];
+      for (let j = i + 1; j < nodeList.length; j++) {
+        const b = livePositions[nodeList[j].id];
+        const minimum =
+          nodeList[i].radius + nodeList[j].radius + SEPARATION_GAP;
+        _separation.subVectors(a, b);
+        const distance = _separation.length();
+        if (distance >= minimum || distance < 1e-6) continue;
+        collided = true;
+        _separation.multiplyScalar((minimum - distance) / distance / 2);
+        a.add(_separation);
+        b.sub(_separation);
+      }
+    }
+    if (!collided) break;
+    for (const node of nodeList) {
+      const live = livePositions[node.id];
+      const radius = Math.hypot(
+        node.position[0],
+        node.position[1],
+        node.position[2],
+      );
+      const length = live.length();
+      if (length > 1e-6) live.multiplyScalar(radius / length);
+    }
   }
 }
 
