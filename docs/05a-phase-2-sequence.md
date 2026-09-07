@@ -182,8 +182,10 @@ and let you look around from inside; `/work/[slug]` keeps the outside view and
 rotates the relevant cluster to face the viewer. Nodes wander across the
 surface on their own clocks, gather on hover, and disperse on release.
 
-Landed so far: the layout, the edges, and the camera — `/nebula` now rests
-inside the globe. The shell shrank 16 -> 11 in the same pass, which is what
+Landed so far: the layout, the edges, the camera — `/nebula` now rests inside
+the globe — and focus, which approaches a node from the middle rather than
+from beyond it, so opening one no longer punches the camera out through the
+shell. The shell shrank 16 -> 11 in the same pass, which is what
 makes a node read at ~5 degrees from in there rather than 3.5; every constant
 downstream was rescaled with it and re-measured (see the commit).
 
@@ -192,11 +194,6 @@ Still to do, in order:
 - **`/work/[slug]` rotate-to-top**, which replaces 05-phase-2.md's "gathering".
   The outside framing is still in nebula-canvas.tsx, scaled to the new shell
   and unused, waiting for it.
-- **Focus from inside.** `focusPose` still parks the camera *beyond* a node,
-  on the far side from the centre — so opening one from inside pops you out
-  through the shell. Putting the camera between the centre and the node
-  instead would keep the globe intact. Deliberately not changed yet: it alters
-  2.5's verified behaviour and deserves its own look.
 - **Mobile**, where the tier table makes the 3D ambient behind a bottom sheet,
   and being inside a globe you can only leave by dragging may not suit.
 

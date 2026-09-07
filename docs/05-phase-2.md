@@ -60,7 +60,7 @@ Three numbers, each measured against the real layout rather than chosen:
 
 Focus narrows back to 50° — a node approached at 72 sits in too much periphery — so the widening and narrowing become part of entering and reading.
 
-**Fly-in.** Clicking a node interpolates the camera to a position offset along the vector from the constellation center through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through the geometry.
+**Fly-in.** Clicking a node interpolates the camera along the surface normal at that node — the vector from the constellation's geometric centre, the origin, through the node — stopping just short of the surface **on the inner side** and looking outward at it. Inner because `/nebula` is a place you are inside: stopping beyond the node would punch the camera out through the shell and leave it hanging outside the globe. It frames better too, since the backdrop is then open paper and the node's own neighbours rather than the entire rest of the constellation. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through the geometry.
 
 Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, the float simulation freezes, unrelated nodes drop to 25% opacity. Whether the focused node's material switches to real transmission is tier-dependent — see `02-architecture.md`'s Responsive tiers table. Desktop only; tablet and mobile keep the fresnel shader throughout.
 
