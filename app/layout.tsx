@@ -4,6 +4,7 @@ import { GeistMono } from "geist/font/mono";
 import { site } from "@/content";
 import { NebulaAffordance } from "./nebula-affordance";
 import { NebulaCanvasLoader } from "./nebula-canvas-loader";
+import { NebulaDrag } from "./nebula-drag";
 import { PointerTracker } from "./pointer-tracker";
 import { SiteHeader } from "./site-header";
 import { SITE_URL } from "@/lib/site-url";
@@ -46,6 +47,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PointerTracker />
+        <NebulaDrag />
         <NebulaCanvasLoader />
         <NebulaAffordance />
         <SiteHeader />

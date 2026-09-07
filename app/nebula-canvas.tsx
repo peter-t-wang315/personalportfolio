@@ -35,6 +35,12 @@ import {
   type CameraPose,
 } from "./nebula-flight";
 import { getPlacement, setPlacement } from "./nebula-placement";
+import {
+  getDragAngles,
+  isDragging,
+  resetDrag,
+  setClusterCircle,
+} from "./nebula-drag-state";
 import { FOCUS_CAMERA_FOV } from "@/lib/focus-framing";
 import {
   Constellation,
@@ -186,6 +192,11 @@ const _turnDelta = new THREE.Quaternion();
 const _turnRel = new THREE.Vector3();
 const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
+const _dragQuat = new THREE.Quaternion();
+const _dragYaw = new THREE.Quaternion();
+const _dragPitch = new THREE.Quaternion();
+const SCREEN_UP = new THREE.Vector3(0, 1, 0);
+const SCREEN_RIGHT = new THREE.Vector3(1, 0, 0);
 const _spotCentre = new THREE.Vector3();
 const _spotNode = new THREE.Vector3();
 const _rollUp = new THREE.Vector3();
@@ -401,6 +412,8 @@ function ConstellationPlacement({
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const spotlightTarget = useRef(new THREE.Quaternion());
+  /** spotlightTarget with the reader's drag applied — what the globe aims at. */
+  const orientationTarget = useRef(new THREE.Quaternion());
   const spotlightDirection = useRef(new THREE.Vector3());
   /** The subject and everything gathered around it — what "centred" means. */
   const spotlightGroup = useMemo(
@@ -412,6 +425,14 @@ function ConstellationPlacement({
         : [],
     [spotlightNodeId],
   );
+  // Aiming at a different project is a request for a particular view of it,
+  // so it starts from the orientation that view specifies rather than from
+  // wherever the reader last left the sphere. The route half of this lives in
+  // nebula-drag.tsx, which resets on navigation.
+  useEffect(() => {
+    resetDrag();
+  }, [spotlightNodeId]);
+
   const parallax = useRef(new THREE.Vector2());
   /** Damped distance from the landing solve's centre to the lit cluster's. */
   const centreOffset = useRef(new THREE.Vector3());
@@ -576,6 +597,25 @@ function ConstellationPlacement({
     } else {
       spotlightTarget.current.identity();
     }
+
+    // **The reader's own spin, applied on top.** Composed in screen axes and
+    // premultiplied, so a horizontal drag turns the globe about the vertical
+    // axis of the *viewport* rather than of the layout — the sphere follows
+    // the pointer whatever orientation a project has already put it in.
+    //
+    // Held apart from spotlightTarget rather than folded into it, because the
+    // centring solve below reads that one and must not see the spin: centring
+    // the lit cluster against a dragged orientation slides the whole globe
+    // sideways as you turn it, when what the gesture asks for is a sphere
+    // rotating in place inside the composition the page already solved.
+    const drag = getDragAngles();
+    orientationTarget.current.copy(spotlightTarget.current);
+    if (drag.yaw !== 0 || drag.pitch !== 0) {
+      _dragQuat
+        .copy(_dragYaw.setFromAxisAngle(SCREEN_UP, drag.yaw))
+        .multiply(_dragPitch.setFromAxisAngle(SCREEN_RIGHT, drag.pitch));
+      orientationTarget.current.premultiply(_dragQuat);
+    }
     // **The turn unwinds as the flight goes in, and is exactly undone by the
     // time it lands.** `/nebula`'s heading was chosen against the layout's own
     // orientation — it is the one that keeps all four SEL centroids
@@ -589,8 +629,13 @@ function ConstellationPlacement({
     if (placement > 0) {
       group.quaternion.copy(spotlightTarget.current).slerp(UNROTATED, placement);
       turnVelocity.current.set(0, 0, 0);
-    } else if (reducedMotion) {
-      group.quaternion.copy(spotlightTarget.current);
+    } else if (reducedMotion || isDragging()) {
+      // A drag is direct manipulation: the sphere is under the pointer and has
+      // to track it exactly. Running it through the turn's spring would put
+      // 0.85s of lag between the hand and the globe, which reads as the thing
+      // being heavy rather than smooth. The velocity is cleared so releasing
+      // does not fling it.
+      group.quaternion.copy(orientationTarget.current);
       turnVelocity.current.set(0, 0, 0);
     } else {
       // The spring runs in the tangent space around the target: express where
@@ -599,7 +644,7 @@ function ConstellationPlacement({
       // real quaternion every frame, so it cannot drift out of step with what
       // is drawn, and re-aiming is just a different target next frame.
       _turnDelta
-        .copy(spotlightTarget.current)
+        .copy(orientationTarget.current)
         .invert()
         .multiply(group.quaternion);
       // Shortest arc: q and -q are the same orientation, and only one of them
@@ -629,9 +674,9 @@ function ConstellationPlacement({
           _turnAxis.copy(_turnRel).divideScalar(remaining),
           remaining,
         );
-        group.quaternion.copy(spotlightTarget.current).multiply(_turnStep);
+        group.quaternion.copy(orientationTarget.current).multiply(_turnStep);
       } else {
-        group.quaternion.copy(spotlightTarget.current);
+        group.quaternion.copy(orientationTarget.current);
       }
     }
 
@@ -742,6 +787,22 @@ function ConstellationPlacement({
       THREE.MathUtils.lerp(landingY + centreOffset.current.y, 0, placement),
       THREE.MathUtils.lerp(CLUSTER_DEPTH, 0, placement),
     );
+
+    // Hand the pointer half the circle the globe actually occupies. Derived
+    // here because this is the only place that knows all three terms — the
+    // solved centre, the parallax and centring offsets on top of it, and the
+    // scale after the spotlight zoom. Inside the graph there is no circle to
+    // speak of: the camera is within the shell and camera-controls owns the
+    // pointer, so the drag surface stands down rather than guessing.
+    if (placement < 1) {
+      setClusterCircle(
+        state.size.width / 2 + group.position.x * pxPerWorldUnit,
+        state.size.height / 2 - group.position.y * pxPerWorldUnit,
+        CONSTELLATION_BOUNDING_RADIUS * scale * pxPerWorldUnit,
+      );
+    } else {
+      setClusterCircle(0, 0, 0);
+    }
   });
 
   return <group ref={groupRef}>{children}</group>;
