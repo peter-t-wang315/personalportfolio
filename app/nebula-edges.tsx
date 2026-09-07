@@ -70,6 +70,14 @@ import { getLivePosition } from "./nebula-simulation";
  * about three times the tonal contrast over about twice the width. Raising
  * shared-tech to 45% does not bring it near competing.
  */
+/** Does this edge join exactly the pair a sideways flight is travelling between? */
+function joins(edge: Edge, pair: { from: string; to: string }) {
+  return (
+    (edge.from === pair.from && edge.to === pair.to) ||
+    (edge.from === pair.to && edge.to === pair.from)
+  );
+}
+
 const RUNTIME_COLOR = palette.ink;
 const RUNTIME_OPACITY = 0.52;
 const RUNTIME_WIDTH = 1.9;
@@ -251,10 +259,15 @@ function RuntimeEdgeLine({
   const speed = geo && period > 0 ? geo.length / period : 0;
 
   useFrame((_state, delta) => {
-    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    const { reducedMotion, hoveredNodeId, travellingBetween } =
+      useSceneStore.getState();
+    // Lit either because the pointer is on one of its ends, or because a
+    // sideways flight is travelling along it right now — following a link
+    // inside an open panel should show you the connection you took.
     const connected =
-      hoveredNodeId !== null &&
-      (edge.from === hoveredNodeId || edge.to === hoveredNodeId);
+      (hoveredNodeId !== null &&
+        (edge.from === hoveredNodeId || edge.to === hoveredNodeId)) ||
+      (travellingBetween !== null && joins(edge, travellingBetween));
 
     // Brightening runs regardless of reduced motion — hover still
     // highlights, it just snaps instead of easing (same idiom as the node
@@ -461,14 +474,19 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
  */
 function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
+  const travellingBetween = useSceneStore((s) => s.travellingBetween);
+  // Subscribed rather than read per frame, because this batch's geometry is
+  // rebuilt when the set changes — and it changes twice per flight, not sixty
+  // times a second.
   const connected = useMemo(
     () =>
-      hoveredNodeId === null
-        ? []
-        : edgeList.filter(
-            (e) => e.from === hoveredNodeId || e.to === hoveredNodeId,
-          ),
-    [edgeList, hoveredNodeId],
+      edgeList.filter(
+        (e) =>
+          (hoveredNodeId !== null &&
+            (e.from === hoveredNodeId || e.to === hoveredNodeId)) ||
+          (travellingBetween !== null && joins(e, travellingBetween)),
+      ),
+    [edgeList, hoveredNodeId, travellingBetween],
   );
 
   const { geometry, attribute } = useMemo(

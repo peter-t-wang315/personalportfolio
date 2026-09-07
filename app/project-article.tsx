@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { techById, type ProjectNode } from "@/content";
 
 /**
@@ -87,9 +88,15 @@ export function ProjectArticle({
           {tech.map((t, i) => (
             <span key={t.id}>
               {techLinks ? (
-                <a href={`/nebula/tech/${t.id}`} className="link-underline">
+                // next/link, not an anchor. A plain href is a document
+                // navigation: the whole app reloads, the canvas remounts, and
+                // what should have been a flight along the edge between two
+                // nodes becomes a cold entry that lands with no movement at
+                // all. Client navigation is what lets the camera rig see the
+                // route change and fly.
+                <Link href={`/nebula/tech/${t.id}`} className="link-underline">
                   {t.label}
-                </a>
+                </Link>
               ) : (
                 t.label
               )}

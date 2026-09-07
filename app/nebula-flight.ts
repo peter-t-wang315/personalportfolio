@@ -87,6 +87,46 @@ export function focusPose(nodeId: string): CameraPose | null {
   };
 }
 
+const _slerpA = new THREE.Vector3();
+const _slerpB = new THREE.Vector3();
+
+/** Slerps a point about the origin, lerping its distance — an arc across the
+ * shell rather than a chord through the middle of it. */
+function slerpPoint(a: THREE.Vector3, b: THREE.Vector3, t: number): THREE.Vector3 {
+  const ra = a.length();
+  const rb = b.length();
+  if (ra < 1e-6 || rb < 1e-6) return a.clone().lerp(b, t);
+  _slerpA.copy(a).divideScalar(ra);
+  _slerpB.copy(b).divideScalar(rb);
+  const angle = Math.acos(THREE.MathUtils.clamp(_slerpA.dot(_slerpB), -1, 1));
+  const sin = Math.sin(angle);
+  if (sin < 1e-4) return a.clone().lerp(b, t);
+  return _slerpA
+    .clone()
+    .multiplyScalar(Math.sin((1 - t) * angle) / sin)
+    .addScaledVector(_slerpB, Math.sin(t * angle) / sin)
+    .multiplyScalar(ra + (rb - ra) * t);
+}
+
+/**
+ * Interpolation for travelling from one node to another without leaving the
+ * shell — the flight that follows a link inside an open panel.
+ *
+ * Both endpoints sit just inside the surface, so a straight line between them
+ * is a chord: it cuts through the hollow middle the layout exists to keep
+ * empty, and arrives from the wrong side. Slerping instead sweeps the camera
+ * around the inside of the shell along the great circle joining the two nodes
+ * — which is the same path the edge between them takes, since edges are drawn
+ * on the surface too. The trip reads as travelling along the connection,
+ * because geometrically it is.
+ */
+export function shellLerpPose(from: CameraPose, to: CameraPose, t: number): CameraPose {
+  return {
+    position: slerpPoint(from.position, to.position, t),
+    target: slerpPoint(from.target, to.target, t),
+  };
+}
+
 /** Linear interpolation between two poses, for the flight's own easing to drive. */
 export function lerpPose(from: CameraPose, to: CameraPose, t: number): CameraPose {
   return {

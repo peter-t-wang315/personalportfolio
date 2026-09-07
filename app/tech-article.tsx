@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { clusters, projects, type TechNode } from "@/content";
 
 /**
@@ -53,12 +54,15 @@ export function TechArticle({ tech }: { tech: TechNode }) {
             <ul className="mt-2 space-y-2">
               {group.map((project) => (
                 <li key={project.id}>
-                  <a
+                  {/* next/link for the same reason as the technology list in
+                      project-article.tsx: a document navigation would reload
+                      the canvas and turn the flight into a cold landing. */}
+                  <Link
                     href={`/nebula/${project.slug}`}
                     className="text-[1.0625rem] link-underline"
                   >
                     {project.title}
-                  </a>
+                  </Link>
                   <p className="text-[0.875rem] text-ink-muted mt-0.5">
                     {project.oneLine}
                   </p>

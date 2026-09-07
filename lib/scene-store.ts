@@ -55,6 +55,13 @@ interface SceneState {
    */
   flying: boolean;
   /**
+   * The pair of nodes a sideways flight is travelling between, while it is in
+   * the air. The edge layer reads it to light the connection being followed,
+   * so moving from one node to another shows you the link you took rather
+   * than just arriving somewhere else.
+   */
+  travellingBetween: { from: string; to: string } | null;
+  /**
    * The constellation's current parallax offset, in world
    * units — written every frame from nebula-canvas.tsx's
    * ConstellationPlacement (imperative `getState().setClusterParallax(...)`,
@@ -74,6 +81,7 @@ interface SceneState {
   clearFocus: () => void;
   setFocusSettled: (settled: boolean) => void;
   setFlying: (flying: boolean) => void;
+  setTravellingBetween: (pair: { from: string; to: string } | null) => void;
   setClusterParallax: (offset: { x: number; y: number }) => void;
 }
 
@@ -84,6 +92,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   focusedNodeId: null,
   focusSettled: false,
   flying: false,
+  travellingBetween: null,
   clusterParallax: { x: 0, y: 0 },
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
@@ -96,5 +105,6 @@ export const useSceneStore = create<SceneState>((set) => ({
   clearFocus: () => set({ focusedNodeId: null, focusSettled: false }),
   setFocusSettled: (focusSettled) => set({ focusSettled }),
   setFlying: (flying) => set({ flying }),
+  setTravellingBetween: (travellingBetween) => set({ travellingBetween }),
   setClusterParallax: (clusterParallax) => set({ clusterParallax }),
 }));

@@ -25,6 +25,7 @@ import {
   focusPose,
   lerpPose,
   orbitLerpPose,
+  shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
 import { getPlacement, setPlacement } from "./nebula-placement";
@@ -206,7 +207,13 @@ interface Flight {
   placementFrom: number;
   placementTo: number;
   /** Orbit-interpolate the path (see orbitLerpPose) rather than lerp it straight. */
-  orbit: boolean;
+  /**
+   * How to get there. `line` is a straight lerp, right for a short hop that
+   * barely turns. `orbit` swings around the target, for the arrival and the
+   * departure. `shell` sweeps across the surface between two nodes, for a
+   * sideways move — see shellLerpPose.
+   */
+  path: "line" | "orbit" | "shell";
 }
 let flight: Flight | null = null;
 
@@ -515,7 +522,7 @@ function CameraRig({
         fovTo: INSIDE_CAMERA_FOV,
         placementFrom: 0,
         placementTo: 1,
-        orbit: true,
+        path: "orbit",
       });
       return;
     }
@@ -538,7 +545,7 @@ function CameraRig({
       fovTo: HOME_CAMERA_FOV,
       placementFrom: 1,
       placementTo: 0,
-      orbit: true,
+      path: "orbit",
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
@@ -561,6 +568,7 @@ function CameraRig({
       lastFocus.current = routeFocusId;
       return;
     }
+    const previousFocus = lastFocus.current;
     lastFocus.current = routeFocusId;
     if (!isNebula) return;
 
@@ -571,6 +579,15 @@ function CameraRig({
     const to = routeFocusId ? focusPose(routeFocusId) : INSIDE_POSE;
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
+    // Moving straight from one open node to another — following a link inside
+    // the panel. Both ends sit on the shell, so the flight can travel across
+    // its surface, and the edge layer can light the connection being taken.
+    const sideways = previousFocus !== null && routeFocusId !== null;
+    useSceneStore
+      .getState()
+      .setTravellingBetween(
+        sideways ? { from: previousFocus, to: routeFocusId } : null,
+      );
 
     if (reducedMotion) {
       settle(controls, to, fovTo, { free: routeFocusId !== null, at: 1 });
@@ -587,7 +604,10 @@ function CameraRig({
       placementTo: 1,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
-      orbit: false,
+      // Node to node follows the surface; anything involving the resting pose
+      // is a short hop that barely turns, where a straight line is right and
+      // is what 2.5 was tuned against.
+      path: sideways ? "shell" : "line",
     });
   }, [routeFocusId, reducedMotion, isNebula]);
 
@@ -605,9 +625,12 @@ function CameraRig({
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );
-    const pose = active.orbit
-      ? orbitLerpPose(active.from, active.to, eased)
-      : lerpPose(active.from, active.to, eased);
+    const pose =
+      active.path === "orbit"
+        ? orbitLerpPose(active.from, active.to, eased)
+        : active.path === "shell"
+          ? shellLerpPose(active.from, active.to, eased)
+          : lerpPose(active.from, active.to, eased);
 
     applyPose(controls, pose);
     applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, eased));
@@ -616,6 +639,7 @@ function CameraRig({
       flight = null;
       setPlacement(active.placementTo);
       useSceneStore.getState().setFlying(false);
+      useSceneStore.getState().setTravellingBetween(null);
       useSceneStore.getState().setFocusSettled(true);
       // Hand-dollying is only arbitrated inside the constellation, and only
       // when the camera is parked at the framing distance — not on the landing
