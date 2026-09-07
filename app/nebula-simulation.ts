@@ -283,6 +283,29 @@ export const GATHER_RADIUS = 3.4;
 const SEPARATION_GAP = 0.35;
 /** Enough to clear every overlap measured; see the pass itself for why >1. */
 const SEPARATION_PASSES = 3;
+
+/**
+ * How much room a gathered ring is given, in world units: anything *not* part
+ * of the lit subgraph that sits closer than this to the subject is pushed out
+ * to it.
+ *
+ * Comfortably outside GATHER_RADIUS, so a stranger cannot end up inside the
+ * ring its neighbours were gathered into — measured on
+ * `/work/station-supervisor`, `tcp` sat 1.9 units from the subject, well
+ * within a ring at 3.4, close enough to read as one of its connections.
+ *
+ * Set past where the node should end up, not at it: the blend is
+ * GATHER_EQUALISING and the shell re-projection and collision pass both give a
+ * little back, so a target of 4.6 left `tcp` at 3.62 — outside the ring by
+ * two tenths of a unit, which is not outside it to look at.
+ *
+ * This only reaches the handful of nodes genuinely near the subject on the
+ * shell — one to three, typically. It is deliberately not the answer to nodes
+ * that merely *look* close: those are the far side of the sphere showing
+ * through, already 20 units away, and no amount of pushing moves them on
+ * screen. nebula-constellation.tsx fades those instead.
+ */
+const CLEAR_RADIUS = 5.5;
 const GATHER_EQUALISING = 0.8;
 
 export function attractNeighbors(
@@ -296,6 +319,42 @@ export function attractNeighbors(
   // releases — its own spring, at its own pace, same as letting go.
   for (const [id, spring] of neighborSprings) {
     if (spring.active && !neighbors.has(id)) spring.active = false;
+  }
+
+  // Strangers standing inside the ring are moved out of it, using the same
+  // spring and the same blend — `wanted` moves toward the target radius from
+  // whichever side the node starts on, so gathering in and pushing out are one
+  // piece of arithmetic. Only those already inside are touched; the rest of
+  // the globe keeps its arrangement.
+  if (gatherRadius !== undefined) {
+    const subject = nodeGeometry[nodeId]?.position;
+    if (subject) {
+      for (const node of nodeList) {
+        if (node.id === nodeId || neighbors.has(node.id)) continue;
+        const distance = Math.hypot(
+          node.position[0] - subject[0],
+          node.position[1] - subject[1],
+          node.position[2] - subject[2],
+        );
+        if (distance >= CLEAR_RADIUS) continue;
+        const existing = neighborSprings.get(node.id);
+        if (existing) {
+          existing.targetId = nodeId;
+          existing.active = true;
+          existing.strength = strength;
+          existing.gatherRadius = CLEAR_RADIUS;
+        } else {
+          neighborSprings.set(node.id, {
+            value: 0,
+            velocity: 0,
+            targetId: nodeId,
+            active: true,
+            strength,
+            gatherRadius: CLEAR_RADIUS,
+          });
+        }
+      }
+    }
   }
 
   for (const id of neighbors) {

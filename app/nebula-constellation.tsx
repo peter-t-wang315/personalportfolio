@@ -82,6 +82,13 @@ const UNRELATED_OPACITY_FACTOR = 0.25;
  * makes the subgraph the thing you actually see.
  */
 const SPOTLIT_UNRELATED_FACTOR = 0.12;
+/**
+ * What is left of an unrelated node's already-reduced opacity when it lands
+ * *on* the lit cluster rather than beside it. Not zero: a node that vanishes
+ * as the globe turns reads as a bug, and the far side showing through is what
+ * gives the shell its depth everywhere else on the page.
+ */
+const SPOTLIT_OVERLAP_FACTOR = 0.2;
 
 
 /**
@@ -288,19 +295,38 @@ const _labelWorld = new THREE.Vector3();
 const _labelEdge = new THREE.Vector3();
 const _labelRight = new THREE.Vector3();
 const _labelScale = new THREE.Vector3();
+const _screen = new THREE.Vector3();
+/** Scratch for the lit group's screen extent: x,y pairs, one per lit node. */
+const _litPoints = new Float64Array(128);
 /** Scratch for the label de-collision pass; reused so it allocates nothing. */
 const placed: {
   label: HTMLDivElement;
   anchorX: number;
   anchorY: number;
+  idealX: number;
+  idealY: number;
   x: number;
   y: number;
   width: number;
   height: number;
   hidden: boolean;
 }[] = [];
-/** Enough to separate the worst measured case; see the pass for why >1. */
-const SPOTLIGHT_LABEL_PASSES = 4;
+/**
+ * The separation and the pull compete, so this runs to a settling point rather
+ * than to the first frame with no overlap — and cannot exit early, since the
+ * pull reintroduces overlaps the separation just resolved.
+ */
+const SPOTLIGHT_LABEL_PASSES = 12;
+/** How hard each pass drags a name back toward its own node. */
+const SPOTLIGHT_LABEL_PULL = 0.3;
+/** Trailing passes that separate without pulling, so separation wins the tie. */
+const SPOTLIGHT_LABEL_SETTLE_PASSES = 3;
+/**
+ * Clear space between two names. Smaller than the gap they keep from the nodes
+ * themselves: a name touching another name is only untidy, while a name
+ * touching a node claims to belong to it.
+ */
+const SPOTLIGHT_LABEL_SPACING_PX = 5;
 // Scales the label with the node's own (hover-grown) radius and camera
 // distance via Html's distanceFactor, the same "content sized as if it
 // lived in 3D space" technique 2.6's interior panel will need for content
@@ -546,8 +572,8 @@ function SpotlightLabels({
         dy /= length;
       }
       // Offset the label's *near edge*, not its centre. These boxes are up to
-      // 120px wide and two lines tall, so pushing the centre out by the node's
-      // radius still left half a label lying across the node it names.
+      // 130px wide and two lines tall, so pushing the centre out by the node's
+      // radius alone left half a label lying across the node it names.
       // Measured on the first frame the label has a box, not in an effect:
       // drei's Html mounts its portal in an effect of its own, so an effect
       // here runs while the div still has no layout and every label caches a
@@ -558,14 +584,29 @@ function SpotlightLabels({
         size = { width: label.offsetWidth, height: label.offsetHeight };
         sizes.current[id] = size;
       }
-      const ownExtent = size
-        ? Math.abs(dx) * (size.width / 2) + Math.abs(dy) * (size.height / 2)
-        : 0;
+      // How far the label's own edge is depends on which way it is pushed, and
+      // the answer is where the ray leaves the box — min(w/2/|dx|, h/2/|dy|) —
+      // not |dx|·w/2 + |dy|·h/2, which is what this did first. The sum is right
+      // only for a push straight along an axis; on a diagonal it adds half the
+      // width to half the height when the ray in fact exits through whichever
+      // edge it reaches first. On a 130x28 label pushed at 45° it claims 55px
+      // where the true answer is 20, and every diagonally-placed name was
+      // shoved out by the difference.
+      let ownExtent = 0;
+      if (size) {
+        const toSide =
+          Math.abs(dx) > 1e-6 ? size.width / 2 / Math.abs(dx) : Infinity;
+        const toCap =
+          Math.abs(dy) > 1e-6 ? size.height / 2 / Math.abs(dy) : Infinity;
+        ownExtent = Math.min(toSide, toCap);
+      }
       const distance = radiusPx + SPOTLIGHT_LABEL_GAP_PX + ownExtent;
       placed.push({
         label,
         anchorX: x,
         anchorY: y,
+        idealX: x + dx * distance,
+        idealY: y + dy * distance,
         x: x + dx * distance,
         y: y + dy * distance,
         width: size ? size.width : 0,
@@ -584,7 +625,6 @@ function SpotlightLabels({
     // spoke still reads as belonging to its node; two names on top of each
     // other read as neither.
     for (let pass = 0; pass < SPOTLIGHT_LABEL_PASSES; pass++) {
-      let collided = false;
       for (let i = 0; i < placed.length; i++) {
         const a = placed[i];
         if (a.hidden) continue;
@@ -592,11 +632,10 @@ function SpotlightLabels({
           const b = placed[j];
           if (b.hidden) continue;
           const overlapX =
-            (a.width + b.width) / 2 + SPOTLIGHT_LABEL_GAP_PX - Math.abs(a.x - b.x);
+            (a.width + b.width) / 2 + SPOTLIGHT_LABEL_SPACING_PX - Math.abs(a.x - b.x);
           const overlapY =
-            (a.height + b.height) / 2 + SPOTLIGHT_LABEL_GAP_PX - Math.abs(a.y - b.y);
+            (a.height + b.height) / 2 + SPOTLIGHT_LABEL_SPACING_PX - Math.abs(a.y - b.y);
           if (overlapX <= 0 || overlapY <= 0) continue;
-          collided = true;
           if (overlapY <= overlapX) {
             const push = (Math.sign(a.y - b.y) || 1) * (overlapY / 2);
             a.y += push;
@@ -608,7 +647,26 @@ function SpotlightLabels({
           }
         }
       }
-      if (!collided) break;
+      // **Then pull every name back toward its own node.** Resolving overlaps
+      // alone only ever pushes labels apart, so each pass moved them further
+      // out and never back: the worst drifted 92px from the node it names,
+      // past other nodes, and stopped reading as a label for anything. Pulling
+      // toward the ideal spot after each resolution makes the two forces
+      // compete instead, and they settle where the name is as close to its
+      // node as the other names allow.
+      // ...except on the last passes, which separate only. The pull is applied
+      // after the resolution, so whatever it does last is what ships — and
+      // dragging labels back together was reintroducing overlaps the pass had
+      // just cleared (45px² of them, measured). Letting separation have the
+      // final word costs a pixel or two of closeness and guarantees the thing
+      // that actually matters.
+      if (pass < SPOTLIGHT_LABEL_PASSES - SPOTLIGHT_LABEL_SETTLE_PASSES) {
+        for (const p of placed) {
+          if (p.hidden) continue;
+          p.x += (p.idealX - p.x) * SPOTLIGHT_LABEL_PULL;
+          p.y += (p.idealY - p.y) * SPOTLIGHT_LABEL_PULL;
+        }
+      }
     }
 
     // A name may not be drawn across the article. Even where the globe itself
@@ -706,6 +764,8 @@ export function Constellation({
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
   const groupRef = useRef<THREE.Group>(null);
+  /** The lit group's circle on screen, recomputed each frame. */
+  const litScreen = useRef({ x: 0, y: 0, radius: 0 });
   const ambient = useRef(isHome || isNebula ? 1 : 0);
   const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
   const flying = useSceneStore((s) => s.flying);
@@ -846,6 +906,40 @@ export function Constellation({
       groupRef.current.visible = ambient.current > 0.01;
     }
 
+    // Where the lit group sits on screen, and how wide it is — resolved once
+    // before the node pass below, which needs it for every unrelated node.
+    litScreen.current.radius = 0;
+    if (related && related.size > 0) {
+      let sx = 0;
+      let sy = 0;
+      let seen = 0;
+      for (const id of related) {
+        const mesh = meshRefs.current[id];
+        if (!mesh) continue;
+        mesh.getWorldPosition(_screen).project(state.camera);
+        _litPoints[seen * 2] = (_screen.x * 0.5 + 0.5) * state.size.width;
+        _litPoints[seen * 2 + 1] = (-_screen.y * 0.5 + 0.5) * state.size.height;
+        sx += _litPoints[seen * 2];
+        sy += _litPoints[seen * 2 + 1];
+        seen++;
+      }
+      if (seen > 0) {
+        litScreen.current.x = sx / seen;
+        litScreen.current.y = sy / seen;
+        let far = 0;
+        for (let i = 0; i < seen; i++) {
+          far = Math.max(
+            far,
+            Math.hypot(
+              _litPoints[i * 2] - litScreen.current.x,
+              _litPoints[i * 2 + 1] - litScreen.current.y,
+            ),
+          );
+        }
+        litScreen.current.radius = far;
+      }
+    }
+
     // Stop advancing the clock and the breathing displacement freezes in
     // place. Skipping stepSimulation the same way leaves every node at its
     // seeded layout position, since livePositions starts there and nothing
@@ -924,9 +1018,39 @@ export function Constellation({
       }
 
       const unrelated = related !== null && !related.has(node.id);
-      const unrelatedFactor = spotlightNodeId
+      let unrelatedFactor = spotlightNodeId
         ? SPOTLIT_UNRELATED_FACTOR
         : UNRELATED_OPACITY_FACTOR;
+      // **Nodes that bleed through the lit cluster recede further still.**
+      // The confusing ones are not neighbours crowding the subject — measured
+      // on /work/selective-solder-driver, all five unrelated nodes landing
+      // inside the lit cluster's screen box were 18.6 to 22.6 units away on a
+      // shell 22 across, i.e. the *far side*, showing through. Nothing can be
+      // moved to fix that; they are already as distant as this sphere allows,
+      // and the only thing they share with the cluster is a screen position.
+      // So the answer is screen-space too: fade by how far a node lands from
+      // the lit group, not by how far it is from it.
+      if (unrelated && litScreen.current.radius > 0) {
+        const mesh = meshRefs.current[node.id];
+        if (mesh) {
+          mesh.getWorldPosition(_screen).project(state.camera);
+          const sx = (_screen.x * 0.5 + 0.5) * state.size.width;
+          const sy = (-_screen.y * 0.5 + 0.5) * state.size.height;
+          const distance = Math.hypot(
+            sx - litScreen.current.x,
+            sy - litScreen.current.y,
+          );
+          unrelatedFactor *= THREE.MathUtils.lerp(
+            SPOTLIT_OVERLAP_FACTOR,
+            1,
+            THREE.MathUtils.smoothstep(
+              distance,
+              litScreen.current.radius,
+              litScreen.current.radius * 1.6,
+            ),
+          );
+        }
+      }
       // The professional core goes as the node opens: a --mask sphere
       // floating behind the text is exactly the "solid object" it was designed
       // not to read as.
