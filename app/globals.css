@@ -1,6 +1,21 @@
 @import "tailwindcss";
 
 /*
+ * A wide laptop or monitor with little vertical room — 1366x768, 1440x800,
+ * 1920x800. The hero's desktop layout assumes height it does not have there:
+ * its text stack is a fixed ~890px tall regardless of viewport, so the link
+ * row fell below the fold on any screen shorter than that (1366x768 included,
+ * which is among the most common laptop resolutions), and the headline
+ * sprawled sideways across the cluster it is supposed to sit beside.
+ *
+ * Width is in the condition on purpose. Phones and tablets are short too, but
+ * their hero is a vertical stack that already handles it — see hero-nav.tsx —
+ * and pulling them into this variant would undo that. Only the desktop
+ * side-by-side layout needs tightening.
+ */
+@custom-variant short-desktop (@media (min-width: 1024px) and (max-height: 900px));
+
+/*
  * Palette source of truth is lib/palette.ts — CSS can't import from TS, so
  * these values are kept in sync by hand. Update both when the palette
  * changes.
@@ -41,14 +56,31 @@ body {
 }
 
 /*
- * The landing-page "What's this?" hover region (nebula-affordance.tsx) is an
- * invisible circle sized to the whole drifting cluster — a focus ring drawn
- * around it would span a third of the hero and read as broken rather than
- * deliberate. The revealed phrase label carries its own focus styling
- * instead, so this is safe to suppress.
+ * The desktop "What's this?" anchor (nebula-affordance.tsx) is the phrase
+ * label itself, and it has no size at all until a reveal renders text into
+ * it — so a focus ring would be drawn around nothing on the frame focus
+ * lands. The label underlines itself on focus instead, which is why this is
+ * safe to suppress. Deliberately not applied to the mobile label, which is a
+ * permanently visible link and keeps the standard ring.
  */
 .nebula-affordance-hit:focus-visible {
   outline: none;
+}
+
+/*
+ * Armed while the pointer is inside the cluster's circle. Nothing is there to
+ * hover any more — the proximity reveal is computed from coordinates rather
+ * than from an element, precisely so it stops eating clicks and text
+ * selection on the hero behind it — so the clickable-ness of the cluster has
+ * to be signalled from the root instead. `cursor` inherits, so the headline
+ * (the only real content the circle overlaps) takes its caret back explicitly.
+ */
+html.nebula-affordance-armed {
+  cursor: pointer;
+}
+
+html.nebula-affordance-armed h1 {
+  cursor: auto;
 }
 
 /*

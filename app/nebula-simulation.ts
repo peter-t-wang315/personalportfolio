@@ -33,7 +33,7 @@ import { makeRng } from "@/lib/seeded-random";
  */
 
 const SIM_SEED = 0x51a7e5;
-// World units, per-node range — small relative to CLUSTER_SPREAD (2.5,
+// World units, per-node range — small relative to CLUSTER_SPREAD (3.2,
 // content/layout.ts) so nothing wanders into a neighbour's slot, but wide
 // enough that different nodes visibly drift by different amounts.
 const WANDER_AMPLITUDE_MIN = 0.35;
@@ -211,7 +211,9 @@ const offsets: Record<string, THREE.Vector3> = (() => {
 })();
 
 const neighborCache: Record<string, string[]> = {};
-function neighborsOf(id: string): string[] {
+/** Runtime-edge neighbours of a node. Exported so 2.5's focus dimming asks the
+ * same question hover attraction does, rather than deriving "related" twice. */
+export function neighborsOf(id: string): string[] {
   return (neighborCache[id] ??= (() => {
     const set = new Set<string>();
     for (const e of edges) {
@@ -228,6 +230,15 @@ interface NeighborSpring {
   /** Whichever node this one is currently being pulled toward. */
   targetId: string;
   active: boolean;
+  /**
+   * Multiplier on this node's own pull, for the fractional mode below.
+   */
+  strength: number;
+  /**
+   * Distance to settle at, in world units, when gathering to a ring instead
+   * of pulling by a fraction. Undefined keeps the fractional behaviour.
+   */
+  gatherRadius?: number;
 }
 
 /**
@@ -240,7 +251,28 @@ interface NeighborSpring {
 const neighborSprings = new Map<string, NeighborSpring>();
 
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
-export function attractNeighbors(nodeId: string) {
+/**
+ * How far a gathered neighbour ends up from its subject, and how strictly.
+ *
+ * The fractional pull that hover uses moves each neighbour a share of *its
+ * own* separation, which preserves the spread it started with: a node already
+ * beside the subject ends up almost inside it, while one across the globe is
+ * still across the globe, only less so. Read as a group that looks lopsided —
+ * some nodes crushed in, others barely moved.
+ *
+ * Gathering to a radius instead gives every neighbour the same destination
+ * distance, keeping only the direction it came from, so the subgraph settles
+ * as a ring around its subject. Blended rather than absolute, so the original
+ * arrangement still shows through and the ring does not read as a dial.
+ */
+export const GATHER_RADIUS = 3.4;
+const GATHER_EQUALISING = 0.8;
+
+export function attractNeighbors(
+  nodeId: string,
+  options: { strength?: number; gatherRadius?: number } = {},
+) {
+  const { strength = 1, gatherRadius } = options;
   const neighbors = new Set(neighborsOf(nodeId));
 
   // Anything currently active that isn't a neighbour of the new target
@@ -257,8 +289,17 @@ export function attractNeighbors(nodeId: string) {
       // never pops, it just continues toward the new direction.
       existing.targetId = nodeId;
       existing.active = true;
+      existing.strength = strength;
+      existing.gatherRadius = gatherRadius;
     } else {
-      neighborSprings.set(id, { value: 0, velocity: 0, targetId: nodeId, active: true });
+      neighborSprings.set(id, {
+        value: 0,
+        velocity: 0,
+        targetId: nodeId,
+        active: true,
+        strength,
+        gatherRadius,
+      });
     }
   }
 }
@@ -270,19 +311,35 @@ export function releaseAttraction() {
 
 let frozenAt: number | null = null;
 let lastClockTime = 0;
+/**
+ * Total time spent frozen, subtracted from the clock so the wander resumes
+ * from where it stopped rather than from where it *would* have been.
+ *
+ * Without it, `resumeSimulation` handed the noise functions the live clock
+ * again and every node teleported to the position it would have wandered to
+ * during the freeze — a 1.4-second jump after a fly-in, in a single frame.
+ */
+let frozenTotal = 0;
 
-/** Stops the simulation completely, holding position. 2.5's fly-in wires this. */
+/**
+ * Stops the simulation completely, holding position. 2.5's fly-in wires this.
+ *
+ * Idempotent, and that matters: the effect that calls it fires both on focus
+ * and on the flight ending, so a second call re-stamping the freeze point
+ * would advance the wander by exactly the flight's duration at the instant
+ * the camera came to rest. Measured, that was 29% of the frame's pixels
+ * changing in one frame, spread across the whole viewport, with the camera
+ * provably still — which reads as the whole graph flinching on arrival.
+ */
 export function freezeSimulation() {
-  frozenAt = lastClockTime;
+  if (frozenAt === null) frozenAt = lastClockTime;
 }
 
 /** Resumes advancing from wherever freezeSimulation left off. */
 export function resumeSimulation() {
+  if (frozenAt === null) return;
+  frozenTotal += lastClockTime - frozenAt;
   frozenAt = null;
-}
-
-export function isSimulationFrozen() {
-  return frozenAt !== null;
 }
 
 function wanderOffset(id: string, t: number, out: THREE.Vector3) {
@@ -317,7 +374,7 @@ const _pull = new THREE.Vector3();
  */
 export function stepSimulation(clockTime: number, delta: number) {
   lastClockTime = clockTime;
-  const t = frozenAt ?? clockTime;
+  const t = (frozenAt ?? clockTime) - frozenTotal;
 
   for (const node of nodeList) {
     wanderOffset(node.id, t, offsets[node.id]);
@@ -358,24 +415,58 @@ export function stepSimulation(clockTime: number, delta: number) {
     const targetHome = nodeGeometry[spring.targetId]?.position;
     const home = nodeGeometry[neighborId]?.position;
     if (!targetHome || !home) continue;
-    _pull
-      .set(
-        targetHome[0] - home[0],
-        targetHome[1] - home[1],
-        targetHome[2] - home[2],
-      )
-      .multiplyScalar(params.pull * spring.value);
+    if (spring.gatherRadius === undefined) {
+      // Fractional: a share of this node's own separation. Hover's behaviour.
+      _pull
+        .set(
+          targetHome[0] - home[0],
+          targetHome[1] - home[1],
+          targetHome[2] - home[2],
+        )
+        .multiplyScalar(params.pull * spring.strength * spring.value);
+    } else {
+      // To a radius: same destination distance for every neighbour, keeping
+      // only the direction it came from, so they settle as a ring rather than
+      // a squashed copy of how they were already arranged.
+      _pull.set(
+        home[0] - targetHome[0],
+        home[1] - targetHome[1],
+        home[2] - targetHome[2],
+      );
+      const distance = _pull.length();
+      if (distance > 1e-4) {
+        const wanted =
+          distance + (spring.gatherRadius - distance) * GATHER_EQUALISING;
+        _pull.multiplyScalar((wanted / distance - 1) * spring.value);
+      } else {
+        _pull.set(0, 0, 0);
+      }
+    }
     offsets[neighborId].add(_pull);
   }
 
   for (const node of nodeList) {
     const home = node.position;
     const offset = offsets[node.id];
-    livePositions[node.id].set(
-      home[0] + offset.x,
-      home[1] + offset.y,
-      home[2] + offset.z,
-    );
+    const live = livePositions[node.id];
+    live.set(home[0] + offset.x, home[1] + offset.y, home[2] + offset.z);
+
+    // **Everything above moves nodes in three dimensions; this puts them back
+    // on the shell.** The constellation is a hollow sphere (content/layout.ts)
+    // and the wander, the pair springs and hover attraction are all free 3-D
+    // displacements, so left alone they would push nodes through the surface —
+    // outward, and worse, inward, refilling the empty middle the layout exists
+    // to create. Rescaling to the node's *own* seeded radius turns every one
+    // of those into motion across the surface instead: the wander becomes a
+    // drift over the sphere, and a neighbour attracted to a node arcs around
+    // toward it rather than tunnelling through the interior.
+    //
+    // Per-node radius rather than one shared constant, because the shell has
+    // deliberate thickness (SHELL_THICKNESS) and flattening that would cost
+    // the surface its depth under fog.
+    const radius = Math.hypot(home[0], home[1], home[2]);
+    const length = live.length();
+    if (length > 1e-6) live.multiplyScalar(radius / length);
   }
 }
 

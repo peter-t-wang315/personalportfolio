@@ -1,22 +1,36 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
+import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
+import {
+  DESKTOP_MIN_WIDTH_PX,
+  SHORT_VIEWPORT_HEIGHT_PX,
+} from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
+import {
+  focusScroll,
+  SCROLL_FADE_MS,
+  SCROLL_HOLD_MS,
+} from "@/lib/focus-scroll";
 import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
 import {
+  GATHER_RADIUS,
   stepSimulation,
   getLivePosition,
   attractNeighbors,
   releaseAttraction,
+  freezeSimulation,
+  resumeSimulation,
+  neighborsOf,
 } from "./nebula-simulation";
 
 /**
@@ -53,6 +67,52 @@ const BREATHE_SEED = 0xb4ea7e;
 // the shell so it survives the radius difference between major and
 // standard. Personal-cluster nodes get no core mesh at all; category (not
 // an ownership signal) is computed in lib/node-geometry.ts.
+// Step 2.5 — focus. Everything that isn't the focused node or one of its
+// neighbours drops to this fraction of its own base opacity, per 05a. A
+// fraction rather than a flat value so the tech layer stays recessed relative
+// to projects instead of every node collapsing onto one grey.
+const UNRELATED_OPACITY_FACTOR = 0.25;
+/**
+ * Harder on a spotlit `/work/[slug]`, where the graph has one job: show what
+ * this project connects to. Inside the nebula an unrelated node is still
+ * somewhere you might go next and stays legible at 0.25; beside an article it
+ * is context the reader did not ask for, and letting it recede further is what
+ * makes the subgraph the thing you actually see.
+ */
+const SPOTLIT_UNRELATED_FACTOR = 0.12;
+
+
+/**
+ * Off `/`, the constellation is ambient rather than the subject and dims to
+ * ~35% — but as a *factor* on each node's own base opacity, not a flat value,
+ * so the tech layer stays recessed relative to projects instead of every node
+ * collapsing onto one grey. 0.35/PROJECT_OPACITY reproduces exactly the 0.35
+ * the decorative cluster faded to, which is what 04-phase-1.md specifies.
+ *
+ * Below the desktop tier it stands down entirely instead. Ambient only works
+ * if there is somewhere to be ambient *in*, and at those widths the content
+ * column is nearly the whole viewport, so it would sit squarely behind body
+ * prose: measured 55% of the disc under text on /about at 768x1024, 59% on
+ * /work at 360x640, with the nodes plainly legible through the paragraphs. No
+ * opacity that is still visible survives that, because the problem is texture
+ * behind reading text rather than how strong the texture is. Desktop is
+ * unaffected and was measured clean (0-4%) — the column is narrow relative to
+ * the viewport, which is the whole premise. `/` always keeps its graph: there
+ * it is the affordance, not decoration.
+ */
+const AMBIENT_OPACITY_FACTOR = 0.35 / PROJECT_OPACITY;
+/**
+ * `/work/[slug]` sits between ambient and subject. The graph there is not
+ * decoration the way it is on `/about` — it is showing the reader where the
+ * project they are reading about sits, and the turn that brings its cluster
+ * forward has to be visible for that to mean anything. So it is lifted above
+ * the ambient value, while staying well below the landing page's, since prose
+ * is still the thing being read.
+ */
+const SPOTLIGHT_OPACITY_FACTOR = 0.55 / PROJECT_OPACITY;
+/** Route-change easing for the ambient fade. */
+const AMBIENT_EASE = 0.06;
+
 const CORE_SCALE = 0.8;
 const CORE_OPACITY = 0.22;
 
@@ -67,20 +127,31 @@ const HOVER_EASE = 0.2;
 
 /**
  * Fog band, re-measured against actual per-node camera-space depth (not
- * guessed): nodes span depth 28.6–60.5 from this camera. Far was originally
- * 90, well past the real max depth of 60.5, so the falloff curve never got
- * close to completing — the farthest node only reached 51% fade, not
- * enough to read as recession. Far now sits just past the true max depth,
- * so the farthest cluster reaches ~90% fade (visibly receded, not erased)
- * while the nearest nodes stay untouched.
+ * guessed) after the shell shrank to 11: from the outside framing the nodes
+ * span depth 20.1–42.5, so far sits just past the true maximum and the
+ * farthest cluster reaches ~90% fade — visibly receded, not erased.
+ *
+ * Near is set by the *landing page* rather than by that framing. The landing
+ * cluster sits 19.6–26.4 from the home camera, and anything below 27 would
+ * start fogging its far edge, which has never had fog and is composed without
+ * it. So near clears that, and the outside framing gets its gradient over
+ * 27–42.5 instead of the whole range.
+ *
+ * Inside the globe fog does nothing at all, and shouldn't: from the inside
+ * pose every visible node lies between 13 and 17 units away — a depth ratio of
+ * 1.26 — so there is no recession for it to describe.
  */
-const FOG_NEAR = 30;
-const FOG_FAR = 68;
+const FOG_NEAR = 27;
+const FOG_FAR = 48;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };
 
-const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+// 48 segments rather than 32. A sphere only ever needs enough to look round,
+// but the same vertices have to describe a superellipsoid when a node opens,
+// and its corners curve far more tightly than anything on a sphere does —
+// at 32 they creased visibly. 45 nodes at this density is still trivial.
+const sphereGeometry = new THREE.SphereGeometry(1, 48, 48);
 const coreMaterial = new THREE.MeshBasicMaterial({
   color: palette.mask,
   transparent: true,
@@ -117,14 +188,54 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
 }
 
 /**
- * The tier-dependent material branch, in place from the start so 2.5's
- * transmission swap extends it instead of retrofitting the render path.
- * Transmission policy per tier lives in 02-architecture.md's Responsive
- * tiers table; nothing is focusable yet, so today every path is fresnel.
+ * **Opening a node reshapes the node.** 05-phase-2.md asks for the shell to
+ * expand and morph toward a rounded rectangle, and the first build did it with
+ * a second mesh: the node faded out, a separate shell faded in and morphed,
+ * then that faded out too and left a DOM card. Three objects in sequence, so
+ * of course it read as a new one arriving — by the time there was anything to
+ * read, the node itself was gone.
+ *
+ * There is one object now. The node's own mesh turns to face the camera,
+ * scales to the interior panel's rectangle, and reshapes from sphere toward
+ * rounded box through its own material's `uOpen` uniform
+ * (app/fresnel-material.ts). Same mesh, same material, same `--mask` colour it
+ * had as a sphere; the panel's text simply appears across it. Nothing is
+ * swapped, so there is nothing for the eye to notice being swapped.
+ *
+ * Panel size is the tier table's (02-architecture.md): 70% of the viewport on
+ * desktop, 85% below, taken as a fraction of the frustum at the node's own
+ * depth — the same numbers nebula-panel.tsx uses in CSS, so the mesh and the
+ * DOM agree without either measuring the other. Under 500px of viewport height
+ * there is no morph at all: the panel is a full-height sheet and the node stays
+ * a sphere (Orientation and short viewports).
  */
-function shellMaterial(node: NodeGeometry, _tier: DeviceTier): THREE.Material {
-  // 2.5 adds: desktop + focused + fly-in complete -> real transmission.
-  return materialByNodeId[node.id];
+const OPEN_MS = 240;
+const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
+const PANEL_FRACTION_DESKTOP = 0.7;
+const PANEL_FRACTION_COMPACT = 0.85;
+/** Depth of the opened node relative to its own radius — flattened, not gone,
+ * so the rim still turns away from the viewer and catches the fresnel term. */
+const OPEN_DEPTH_FACTOR = 0.35;
+
+/**
+ * How far the focused node has opened, 0 to 1, and which node it is.
+ *
+ * Module scope because the frame loop that drives it and the render that reads
+ * it are the same component, and because nothing outside this file needs it —
+ * the DOM panel stays in step by running the same duration and curve rather
+ * than by being told a number sixty times a second.
+ */
+const focusOpen = { value: 0, nodeId: null as string | null, snap: false };
+
+/**
+ * Tells the shell to be open already rather than opening. Called by the camera
+ * rig when it settles a cold entry, which is the one arrival with nothing to
+ * animate from — the panel is server-rendered at full opacity and the camera
+ * never flies, so a shell ramping out of a sphere behind it is the only thing
+ * still moving, and it reads as the page assembling itself late.
+ */
+export function snapFocusShellOpen() {
+  focusOpen.snap = true;
 }
 
 /**
@@ -285,23 +396,189 @@ function HoverLabel() {
   );
 }
 
-export function Constellation() {
+/**
+ * The constellation, on every route.
+ *
+ * `isNebula` and `isHome` are the route, not a scene mode: the same graph is
+ * the landing page's distant cluster, the ambient texture behind `/about`, and
+ * the thing you fly into. What changes between them is what it costs and what
+ * it responds to — off `/nebula` it draws no edges, raycasts nothing, and
+ * fades toward ambient — not which nodes exist. nebula-canvas.tsx's
+ * ConstellationPlacement owns where it sits and how big it is.
+ */
+export function Constellation({
+  isNebula,
+  isHome,
+  spotlightNodeId,
+  gatherNodeId,
+  onOpenNode,
+}: {
+  isNebula: boolean;
+  isHome: boolean;
+  /**
+   * On `/work/[slug]`, the project the page is about. Its connected subgraph
+   * stays lit while everything else recedes, and the placement turns the globe
+   * so it faces the reader. Distinct from `focusedNodeId`: nothing is opened,
+   * no camera flies, and the panel is not involved — the graph is here to say
+   * where this project sits, beside prose that is doing the explaining.
+   */
+  spotlightNodeId: string | null;
+  /**
+   * The project whose neighbours are drawn in — the route's, never the hover
+   * preview's.
+   *
+   * Turning and gathering are deliberately split. The turn is cheap to redo
+   * and previews well, so a hovered row gets it; the gather is a spring with a
+   * tenth-of-a-second time constant, so re-aiming it at every row a reader
+   * crosses makes the graph snap rather than move. Opening the project is what
+   * pulls its neighbours in.
+   */
+  gatherNodeId: string | null;
+  /** Pushes the node's route. Focus follows from the route, never from here. */
+  onOpenNode: (id: string) => void;
+}) {
   const tier = useDeviceTier();
   const meshRefs = useRef<Record<string, THREE.Mesh | null>>({});
+  const groupRef = useRef<THREE.Group>(null);
+  const ambient = useRef(isHome || isNebula ? 1 : 0);
+  const focusedNodeId = useSceneStore((s) => s.focusedNodeId);
+  const flying = useSceneStore((s) => s.flying);
+
+  /**
+   * Hover and click are withheld off `/nebula` and for the duration of every
+   * flight. Off the route because the landing page's way in is the affordance's
+   * window-level handler over the whole cluster (nebula-affordance.tsx), and a
+   * node that swallowed the pointer first would take the click from it; during
+   * a flight because a raycast against a scene whose placement is still
+   * interpolating resolves to whatever node happens to be under the cursor at
+   * that instant, which is not the one the viewer aimed at.
+   *
+   * Omitting the handlers rather than ignoring them inside is the point: R3F
+   * only raycasts objects that have them, so this is also what keeps 45 meshes
+   * off the pointer path on every non-nebula route.
+   */
+  const interactive = isNebula && !flying;
+
+  // Who stays lit: the focused node and whatever it actually talks to.
+  const related = useMemo(() => {
+    const subject = focusedNodeId ?? spotlightNodeId;
+    if (!subject) return null;
+    return new Set([subject, ...neighborsOf(subject)]);
+  }, [focusedNodeId, spotlightNodeId]);
+
+  /**
+   * The simulation holds still while focused, per 2.3a's freeze hook and 05a's
+   * done-when. Two reasons it has to: the camera is parked a couple of units
+   * off a specific node's surface, and a node that drifts out from under it
+   * ruins the framing; and the neighbours are dimmed by identity, which only
+   * reads as a stable statement if they stop moving too.
+   *
+   * It holds still for any flight as well, which is what 05-phase-2.md
+   * actually asks for — "during any programmatic camera movement", not just
+   * focus. Reading the rig's own `flying` rather than re-deriving it from a
+   * duration keeps this one effect the single writer, so there is no ordering
+   * question between the freeze and the flight that caused it.
+   */
+  useEffect(() => {
+    // A spotlit work page freezes too. 05-phase-2.md asks for that page to
+    // settle once and then stop completely — "no ongoing motion or GPU cost
+    // beside the body text" — and drifting nodes behind prose is exactly the
+    // texture-behind-reading-text problem the ambient rules exist to avoid.
+    if (focusedNodeId || flying || spotlightNodeId) freezeSimulation();
+    else resumeSimulation();
+  }, [focusedNodeId, flying, spotlightNodeId]);
+
+  /**
+   * A spotlit project draws its neighbours in, using 2.3a's attraction — the
+   * same mechanic hover uses, and the "gathering" 05-phase-2.md originally
+   * asked this page for. The turn alone left the subgraph as sparse as the
+   * rest of the shell, which made it hard to see what was being highlighted
+   * and gave the composition nothing to aim at.
+   *
+   * It works despite the freeze above, and that is not an accident of
+   * ordering: freezing holds the *wander* clock still, while the attraction
+   * springs integrate against real delta time. So the neighbours slide in and
+   * everything else stays exactly where it was — which is precisely the
+   * "settles once, then stops" the spec wants, rather than a page of drifting
+   * nodes behind prose.
+   */
+  useEffect(() => {
+    if (!gatherNodeId) return;
+    // To a ring rather than a share of each node's own distance — see
+    // GATHER_RADIUS. The fractional pull hover uses keeps whatever spread the
+    // nodes started with, so the ones already beside the subject ended up
+    // almost inside it while the far ones stayed far, and the group looked
+    // lopsided rather than assembled.
+    attractNeighbors(gatherNodeId, { gatherRadius: GATHER_RADIUS });
+    return () => releaseAttraction();
+  }, [gatherNodeId]);
 
   // Tech node visibility is tier-dependent — see 02-architecture.md's
   // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
   // default it will toggle from. Tech opacity's tier-dimming is folded into
   // the per-frame hover loop below (baseOpacity reads `tier` directly), so
   // it doesn't need its own effect.
-  const showTech = tier !== "mobile";
+  // Off /nebula this is a texture rather than a graph, and the tier rule is
+  // about keeping the graph legible on a small screen — so the whole
+  // population is drawn there. A phone's landing cluster would otherwise be
+  // 20 nodes where every other device sees 45, which reads as sparse rather
+  // than as restrained.
+  const showTech = !isNebula || tier !== "mobile";
 
   useFrame((state, delta) => {
-    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    const { reducedMotion, hoveredNodeId, focusedNodeId: focused } =
+      useSceneStore.getState();
+
+    // The opening, driven here because the thing that opens is one of the
+    // nodes this loop already walks.
+    const settled = useSceneStore.getState().focusSettled;
+    const openTarget = isNebula && focused && settled ? focused : null;
+    if (focusOpen.snap) {
+      focusOpen.snap = false;
+      if (openTarget) focusOpen.value = 1;
+    }
+    const openStep = reducedMotion ? 1 : (delta * 1000) / OPEN_MS;
+    focusOpen.value = THREE.MathUtils.clamp(
+      focusOpen.value + (openTarget ? openStep : -openStep),
+      0,
+      1,
+    );
+    if (openTarget) focusOpen.nodeId = openTarget;
+    else if (focusOpen.value <= 0) focusOpen.nodeId = null;
+    const openEased = easeStandard(focusOpen.value);
+    // No morph under 500px of viewport height: there the panel is a
+    // full-height sheet and there is nothing for a rounded rectangle to be.
+    const canOpen = state.size.height >= SHORT_VIEWPORT_HEIGHT_PX;
+    const panelFraction =
+      state.size.width >= DESKTOP_MIN_WIDTH_PX
+        ? PANEL_FRACTION_DESKTOP
+        : PANEL_FRACTION_COMPACT;
     // Reduced motion: an instant snap to target instead of an eased lerp —
     // hover still highlights and scales, it just doesn't animate into place
     // (same idiom the Phase 1 cluster uses for its own opacity/scale lerp).
     const ease = reducedMotion ? 1 : HOVER_EASE;
+
+    // Ambient dimming off `/` (see AMBIENT_OPACITY_FACTOR), eased across route
+    // changes rather than switched. Applied as a multiplier on whatever each
+    // node's opacity would otherwise be, below, so hover and focus keep their
+    // relationships intact underneath it.
+    ambient.current = THREE.MathUtils.lerp(
+      ambient.current,
+      isNebula || isHome
+        ? 1
+        : state.size.width < DESKTOP_MIN_WIDTH_PX
+          ? 0
+          : spotlightNodeId
+            ? SPOTLIGHT_OPACITY_FACTOR
+            : AMBIENT_OPACITY_FACTOR,
+      reducedMotion ? 1 : AMBIENT_EASE,
+    );
+    // Once faded out, stop drawing it: 45 transparent spheres a phone can't
+    // see are 45 draw calls it doesn't need. A threshold rather than equality
+    // because the fade is eased, so it fades and then goes quiet.
+    if (groupRef.current) {
+      groupRef.current.visible = ambient.current > 0.01;
+    }
 
     // Stop advancing the clock and the breathing displacement freezes in
     // place. Skipping stepSimulation the same way leaves every node at its
@@ -324,13 +601,78 @@ export function Constellation() {
       }
 
       const hovered = hoveredNodeId === node.id;
-      const targetScale = node.radius * (hovered ? HOVER_SCALE_FACTOR : 1);
-      mesh.scale.setScalar(
-        THREE.MathUtils.lerp(mesh.scale.x, targetScale, ease),
-      );
+      // While focused, hover scaling stands down: the camera is inches from
+      // one node and a neighbour swelling under a stray pointer reads as the
+      // scene twitching, not as a preview.
+      const spotlit = node.id === spotlightNodeId;
+      const targetScale =
+        node.radius *
+        ((hovered && !focused) || spotlit ? HOVER_SCALE_FACTOR : 1);
 
       const material = materialByNodeId[node.id];
-      const targetOpacity = hovered ? HOVER_OPACITY : baseOpacity(node, tier);
+      const open = node.id === focusOpen.nodeId && canOpen ? openEased : 0;
+      material.uniforms.uOpen.value = open;
+      // The opened node draws the panel's scroll thumb on its own rim, so the
+      // indicator is part of the wall rather than laid over it — see
+      // lib/focus-scroll.ts. Held while scrolling, then faded.
+      if (open > 0) {
+        const since = performance.now() - focusScroll.lastMoveAt;
+        material.uniforms.uScrollPos.value = focusScroll.position;
+        material.uniforms.uScrollLen.value = focusScroll.length;
+        material.uniforms.uScrollFade.value =
+          focusScroll.length > 0
+            ? THREE.MathUtils.clamp(
+                1 - (since - SCROLL_HOLD_MS) / SCROLL_FADE_MS,
+                0,
+                1,
+              )
+            : 0;
+      } else if (material.uniforms.uScrollFade.value !== 0) {
+        material.uniforms.uScrollFade.value = 0;
+      }
+      if (open > 0) {
+        // Face the camera, so "flattened along Z" means flattened toward the
+        // viewer, and scale to the panel's rectangle at this node's depth.
+        mesh.quaternion.copy(state.camera.quaternion);
+        const distance = state.camera.position.distanceTo(mesh.position);
+        const halfHeight =
+          distance *
+          Math.tan(
+            ((state.camera as THREE.PerspectiveCamera).fov * Math.PI) / 360,
+          );
+        const halfWidth = halfHeight * (state.size.width / state.size.height);
+        mesh.scale.set(
+          THREE.MathUtils.lerp(targetScale, halfWidth * panelFraction, open),
+          THREE.MathUtils.lerp(targetScale, halfHeight * panelFraction, open),
+          THREE.MathUtils.lerp(
+            targetScale,
+            node.radius * OPEN_DEPTH_FACTOR,
+            open,
+          ),
+        );
+      } else {
+        mesh.quaternion.identity();
+        mesh.scale.setScalar(
+          THREE.MathUtils.lerp(mesh.scale.x, targetScale, ease),
+        );
+      }
+
+      const unrelated = related !== null && !related.has(node.id);
+      const unrelatedFactor = spotlightNodeId
+        ? SPOTLIT_UNRELATED_FACTOR
+        : UNRELATED_OPACITY_FACTOR;
+      // The professional core goes as the node opens: a --mask sphere
+      // floating behind the text is exactly the "solid object" it was designed
+      // not to read as.
+      const core = mesh.children[0];
+      if (core) core.visible = open < 0.01;
+      const targetOpacity =
+        ambient.current *
+        (unrelated
+          ? baseOpacity(node, tier) * unrelatedFactor
+          : hovered && !focused
+            ? HOVER_OPACITY
+            : baseOpacity(node, tier));
       material.uniforms.opacity.value = THREE.MathUtils.lerp(
         material.uniforms.opacity.value,
         targetOpacity,
@@ -340,11 +682,25 @@ export function Constellation() {
   });
 
   return (
-    <>
-      <fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />
-      <group>
-        <Edges showTech={showTech} />
-        {nodeList.map((node) => {
+    <group ref={groupRef}>
+      {/* Edges are the graph's information layer, and 04-phase-1.md is
+          explicit that the landing cluster has none. A spotlit work page is
+          the exception: there they are the answer to "what does this project
+          talk to", so its own subgraph is drawn and nothing else. Unmounting rather than
+          hiding them also keeps their line geometry and pulse loop off every
+          non-nebula route, which is where the LCP budget is.
+          They outlast the route by one flight on the way out: dropping them on
+          the commit put a visible pop at the head of the departure, with the
+          graph still life-size. Kept until it lands, they go while it is a
+          cluster of hairlines too small to see them leave. */}
+      {(isNebula || flying || spotlightNodeId) && (
+        <Edges
+          showTech={showTech}
+          // On a work page, only what this project connects to.
+          subgraphOf={!isNebula && !flying ? spotlightNodeId : null}
+        />
+      )}
+      {nodeList.map((node) => {
           if (node.kind === "tech" && !showTech) return null;
           return (
             <mesh
@@ -355,9 +711,21 @@ export function Constellation() {
               position={node.position}
               scale={node.radius}
               geometry={sphereGeometry}
-              material={shellMaterial(node, tier)}
-              onPointerOver={(e) => handlePointerOver(e, node.id)}
-              onPointerOut={(e) => handlePointerOut(e, node.id)}
+              material={materialByNodeId[node.id]}
+              onPointerOver={
+                interactive ? (e) => handlePointerOver(e, node.id) : undefined
+              }
+              onPointerOut={
+                interactive ? (e) => handlePointerOut(e, node.id) : undefined
+              }
+              onClick={
+                interactive
+                  ? (e) => {
+                      e.stopPropagation();
+                      onOpenNode(node.id);
+                    }
+                  : undefined
+              }
             >
               {node.category === "professional" && (
                 <mesh
@@ -369,8 +737,39 @@ export function Constellation() {
             </mesh>
           );
         })}
-        <HoverLabel />
-      </group>
+      {interactive && <HoverLabel />}
+    </group>
+  );
+}
+
+/**
+ * Scene-level environment, rendered outside the placement group that scales
+ * the constellation down for the landing page (nebula-canvas.tsx).
+ *
+ * It has to be outside it for two unrelated reasons. `attach="fog"` writes to
+ * its parent's `fog` property, and a group has no such property that anything
+ * reads — inside the group the fog silently stops existing. And a light's
+ * position is in its parent's space, so inside the group both lights would be
+ * scaled and translated along with the flight.
+ *
+ * Fog is also why the landing page looks unchanged by all of this: at the
+ * landing placement the whole graph sits 19.6-26.4 units from the camera,
+ * entirely in front of FOG_NEAR, so no fog applies. It engages over the course
+ * of the arrival as the constellation grows into its real depth.
+ */
+export function SceneEnvironment() {
+  return (
+    <>
+      <fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />
+      {/*
+        The only lit material in the scene is the focused node's transmissive
+        shell — every other shell is a custom ShaderMaterial that computes its
+        own rim and ignores lights entirely. So this is two lights for one mesh,
+        and they cost nothing anywhere else: without them a MeshPhysicalMaterial
+        has no specular to catch and reads as a dead silhouette.
+      */}
+      <ambientLight intensity={1.6} />
+      <directionalLight position={[4, 8, 6]} intensity={1.1} />
     </>
   );
 }

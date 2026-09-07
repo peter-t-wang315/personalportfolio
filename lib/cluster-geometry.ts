@@ -10,6 +10,18 @@
 export const HOME_CAMERA_POSITION: [number, number, number] = [0, 0, 9];
 export const HOME_CAMERA_FOV = 45;
 export const CLUSTER_RADIUS = 3;
+/**
+ * Maximum parallax displacement of the cluster, **in pixels**, per
+ * 01-design-system.md's motion item 1 ("12px for text, 28px for the cluster").
+ *
+ * In pixels because that is how the design system specifies it. It used to be
+ * a world-unit constant, which is not the same thing: world units project
+ * through the camera's vertical FOV, so the on-screen swing scaled with
+ * viewport height and matched the spec at no height at all — measured ±59px at
+ * 1440x900 against a specified 28, and worse on a taller screen. The text half
+ * was always correct, since PointerParallax works in real pixels.
+ */
+export const CLUSTER_PARALLAX_MAX_PX = 28;
 export const CLUSTER_DEPTH = -14;
 
 /**
@@ -54,9 +66,16 @@ export function pxPerWorldUnitFor(viewportHeight: number) {
 export function clusterScaleForViewport(
   viewportWidth: number,
   viewportHeight: number,
+  /**
+   * Multiplier on the drawn radius. `/work/[slug]` enlarges the globe to make
+   * the turn and the subgraph readable, and the placement solve has to know:
+   * the whole point of it is clearing the text column by a real margin, which
+   * it cannot do against a radius that is not the one being rendered.
+   */
+  radiusScale = 1,
 ) {
   const naturalDiameter =
-    2 * CLUSTER_BOUNDING_RADIUS * pxPerWorldUnitFor(viewportHeight);
+    2 * CLUSTER_BOUNDING_RADIUS * radiusScale * pxPerWorldUnitFor(viewportHeight);
   if (naturalDiameter <= 0) return 1;
   return Math.min(
     1,
@@ -85,8 +104,91 @@ export const NARROW_CLUSTER_CENTER_Y_FRACTION = 0.62;
 export function clusterCenterYFraction(
   viewportWidth: number,
   viewportHeight: number,
+  radiusScale = 1,
 ) {
-  return clusterScaleForViewport(viewportWidth, viewportHeight) < 1
+  return clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale) < 1
     ? NARROW_CLUSTER_CENTER_Y_FRACTION
     : 0.5;
+}
+
+/**
+ * Desktop tier floor, per 02-architecture.md's Responsive tiers table. Kept as
+ * a local constant rather than imported from device-tier.ts, which is a React
+ * hook module — this file is deliberately dependency-free (see the header).
+ */
+export const DESKTOP_MIN_WIDTH_PX = 1024;
+/**
+ * Short-viewport threshold, per 02-architecture.md's Orientation and short
+ * viewports note. Height, not width, is the trigger there too — landscape
+ * phones are its named case.
+ */
+export const SHORT_VIEWPORT_HEIGHT_PX = 500;
+
+/**
+ * Right edge of the hero's text column, in px: page gutter plus measure.
+ * Mirrors `px-16` and `max-w-[66ch]` in app/page.tsx (66ch of the body face at
+ * its base size measures ~700px), and 01-design-system.md's Layout section.
+ * Only has to be approximately right — it feeds a clearance gap, and
+ * HERO_CLUSTER_GAP_PX absorbs a few px of drift either way.
+ */
+const HERO_TEXT_RIGHT_PX = 64 + 700;
+/** Breathing room between the text column and the cluster's near edge. */
+const HERO_CLUSTER_GAP_PX = 32;
+/** Keeps the cluster off the right edge when it is pushed as far as it goes. */
+const HERO_EDGE_MARGIN_PX = 32;
+
+/**
+ * Fraction of viewport width the cluster's centre sits at.
+ *
+ * Centred is right whenever the hero's text column and the cluster genuinely
+ * fit side by side. On a wide, short laptop they do not: the cluster's
+ * on-screen size comes from viewport *height*, so a short viewport shrinks it,
+ * while the text column stays a fixed ~764px wide. Centred, the cluster then
+ * lands inside the column — measured 43% of it covered by hero text at
+ * 1024x768 and 22% at 1100x768 — which is the opposite of 04-phase-1.md's
+ * "the text arranged around it so the cluster is never fully occluded".
+ *
+ * So this solves the constraint rather than guessing a breakpoint: put the
+ * cluster's left edge just past the text column, and no further right than the
+ * viewport edge allows. Where a centred cluster already clears the column the
+ * first term wins and nothing moves, which is why tall or very wide screens
+ * (1920x800, 2560x1440) are untouched. Where even the far-right position can't
+ * fully clear it (1024 wide, where the column is most of the viewport) it goes
+ * as far as it can, which is still a large improvement on centred.
+ *
+ * The condition for solving at all is "is the hero laid out as a column beside
+ * the cluster, or stacked above it". Desktop width is one way to be the former.
+ * A **short** viewport is the other, and missing it was a real gap: a landscape
+ * phone at 844x390 is only 844px wide, so the tier test alone left the cluster
+ * dead centre of the headline, measured at 64% of the disc covered by hero
+ * text. It is a wide, short strip with the text in a left-hand column — the
+ * exact case this solves — it simply is not a desktop.
+ *
+ * Where neither holds (a portrait phone, a tablet held upright) the hero really
+ * is a vertical stack with no column to clear, and the cluster stays centred.
+ */
+export function clusterCenterXFraction(
+  viewportWidth: number,
+  viewportHeight: number,
+  radiusScale = 1,
+) {
+  const besideAColumn =
+    viewportWidth >= DESKTOP_MIN_WIDTH_PX ||
+    viewportHeight < SHORT_VIEWPORT_HEIGHT_PX;
+  if (!besideAColumn) return 0.5;
+
+  const radiusPx =
+    CLUSTER_BOUNDING_RADIUS *
+    radiusScale *
+    pxPerWorldUnitFor(viewportHeight) *
+    clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale);
+
+  const clearOfText = HERO_TEXT_RIGHT_PX + HERO_CLUSTER_GAP_PX + radiusPx;
+  const rightmost = viewportWidth - radiusPx - HERO_EDGE_MARGIN_PX;
+  const centerX = Math.max(
+    viewportWidth / 2,
+    Math.min(clearOfText, rightmost),
+  );
+
+  return centerX / viewportWidth;
 }

@@ -12,6 +12,14 @@ import { motion, useScroll, useTransform } from "motion/react";
  */
 export const FADE_DISTANCE_PX = 240;
 
+/**
+ * The top margin is what separates the arrows from the hero's link row, which
+ * is bottom-anchored directly above them (hero-nav.tsx). It is real spacing
+ * rather than something absorbed by the growing column above: the column claims
+ * the hero's *remaining* height, so a margin here is subtracted before that and
+ * pushes the links up by exactly this much. Trimmed on short viewports, where
+ * there is no spare height for it to come out of.
+ */
 export function ScrollCue() {
   const { scrollY } = useScroll();
   const opacity = useTransform(scrollY, [0, FADE_DISTANCE_PX], [1, 0]);
@@ -21,7 +29,7 @@ export function ScrollCue() {
       href="#selected-work"
       aria-label="Scroll to selected work"
       style={{ opacity }}
-      className="self-start flex flex-row items-center gap-2 text-ink-muted hover:text-ink"
+      className="self-start flex flex-row items-center gap-2 text-ink-muted hover:text-ink mt-10 [@media(max-height:500px)]:mt-4"
     >
       {[0, 1, 2].map((i) => (
         <svg

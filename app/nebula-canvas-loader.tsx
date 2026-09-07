@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
+import { hasWebgl } from "@/lib/webgl";
 import { CanvasErrorBoundary } from "./canvas-error-boundary";
 
 const NebulaCanvas = dynamic(
@@ -13,22 +14,8 @@ const NebulaCanvas = dynamic(
   },
 );
 
-let cachedWebglOk: boolean | null = null;
-
 function getWebglSnapshot() {
-  if (cachedWebglOk === null) {
-    try {
-      const canvas = document.createElement("canvas");
-      cachedWebglOk = !!(
-        canvas.getContext("webgl2") ||
-        canvas.getContext("webgl") ||
-        canvas.getContext("experimental-webgl")
-      );
-    } catch {
-      cachedWebglOk = false;
-    }
-  }
-  return cachedWebglOk;
+  return hasWebgl();
 }
 
 function getServerWebglSnapshot() {

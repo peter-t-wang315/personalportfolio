@@ -23,29 +23,45 @@ export const site = {
  * node instead, where it has context. Three headline numbers get scrutinised
  * hardest, and that one is the softest of the set.
  *
- * `short` is the mobile/tablet compact-row form (hero-stats.tsx) — value and
- * label collapsed into one short string, dropping `note` entirely, so the
- * three fit on one line directly under the cluster instead of the desktop
- * `<dl>`'s stacked value/label/note per metric.
+ * The mobile/tablet compact row is `heroMetricsCompact` below, not a `short`
+ * field on each metric — see the note there for why the two are not a 1:1 map.
  */
 export const heroMetrics = [
   {
     value: '18%',
     label: 'cycle time reduction',
     note: '+60 boards per day',
-    short: '18%',
   },
   {
     value: '30+',
     label: 'machines and devices across 6+ vendors',
     note: 'machines, conveyors, cameras, SMEMA controllers',
-    short: '30+ machines',
   },
   {
     value: '2 sites',
     label: '6 production lines, running continuously',
-    short: '2 sites',
   },
+] as const;
+
+/**
+ * The compact hero row for phones and tablets (hero-stats.tsx), where the
+ * desktop `<dl>`'s stacked value/label/note per metric doesn't fit.
+ *
+ * Deliberately *not* a per-metric `short` field, because it isn't a
+ * truncation. Collapsing each metric to its value gave "18%  30+  2 sites",
+ * which is three numbers with the sentence that made them mean something
+ * stripped off. This is its own phrasing instead: it reads as one line of
+ * prose, and it draws on the second metric twice (its value and its vendor
+ * count) rather than once each.
+ *
+ * The cost is that the cycle-time figure has no room here, so it is a desktop
+ * and `/work` number only. That is the deliberate trade — an unexplained
+ * "18%" was buying nothing on a phone.
+ */
+export const heroMetricsCompact = [
+  '30+ machines',
+  '6+ vendors',
+  'across 2 sites',
 ] as const;
 
 /** Guided tour order. Strongest first, ending on something human. */

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   CLUSTER_BOUNDING_RADIUS,
+  clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
   pxPerWorldUnitFor,
@@ -52,6 +53,10 @@ export function useClusterScreen(
   const pxPerWorldUnit = pxPerWorldUnitFor(viewport.height);
   const scale = clusterScaleForViewport(viewport.width, viewport.height);
 
+  const centerXFraction = clusterCenterXFraction(
+    viewport.width,
+    viewport.height,
+  );
   const centerYFraction = clusterCenterYFraction(
     viewport.width,
     viewport.height,
@@ -59,7 +64,7 @@ export function useClusterScreen(
 
   return {
     ready: true,
-    centerX: viewport.width / 2 + parallax.x * pxPerWorldUnit,
+    centerX: viewport.width * centerXFraction + parallax.x * pxPerWorldUnit,
     centerY: viewport.height * centerYFraction - parallax.y * pxPerWorldUnit,
     radiusPx: worldRadius * pxPerWorldUnit * scale,
   };

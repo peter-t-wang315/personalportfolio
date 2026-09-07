@@ -22,7 +22,22 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body className="font-body bg-paper text-ink antialiased">
+      {/*
+        Extensions that run a content script at document_start write to <body>
+        before React hydrates, and an attribute React did not render is a
+        hydration mismatch it reports and refuses to patch. AdBlock, password
+        managers and Grammarly all do it on every http and https page, so
+        localhost is not exempt. Nothing here renders a dynamic attribute on
+        <body> — the className is a literal — so there is no real mismatch this
+        can hide.
+
+        It suppresses one element's own attributes and text, not its subtree, so
+        a genuine mismatch anywhere inside still reports normally.
+      */}
+      <body
+        className="font-body bg-paper text-ink antialiased"
+        suppressHydrationWarning
+      >
         <PointerTracker />
         <NebulaCanvasLoader />
         <NebulaAffordance />

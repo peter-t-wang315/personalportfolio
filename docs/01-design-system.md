@@ -47,7 +47,7 @@ Do not use mono for small data labels. That's the conventional use and it would 
 
 | Role | Face | Size | Weight | Tracking | Case |
 |---|---|---|---|---|---|
-| Hero display | Mono | `clamp(2.5rem, 7vw, 5.5rem)` | 400 | `-0.04em` | lowercase |
+| Hero display | Mono | `clamp(2.5rem, min(7vw, 9vh), 5.5rem)` | 400 | `-0.04em` | lowercase |
 | Page title | Mono | `clamp(1.75rem, 4vw, 2.75rem)` | 400 | `-0.03em` | lowercase |
 | Section head | Sans | `1.25rem` | 500 | `-0.01em` | sentence |
 | Body | Sans | `1.0625rem` | 400 | `0` | sentence |
@@ -56,6 +56,22 @@ Do not use mono for small data labels. That's the conventional use and it would 
 | Metric label | Sans | `0.8125rem` | 400 | `0` | sentence |
 
 Line height: 1.6 body, 1.15 display. Measure: max 68 characters.
+
+The hero display size is bounded by viewport **height** as well as width. It
+lives in a full-height hero beside the landing cluster, and a width-only clamp
+ignored that: on a short wide laptop it held its 88px ceiling, ran to three
+full-measure lines, pushed the link row below the fold, and covered the
+cluster it is supposed to sit beside. The height term only binds when a
+viewport is wide relative to its height, so phones stay width-bound at the
+floor and tall monitors stay at the ceiling — both render identically to the
+width-only clamp.
+
+The desktop hero's vertical spacing has a matching compact step under the
+`short-desktop` variant (`globals.css`, at least 1024px wide and at most 900px
+tall): the gaps above the headline, the metrics and the link row all tighten,
+because those were fixed pixel values that assumed height the screen does not
+have. Phones and tablets are excluded by the width half of that condition —
+their hero is a vertical stack that solves the same problem differently.
 
 ### Prohibited typographic treatments
 
@@ -78,7 +94,11 @@ These read as generated. Do not use any of them:
 
 Non-user-triggered motion is limited to **four** things sitewide:
 
-1. **Cursor parallax on the landing page.** The background cluster and every text block on `/` — hero and the section below it alike — translate in opposite directions at different rates as the pointer moves. Max displacement: 12px for text, 28px for the cluster. Eased with a spring, damping high enough that it feels weighted rather than floaty. Pointer-only: on touch devices the hero is static, with no parallax substitute. Do not implement device-orientation tilt as one — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff.
+1. **Cursor parallax on the landing page.** The background cluster and every text block on `/` — hero and the section below it alike — translate in opposite directions at different rates as the pointer moves. Max displacement: 12px for text, 28px for the cluster. Eased with a spring, damping high enough that it feels weighted rather than floaty. Both figures are **pixels**, and must be implemented as pixels — the cluster's was once a world-unit constant, which projects through the camera's vertical FOV and so scaled with viewport height, measuring ±59px at 1440x900 against the 28 specified here.
+
+**Touch drives the same parallax, from the finger.** A finger held on the hero moves the cluster exactly as a cursor does, and releasing recentres it. This is direct manipulation — the thing moving is the thing under the finger, caused by the viewer in the moment — so it carries none of the vestibular mismatch the next sentence is about. It needs its own `touchmove` listener: pointer events stop mid-gesture once the browser claims a drag for scrolling (`pointercancel`), which used to leave the parallax lurching once on touch-down and then frozen. See `app/pointer-tracker.tsx`.
+
+Do not implement device-orientation tilt as a parallax source — it is a motion-sickness risk and an accessibility problem, not a stylistic tradeoff. That is a different thing from a finger drag: nothing is touching the screen, so the viewer is not the proximate cause of the motion. **Nothing on the site reads device orientation at all.** A tilt-driven phrase nudge and a tilt-driven shader sheen were built once, on the argument that neither moved the scene, and were removed — all movement on touch comes from the drag instead. Do not reintroduce either without a deliberate decision; the argument for them was sound, the appetite for the sensor was not.
 2. **Data flow along Nebula production edges.** Amber pulses traveling the line, ~4s period.
 3. **The free-floating node simulation on `/nebula`.** Nodes drift continuously in a lightweight force simulation rather than sitting still — weak springs hold runtime-edge-connected pairs loosely together, everything else wanders freely. Hovering a node attracts its connected neighbours toward it; hover-out releases them. See `02-architecture.md` for the model and its freeze rule.
 4. **The work-page subgraph gathering on `/work/[slug]`.** The project's connected subgraph (runtime-edge neighbours plus its tech nodes) gathers toward a focal point using the same attraction mechanic as hover, viewed from outside the constellation. It settles once and the simulation loop stops — no ongoing motion afterward.

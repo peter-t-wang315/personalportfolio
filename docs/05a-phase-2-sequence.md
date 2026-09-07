@@ -1,17 +1,218 @@
 # Phase 2 — build sequence
 
 ## Session status (update each session)
-Last completed: 2.4 (camera controls + hover), including all follow-on fixes
-(pointer-events bug, edge live-tracking, organic drift noise, spring attraction,
-per-node personality variation, three-way node category visuals, hover title).
-Committed and stable.
 
-Not yet started: landing-page affordance fix (see 04-phase-1.md for updated spec),
-then 2.5 (fly-in + focus state).
+Last completed: **2.6** (interior panel and routing), on top of **2.5** and the
+**Phase 1 landing page**. Committed on `nebulustest`. **05a asks for a preview
+deploy after 2.6; the owner runs `npx vercel` themselves.**
+
+**2.6 as built.** The URL is the source of truth for focus: node clicks push
+`/nebula/[slug]` or `/nebula/tech/[id]`, `RouteFocus` syncs the store from the
+route, and the camera rig keys its flights on the route. Cold entry settles at
+the focus pose with the panel server-rendered at full opacity; navigation flies
+and fades the panel in on `focusSettled`; the two are told apart by whether the
+panel mounted during hydration (`lib/hydration.ts`). The panel is real DOM,
+sized by CSS from the tier table, a full-height sheet under 500px. The glass
+opens in a second 240ms beat after it arrives: a morph target on the sphere
+(superellipsoid, n=6) scaled to the panel's rectangle at the node's depth,
+turned to face the camera, tint dropped to 12%. Tech nodes got a route and a
+panel — the owner's call, over hover-only — listing every project that uses
+them. Escape moved out of the canvas to the close control, because the router
+is unreachable from inside R3F's reconciler.
+
+Verified, 23 checks at 1280x800 plus 844x390, 900x700 and 390x844: prose in
+the server HTML with the canonical tag; cold-entry panel at opacity 1 before
+and after settle; Escape → `/nebula`; back and forward restore the node and
+the graph; in-graph click pushes a route with the panel hidden during the
+flight and visible after; sideways project → tech → project through panel
+links; reduced motion redirects both routes to the document; panel measures
+70%/85%/100% by tier and height; unknown slug 404s; no console errors; no
+hydration warnings on any new route. Measured, the landing is two beats after
+the flight: ~20% of pixels for two frames as the glass arrives, ~13% for three
+as it opens, then 0.03%.
+
+**Two 2.6 defects fixed later, during the globe work.** The shell only opened
+on desktop, because the opening was built inside the transmission branch — so
+below desktop a focused node stayed a sphere behind the prose, which got worse
+once focus began approaching from inside the shell. And the panel arrived at
+its final size whatever the shell was doing, which read as a new screen rather
+than the node opening; it is now revealed by a clip-path stretching from the
+node's own silhouette. Cold entry snaps both to open, as 05-phase-2.md always
+asked.
+
+**Three traps 2.6 hit, for 2.7.** A mesh whose geometry carries morph
+attributes must have `updateMorphTargets()` called after R3F attaches the
+geometry, or the renderer reads an undefined influences array on the first
+frame and the whole loop dies — silently, on desktop only, with the panel
+looking fine over a blank canvas. A "first mount" flag must be set by
+something mounted on every route, not by the component that needs it:
+opening a node from bare `/nebula` mounted the first panel the document had
+ever had, which read as cold. And a full-viewport sheet paints over corner
+chrome that is earlier in the DOM; the corners need their own stacking order.
+
+**Not 2.6's, still open:** the `/work/[slug]` gathering animation
+(05-phase-2.md, Work-page gathering) is in no step of this sequence. Leaving
+`/nebula/[slug]` straight to `/` is still a cut, now rarer since the corner
+link is the only way to do it.
+
+**Two behaviours were built and deleted in the landing-page work, deliberately.**
+A phrase nudge and a shader sheen driven by `deviceorientation`. They were not a
+mistake and not a violation — neither moved the scene, so 01-design-system.md's
+prohibition on device-orientation *parallax* was never in play. They went
+because they were the one piece that could not be verified without real
+hardware, and the owner did not want the sensor. **Do not rediscover the idea as
+new.** All movement on touch comes from the drag instead. Anything else
+sensor- or hardware-specific deserves the owner's eyes on a real device, not an
+agent's headless browser.
+
+**2.5's arrival was rebuilt after it shipped.** As first built, the landing page
+drew a separate 40-sphere decorative cluster and `/nebula` swapped it for the
+real graph on the route change, so clicking the cluster destroyed the thing you
+clicked, cut the camera 64 units and 94 degrees to a synthesised pose outside
+the constellation, and flew 18.5 units from there — a cut three and a half times
+longer than the flight after it. The persistent canvas was buying nothing.
+
+There is now one constellation on every route, under a placement transform, and
+the arrival starts at the landing page's own camera pose. 02-architecture.md's
+persistent-canvas section is the authority on the shape of it; three things it
+records are worth knowing before touching this again:
+
+- **The placement belongs to the camera rig, not the route.** Derived from the
+  route, it went life-size on the commit while the camera was still at the
+  landing pose — which sits *inside* a life-size constellation. Every navigation
+  slow enough to put a frame between commit and effect painted the graph from
+  the inside first. Captured at 900x600 under software GL.
+- **There is one camera rig now**, mounted everywhere, because leaving
+  `/nebula` has to be a flight too and the rig that drives it can't be the one
+  that unmounts on the way out.
+- **The arrival path is an orbit interpolation.** A straight line between the
+  two poses passes closer to the subject than it started.
+
+Measured after the rebuild, at 900x600: entering, the constellation's projected
+spread grows monotonically from 69.8px to 140px with no frame from inside the
+graph; leaving, it shrinks back to 69.9px and is dead steady from 1550ms, with
+no step in the pixel count where the edge layer unmounts. Reduced motion is an
+instant cut in both directions, verified at 120ms after the click. Focus,
+transmission swap, and Escape all still behave as below.
+
+**A residual worth not re-investigating:** measuring the landing page by pixel
+mask picks up the affordance's idle pulse ring, a DOM element, which contracts
+and fades on a several-second loop. It looks exactly like the constellation
+still shrinking for a second after the flight lands. It isn't.
+
+Clicking a node flies the camera along the vector from the
+constellation's centre through that node, stopping outside its surface and
+looking back at it — never at the node's own position, which would put the
+camera inside the shell. 1400ms on 01-design-system.md's standard curve, driven
+by hand rather than by camera-controls' `enableTransition`, because that
+smooths exponentially with no fixed duration and the spec asks for a specific
+curve over a specific time. The dolly clamp lifts for the flight; with it live,
+camera-controls drags the camera back out mid-flight and the arrival never
+lands. It is off on the Phase 1 routes too, now that `CameraControls` is mounted
+on all of them: the landing pose sits 9 units from its target, inside
+`DOLLY_MIN_DISTANCE`, so a live clamp would quietly pull the camera out of the
+framing the whole landing page is composed against. On focus the simulation freezes (2.3a's hook), unrelated nodes drop to
+25% of their own base opacity, and on desktop only the focused node swaps to
+real transmission once the flight has landed. Escape and a close control both
+leave. Reduced motion makes flights instant cuts.
+
+Measured, after the arrival flinch below was fixed — these supersede an
+earlier set taken while that bug was still present:
+
+- **Node fly-in:** frame-to-frame change decays 31% -> 25 -> 17 -> 9 -> 2.9 ->
+  0.78%, then holds at 0.3-0.85%. The shells still breathe at rest, which is
+  correct — only the float simulation freezes.
+- **Exit:** decays to 0.03% at 1648ms, then rises gently to 0.15% as the wander
+  restarts. A clean resume, with no jump at the hand-off.
+- **Reduced motion:** exactly one frame of change, then exactly 0.00% for every
+  frame after. Both directions.
+- **Landing arrival:** projected spread grows monotonically 69.8 -> 140px with
+  no frame from inside the graph; leaving returns it to 69.9px, steady from
+  1550ms.
+
+**The arrival flinch, and why it was not what it looked like.** A 30%-of-pixels
+single-frame change at the moment the fly-in landed looked like the transmission
+material swapping in. It was not: it reproduced identically at tablet width,
+where transmission is never used, and a per-frame camera trace showed the camera
+decelerating smoothly through it (steps of 0.067 down to 0.001, no
+discontinuity) with the changed pixels spread across the whole frame rather than
+localised. It was `freezeSimulation()` re-stamping `frozenAt` on a second call —
+the effect fires once on focus and again when the flight ends — which advanced
+the wander clock by exactly the flight's duration at the instant the camera came
+to rest. `resumeSimulation` had the mirror-image bug and now accumulates frozen
+time. **When a whole-frame change appears, check the camera before the
+materials.**
+
+**The transmission swap is cross-faded** (240ms, standard curve) even though it
+turned out not to be the pop. It cannot be done with opacity — `transparent` on
+a transmissive material double-counts its blending and washes the glass out — so
+the glass fades in by *becoming* glass: thickness and attenuation ramp from
+nothing, which is a clear sphere, while the fresnel shell fades out over it.
+
+**Two traps for 2.6.** First, effect ordering: the focus-flight effect fires on
+mount like any dependency-array effect, and StrictMode fires it twice in dev, so
+it silently overwrote the arrival flight until it was made to track focus's
+*value* rather than count runs. Anything else that starts a flight needs the
+same discipline. Second: The transmissive material is a
+`MeshPhysicalMaterial` in an otherwise unlit scene — every other shell is a
+custom `ShaderMaterial` that ignores lights. It needs the two lights added for
+it, and its `color` must stay white with the green in `attenuationColor`: put
+`--mask` in `color` and it tints everything seen through the glass toward black
+and renders as a flat opaque disc.
+
+The landing page as it now stands:
+
+- **The affordance** reveals by proximity without capturing pointer events;
+  clicking or tapping the cluster navigates through a window-level handler
+  gated on its circle, which defers to drags, selections and real controls.
+- **The mobile label** drifts laterally the whole time it is legible, spawns at
+  a point solved against its own box so it clears the graph, and rides the
+  cluster's parallax during a drag.
+- **The hero** anchors its link row to the bottom at every size, scales its
+  display type and spacing with viewport height, and gives phones their own
+  compact metrics phrasing.
+- **The cluster's placement is solved, not fixed** — it slides right of the text
+  column when centring would bury it, drops below the text on narrow
+  viewports, and is not drawn at all off `/` below the desktop tier, where it
+  would sit behind body prose. 02-architecture.md's Landing cluster placement
+  section is the authority. All of it now applies as a transform on the real
+  constellation, and none of its arithmetic changed to make that work.
+- **Parallax** follows a finger on touch and is specified and implemented in
+  pixels.
+
+**Cleared before 2.6, so they are not inherited:** the store's `mode` field and
+`isSimulationFrozen()` were both dead — never written, never read — and are
+gone. 02-architecture.md's State section records when `mode` should come back.
+
+**In progress, ahead of 2.7 — the globe.** The owner's direction: the nebula is
+a hollow sphere with everything on the surface and nothing hidden underneath,
+"like the clouds over a globe". Entering `/nebula` should fly *into* the middle
+and let you look around from inside; `/work/[slug]` keeps the outside view and
+rotates the relevant cluster to face the viewer. Nodes wander across the
+surface on their own clocks, gather on hover, and disperse on release.
+
+Landed so far: the layout, the edges, the camera — `/nebula` now rests inside
+the globe — focus, which approaches a node from the middle rather than from
+beyond it, so opening one no longer punches the camera out through the shell,
+and `/work/[slug]`, which sees the globe from outside and turns it so the
+project's cluster faces the reader. The shell shrank 16 -> 11 in the same pass, which is what
+makes a node read at ~5 degrees from in there rather than 3.5; every constant
+downstream was rescaled with it and re-measured (see the commit).
+
+Still to do, in order:
+
+- **Mobile**, where the tier table makes the 3D ambient behind a bottom sheet,
+  and being inside a globe you can only leave by dragging may not suit.
+
+Not yet started: **2.7** (cluster labels and edge detail). The owner has said
+what they want from it: hover an edge and see the projects and technologies it
+connects — "look at C# and see all that I've done". The tech panel already
+serves the second half; 2.7's edge tooltips (`protocol`, `detail`) are the
+first.
 
 Next session should: read this file plus 00, 01, 02, 04, 05 in full before
-continuing, then confirm current git state matches this summary before
-proceeding with either the affordance fix or 2.5.
+continuing, then confirm current git state matches this summary before starting
+2.6.
 
 ---
 
@@ -29,11 +230,15 @@ Full behavioural spec is in `05-phase-2.md`. Device tier rules are in `02-archit
 
 Build `layout.ts` into the scene. The shared fresnel node material and `--paper`-matched scene fog for depth (both pulled forward from 2.2 by revision), correct radius per type. Project nodes at `major` 0.85 and `standard` 0.6, tech nodes at 0.34. Camera parked at a fixed position that frames the whole constellation at roughly 70% of viewport height.
 
+**This sentence is the authority on the `/nebula` resting camera**, and it means what it says: the camera is *outside* the graph with the whole composition in view. 02-architecture.md's routes table used to say "Inside the constellation", which contradicted it; that was a wording error and has been corrected to point here. Going inside is something the visitor does — the 2.5 node fly-in, hand-dollying to `DOLLY_MIN_DISTANCE`, 2.6's node interior — not something the arrival does. Measured on the built scene: 65% of viewport height, camera 41.2 units from its target against a bounding radius of 17.6.
+
 Verify the seeded generator produces identical positions across reloads — reload ten times and confirm nothing moves.
 
 **Done when:** nothing overlaps or occludes badly from the default heading, and the SEL clusters occupy the front hemisphere. Full legibility as distinct clusters depends on the edge hierarchy, not this static view — re-evaluate that at 2.3.
 
-**This is the highest-risk step.** If the graph doesn't look good as plain grey spheres, no material work will save it. Tune `CLUSTER_RADIUS`, `CLUSTER_SPREAD`, and `TECH_SHELL_RADIUS` here until the composition is right, before anything else is built on top.
+**This is the highest-risk step.** If the graph doesn't look good as plain grey spheres, no material work will save it. Tune `SHELL_RADIUS`, `SHELL_THICKNESS` and `CLUSTER_SPREAD` here until the composition is right, before anything else is built on top.
+
+**Revised after 2.6**, which is what that warning was for. The layout was a filled ball; it is now a hollow shell — see 05-phase-2.md's Layout section. Measured before and after: nodes inside r = 8 went from ten of forty-five to zero, tech mean radius from 9.2 to 16.0, and the bounding radius landed at 17.62 against the old 17.60, so the landing-page footprint (derived from it) and the tuned fog band both survived untouched.
 
 ---
 
@@ -59,7 +264,7 @@ Deploy a preview. This is the first version worth looking at on a phone.
 
 **Goal:** the graph is connected and the edge hierarchy is legible without a legend.
 
-Runtime edges as `QuadraticBezierLine`, `--ink` at 40%, amber `--lamp` pulse on a ~4s loop. Dev-time edges dashed with a slower pulse. Shared-tech edges as a single batched `LineSegments`, `--ink-faint` at 20%, static.
+Runtime edges as `QuadraticBezierLine`, `--ink` at 52% and 1.9px, amber `--lamp` pulse on a ~4s loop. Dev-time edges dashed with a slower pulse. Shared-tech edges as a single batched `LineSegments`, `--ink-faint` at 45%, static. Those were 40% and 20% and were raised after measuring — see 05-phase-2.md's Edges section for why, and for why the two no longer move together.
 
 **Done when:** you can tell at a glance which edges carry messages and which only mean "shares a technology," with no explanation. If the hairlines compete visually with the runtime edges, drop their opacity until they don't — that asymmetry is the entire point of the design.
 
@@ -91,6 +296,8 @@ This step needs edges (2.3) to exist first, since the springs attach to runtime-
 
 **Goal:** clicking a node takes you to it. No panel content yet.
 
+**Two flights, not one.** This step owes the node fly-in described below *and* the landing-page arrival that 02-architecture.md's persistent-canvas decision exists for — 2.1 explicitly deferred that one here. Building only the node half leaves the canvas living in the root layout for a transition that never happens.
+
 Camera interpolates to a position offset along the vector from constellation centre through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through geometry.
 
 On focus: the float simulation freezes (per the hook built in 2.3a), unrelated nodes drop to 25% opacity, and on desktop only the focused node's material switches to real transmission.
@@ -98,6 +305,11 @@ On focus: the float simulation freezes (per the hook built in 2.3a), unrelated n
 Escape and a close control both return to the constellation.
 
 **Done when:** the flight feels weighted rather than snappy or floaty, the simulation resumes cleanly on exit, and reduced-motion turns flights into instant cuts.
+
+**Landed**, both flights — the node fly-in first, the landing-page arrival
+initially in a form that only looked like one. See the session status block
+above for the rebuild, and for the traps in the transmissive material and in
+effect ordering.
 
 ---
 
@@ -114,6 +326,9 @@ Sideways navigation: connected nodes stay visible past the panel edges, hoverabl
 Under 500px viewport height, the panel becomes a full-height sheet with no morph.
 
 **Done when:** every project is readable inside its node, browser back and forward work correctly, a pasted `/nebula/[slug]` link lands already inside the right node with no flight, and clicking that same node from within the graph does play the flight.
+
+**Landed.** See the session status block above for how, the three traps, and
+what it deliberately does not cover.
 
 Deploy a preview. This is the first genuinely complete version.
 

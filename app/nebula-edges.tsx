@@ -11,6 +11,7 @@ import { edges, type Edge } from "@/content";
 import { palette } from "@/lib/palette";
 import { nodeGeometry } from "@/lib/node-geometry";
 import { useSceneStore } from "@/lib/scene-store";
+import { getPlacement } from "./nebula-placement";
 import { getLivePosition } from "./nebula-simulation";
 
 /**
@@ -30,12 +31,64 @@ import { getLivePosition } from "./nebula-simulation";
  * relative to edge length that re-deriving those every frame would only
  * introduce jitter into the pulse rhythm for no visible benefit.
  */
+/**
+ * Every edge opacity below is multiplied by the constellation's placement
+ * (nebula-placement.ts), so the whole layer fades with the flight.
+ *
+ * 04-phase-1.md gives the landing cluster no edges, and unmounting them off
+ * `/nebula` is what keeps their geometry and pulse loop out of the landing
+ * page's bundle-critical path. But an unmount is a step change, and once the
+ * cluster and the constellation became the same object it landed somewhere
+ * visible: dropped on the route commit it popped with the graph still
+ * life-size, and held until the departure landed it popped at the landing
+ * footprint, where 195px of graph still shows its edges perfectly well. Fading
+ * on placement means they are already at zero by the time the unmount happens.
+ */
+/**
+ * Edge weight. 05-phase-2.md specifies `--ink` at 40% and `--ink-faint` at
+ * 20%, which measured too faint to read on a real screen: at 1440x900 only two
+ * or three runtime edges registered at all and the shared-tech layer was
+ * essentially invisible, worst in the far half where scene fog is already
+ * pulling everything toward paper. The spec's numbers were chosen against a
+ * still with no fog behind them.
+ *
+ * Raised, and the opacity *ratio* between the two deliberately not preserved —
+ * 2.3's done-when is about the visible asymmetry, not about these two numbers:
+ * you must be able to tell at a glance which edges carry messages and which
+ * only mean "shares a technology".
+ *
+ * The asymmetry now rests on colour and width rather than on opacity, because
+ * width is available to one layer and not the other, and that is not a choice.
+ * Runtime edges are drei `QuadraticBezierLine`s — `Line2`, which honours
+ * `lineWidth` in pixels. The shared-tech batch is a plain `LineSegments`, whose
+ * `LineBasicMaterial.linewidth` WebGL ignores; those are one pixel, always. So
+ * lifting the hairlines out of invisibility means opacity or nothing, while
+ * runtime edges get width for free.
+ *
+ * Measured against `--paper`, the result keeps the hierarchy wide: a runtime
+ * edge sits ~110 luminance below paper, a hairline ~35, so runtime carries
+ * about three times the tonal contrast over about twice the width. Raising
+ * shared-tech to 45% does not bring it near competing.
+ */
+/** Does this edge join exactly the pair a sideways flight is travelling between? */
+function joins(edge: Edge, pair: { from: string; to: string }) {
+  return (
+    (edge.from === pair.from && edge.to === pair.to) ||
+    (edge.from === pair.to && edge.to === pair.from)
+  );
+}
+
 const RUNTIME_COLOR = palette.ink;
-const RUNTIME_OPACITY = 0.4;
+const RUNTIME_OPACITY = 0.52;
+const RUNTIME_WIDTH = 1.9;
 const PULSE_COLOR = palette.lamp;
 const PULSE_OPACITY = 0.95;
+/** Above RUNTIME_WIDTH by the same margin it used to clear the old base, so
+ * the travelling pulse still reads as riding on the line rather than as the
+ * line itself. */
+const PULSE_WIDTH = 2.6;
 const TECH_COLOR = palette.inkFaint;
-const TECH_OPACITY = 0.2;
+const TECH_OPACITY = 0.45;
 
 // Step 2.4 — hover brightens every edge connected to the hovered node. Tech
 // hairlines stay one batched draw call for the other ~100+, so their
@@ -64,9 +117,29 @@ const DEVTIME_GAP_SIZE = 0.16;
 // How far the control point bulges outward from the constellation center,
 // as a fraction of the edge's straight-line length. Keeps arcs from
 // stacking directly on top of each other near the center.
-const ARC_BULGE = 0.18;
+/**
+ * Edges follow the surface of the shell rather than chording through it.
+ *
+ * The constellation is a hollow sphere (content/layout.ts) and its interior is
+ * meant to stay empty — that is the whole composition, and it is what makes
+ * flying inside worth doing. A straight edge between two nodes on a shell
+ * passes through that interior, and a fixed outward bulge cannot fix it: the
+ * push needed to reach the surface grows with the pair's angular separation,
+ * from almost nothing for neighbours to half the chord for antipodes, so one
+ * fraction is wrong nearly everywhere.
+ *
+ * Solved instead of tuned. For a quadratic Bezier the curve's own midpoint
+ * sits at `(a + 2·control + b) / 4`, so placing the control on the outward
+ * axis at `shell · (2 − cos(θ/2))` — where θ is the angle between the two
+ * nodes — puts that midpoint exactly on the shell. Neighbours get a control
+ * barely above the surface, antipodes get one at twice the radius, and every
+ * pair in between lands right. Away from the midpoint the curve stays within a
+ * percent or so of the surface for typical separations, dipping to ~0.9 of it
+ * only for near-antipodal pairs, where a single quadratic can't hold a
+ * half-circumference.
+ */
+const ANTIPODAL_EPSILON = 1e-3;
 
-const ORIGIN = new THREE.Vector3(0, 0, 0);
 
 interface EdgeGeometry {
   start: THREE.Vector3;
@@ -109,14 +182,23 @@ function computeCurveGeometry(edge: Edge, live: boolean): EdgeGeometry | null {
   if (!a || !b) return null;
 
   const straightMid = a.clone().add(b).multiplyScalar(0.5);
+  // The shell radius local to this pair — the nodes carry a little radial
+  // thickness, so this is not one global constant.
+  const shell = (a.length() + b.length()) / 2;
   const outward =
-    straightMid.distanceTo(ORIGIN) > 0.001
+    straightMid.length() > ANTIPODAL_EPSILON
       ? straightMid.clone().normalize()
-      : b.clone().sub(a).normalize();
-  const mid = straightMid.addScaledVector(
-    outward,
-    a.distanceTo(b) * ARC_BULGE,
+      : // Antipodal: every great circle through the pair is equally valid, so
+        // take any direction perpendicular to the axis joining them.
+        new THREE.Vector3()
+          .crossVectors(a, new THREE.Vector3(0, 1, 0))
+          .normalize();
+  const cosHalfAngle = THREE.MathUtils.clamp(
+    shell > 0 ? straightMid.length() / shell : 1,
+    -1,
+    1,
   );
+  const mid = outward.clone().multiplyScalar(shell * (2 - cosHalfAngle));
 
   const start = a.clone().addScaledVector(
     mid.clone().sub(a).normalize(),
@@ -158,13 +240,20 @@ function computeStraightGeometry(
 function RuntimeEdgeLine({
   edge,
   devTime,
+  spotlit,
 }: {
   edge: Edge;
   devTime: boolean;
+  spotlit: boolean;
 }) {
   const geo = useMemo(() => computeCurveGeometry(edge, false), [edge]);
   const baseRef = useRef<QuadraticBezierLineRef>(null);
   const pulseRef = useRef<QuadraticBezierLineRef>(null);
+  // The hover level, kept separately from the material's own opacity so the
+  // placement fade can multiply it rather than be chased by the hover lerp —
+  // easing toward `target * fade` would still be a fifth of the way from zero
+  // when the departure landed and the edges unmounted.
+  const hoverLevel = useRef(RUNTIME_OPACITY);
 
   const dashSize = geo ? geo.length * PULSE_DASH_FRACTION : 0;
   const gapSize = geo ? geo.length - dashSize : 0;
@@ -172,22 +261,29 @@ function RuntimeEdgeLine({
   const speed = geo && period > 0 ? geo.length / period : 0;
 
   useFrame((_state, delta) => {
-    const { reducedMotion, hoveredNodeId } = useSceneStore.getState();
+    const { reducedMotion, hoveredNodeId, travellingBetween } =
+      useSceneStore.getState();
+    // Lit either because the pointer is on one of its ends, or because a
+    // sideways flight is travelling along it right now — following a link
+    // inside an open panel should show you the connection you took.
     const connected =
-      hoveredNodeId !== null &&
-      (edge.from === hoveredNodeId || edge.to === hoveredNodeId);
+      (hoveredNodeId !== null &&
+        (edge.from === hoveredNodeId || edge.to === hoveredNodeId)) ||
+      (travellingBetween !== null && joins(edge, travellingBetween));
 
     // Brightening runs regardless of reduced motion — hover still
     // highlights, it just snaps instead of easing (same idiom as the node
     // hover lerp).
+    const fade = edgeFade(spotlit);
+    hoverLevel.current = THREE.MathUtils.lerp(
+      hoverLevel.current,
+      connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
+      reducedMotion ? 1 : HOVER_EASE,
+    );
     const baseMaterial = baseRef.current?.material;
-    if (baseMaterial) {
-      baseMaterial.opacity = THREE.MathUtils.lerp(
-        baseMaterial.opacity,
-        connected ? RUNTIME_HIGHLIGHT_OPACITY : RUNTIME_OPACITY,
-        reducedMotion ? 1 : HOVER_EASE,
-      );
-    }
+    if (baseMaterial) baseMaterial.opacity = hoverLevel.current * fade;
+    const pulseMaterialFade = pulseRef.current?.material;
+    if (pulseMaterialFade) pulseMaterialFade.opacity = PULSE_OPACITY * fade;
 
     if (reducedMotion) return;
 
@@ -215,7 +311,7 @@ function RuntimeEdgeLine({
         mid={geo.mid}
         end={geo.end}
         color={RUNTIME_COLOR}
-        lineWidth={1.4}
+        lineWidth={RUNTIME_WIDTH}
         transparent
         opacity={RUNTIME_OPACITY}
         fog
@@ -229,7 +325,7 @@ function RuntimeEdgeLine({
         mid={geo.mid}
         end={geo.end}
         color={PULSE_COLOR}
-        lineWidth={2}
+        lineWidth={PULSE_WIDTH}
         transparent
         opacity={PULSE_OPACITY}
         fog
@@ -245,21 +341,93 @@ function RuntimeEdgeLine({
  * Writes every edge's live (or seeded) endpoints into a flat xyz buffer,
  * two vertices per edge, and flags the attribute for re-upload.
  */
+/**
+ * How many straight pieces each shared-tech arc is drawn as. Enough that a
+ * hairline spanning a large angle reads as a curve on the surface rather than
+ * a polyline; still one `LineSegments` draw call for the whole population,
+ * which is what 02-architecture.md's performance budget asks for.
+ */
+const TECH_ARC_SEGMENTS = 10;
+
+/**
+ * Edge visibility on a spotlit `/work/[slug]`.
+ *
+ * Everywhere else the layer is scaled by the constellation's placement, so it
+ * fades out with the departure flight — but a work page sits at the landing
+ * placement, where that value is zero, so the subgraph drawn there would be
+ * rendered perfectly and invisibly. It gets a fixed weight instead, pitched to
+ * sit with the lifted node opacity on those pages rather than to dominate the
+ * prose beside it.
+ */
+const SPOTLIT_EDGE_FADE = 0.6;
+
+/** How strongly to draw the edge layer this frame. */
+function edgeFade(spotlit: boolean) {
+  return spotlit ? SPOTLIT_EDGE_FADE : getPlacement();
+}
+
+const _arcA = new THREE.Vector3();
+const _arcB = new THREE.Vector3();
+const _arcP = new THREE.Vector3();
+
+/**
+ * Writes every shared-tech edge into the batch as an arc across the shell.
+ *
+ * These are the population that most needed it: there are over a hundred of
+ * them and they connect technologies to work anywhere on the sphere, so drawn
+ * straight they filled the hollow interior with a cage of chords — the exact
+ * thing the layout empties the middle to avoid. Spherical interpolation puts
+ * each one on the surface exactly (unlike the runtime edges' single Bezier,
+ * which only approximates it), and the endpoints' radii are interpolated along
+ * the way so an arc between nodes at slightly different depths doesn't step.
+ */
 function writeStraightEndpoints(
   edgeList: Edge[],
   attribute: THREE.BufferAttribute,
   live: boolean,
 ) {
   const array = attribute.array as Float32Array;
+  const stride = TECH_ARC_SEGMENTS * 6;
   edgeList.forEach((edge, i) => {
     const geo = computeStraightGeometry(edge, live);
     if (!geo) return;
-    array[i * 6] = geo.start.x;
-    array[i * 6 + 1] = geo.start.y;
-    array[i * 6 + 2] = geo.start.z;
-    array[i * 6 + 3] = geo.end.x;
-    array[i * 6 + 4] = geo.end.y;
-    array[i * 6 + 5] = geo.end.z;
+    _arcA.copy(geo.start);
+    _arcB.copy(geo.end);
+    const ra = _arcA.length();
+    const rb = _arcB.length();
+    const angle = _arcA.angleTo(_arcB);
+    const sin = Math.sin(angle);
+
+    for (let seg = 0; seg <= TECH_ARC_SEGMENTS; seg++) {
+      const t = seg / TECH_ARC_SEGMENTS;
+      if (sin < 1e-4) {
+        // Coincident or antipodal: no unique great circle, so fall back to the
+        // straight interpolation rather than dividing by ~zero.
+        _arcP.copy(_arcA).lerp(_arcB, t);
+      } else {
+        const wa = Math.sin((1 - t) * angle) / sin;
+        const wb = Math.sin(t * angle) / sin;
+        _arcP
+          .copy(_arcA)
+          .multiplyScalar(wa / (ra || 1))
+          .addScaledVector(_arcB, wb / (rb || 1))
+          .multiplyScalar(ra + (rb - ra) * t);
+      }
+      // LineSegments takes disjoint pairs, so every interior point is written
+      // twice: once ending the previous piece, once starting the next.
+      if (seg > 0) {
+        const tail = i * stride + (seg - 1) * 6 + 3;
+        array[tail] = _arcP.x;
+        array[tail + 1] = _arcP.y;
+        array[tail + 2] = _arcP.z;
+      }
+      if (seg < TECH_ARC_SEGMENTS) {
+        const head = i * stride + seg * 6;
+        array[head] = _arcP.x;
+        array[head + 1] = _arcP.y;
+        array[head + 2] = _arcP.z;
+      }
+    }
   });
   attribute.needsUpdate = true;
 }
@@ -274,7 +442,7 @@ function writeStraightEndpoints(
  */
 function createStraightBatchGeometry(edgeList: Edge[]) {
   const attribute = new THREE.BufferAttribute(
-    new Float32Array(edgeList.length * 6),
+    new Float32Array(edgeList.length * TECH_ARC_SEGMENTS * 6),
     3,
   );
   writeStraightEndpoints(edgeList, attribute, false);
@@ -284,7 +452,13 @@ function createStraightBatchGeometry(edgeList: Edge[]) {
 }
 
 /** All shared-tech edges batched into a single LineSegments draw call. */
-function TechEdges({ edgeList }: { edgeList: Edge[] }) {
+function TechEdges({
+  edgeList,
+  spotlit,
+}: {
+  edgeList: Edge[];
+  spotlit: boolean;
+}) {
   const { geometry, attribute } = useMemo(
     () => createStraightBatchGeometry(edgeList),
     [edgeList],
@@ -302,6 +476,7 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
+    material.opacity = TECH_OPACITY * edgeFade(spotlit);
     if (useSceneStore.getState().reducedMotion) return;
     writeStraightEndpoints(edgeList, attribute, true);
   });
@@ -322,16 +497,27 @@ function TechEdges({ edgeList }: { edgeList: Edge[] }) {
  * (a React re-render, not a per-frame cost); positions still track drift
  * every frame while it's non-empty.
  */
-function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
+function TechEdgeHighlights({
+  edgeList,
+  spotlit,
+}: {
+  edgeList: Edge[];
+  spotlit: boolean;
+}) {
   const hoveredNodeId = useSceneStore((s) => s.hoveredNodeId);
+  const travellingBetween = useSceneStore((s) => s.travellingBetween);
+  // Subscribed rather than read per frame, because this batch's geometry is
+  // rebuilt when the set changes — and it changes twice per flight, not sixty
+  // times a second.
   const connected = useMemo(
     () =>
-      hoveredNodeId === null
-        ? []
-        : edgeList.filter(
-            (e) => e.from === hoveredNodeId || e.to === hoveredNodeId,
-          ),
-    [edgeList, hoveredNodeId],
+      edgeList.filter(
+        (e) =>
+          (hoveredNodeId !== null &&
+            (e.from === hoveredNodeId || e.to === hoveredNodeId)) ||
+          (travellingBetween !== null && joins(e, travellingBetween)),
+      ),
+    [edgeList, hoveredNodeId, travellingBetween],
   );
 
   const { geometry, attribute } = useMemo(
@@ -351,6 +537,7 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   );
 
   useFrame(() => {
+    material.opacity = TECH_HIGHLIGHT_OPACITY * edgeFade(spotlit);
     if (connected.length === 0 || useSceneStore.getState().reducedMotion) {
       return;
     }
@@ -363,30 +550,62 @@ function TechEdgeHighlights({ edgeList }: { edgeList: Edge[] }) {
   );
 }
 
-export function Edges({ showTech }: { showTech: boolean }) {
+export function Edges({
+  showTech,
+  subgraphOf = null,
+}: {
+  showTech: boolean;
+  /**
+   * When set, only edges touching this node are drawn.
+   *
+   * `/work/[slug]` uses it to show what the project it is about connects to.
+   * The whole population would be wrong there: a hundred-plus shared-tech
+   * hairlines over a page of prose is a texture, not information, and the
+   * point of the graph beside an article is to answer "what does this one
+   * talk to" rather than to redraw the entire architecture.
+   */
+  subgraphOf?: string | null;
+}) {
+  // A subgraph is only ever drawn for a spotlit work page, where the placement
+  // is zero and cannot be what sets the layer's weight.
+  const spotlit = subgraphOf !== null;
+  const touches = useMemo(
+    () => (edge: Edge) =>
+      subgraphOf === null ||
+      edge.from === subgraphOf ||
+      edge.to === subgraphOf,
+    [subgraphOf],
+  );
   const runtimeEdges = useMemo(
-    () => edges.filter((e) => e.kind === "runtime"),
-    [],
+    () => edges.filter((e) => e.kind === "runtime" && touches(e)),
+    [touches],
   );
   const devTimeEdges = useMemo(
-    () => edges.filter((e) => e.kind === "dev-time"),
-    [],
+    () => edges.filter((e) => e.kind === "dev-time" && touches(e)),
+    [touches],
   );
   const techEdges = useMemo(
-    () => edges.filter((e) => e.kind === "shared-tech"),
-    [],
+    () => edges.filter((e) => e.kind === "shared-tech" && touches(e)),
+    [touches],
   );
 
   return (
     <>
       {runtimeEdges.map((edge) => (
-        <RuntimeEdgeLine key={edge.id} edge={edge} devTime={false} />
+        <RuntimeEdgeLine
+          key={edge.id}
+          edge={edge}
+          devTime={false}
+          spotlit={spotlit}
+        />
       ))}
       {devTimeEdges.map((edge) => (
-        <RuntimeEdgeLine key={edge.id} edge={edge} devTime />
+        <RuntimeEdgeLine key={edge.id} edge={edge} devTime spotlit={spotlit} />
       ))}
-      {showTech && <TechEdges edgeList={techEdges} />}
-      {showTech && <TechEdgeHighlights edgeList={techEdges} />}
+      {showTech && <TechEdges edgeList={techEdges} spotlit={spotlit} />}
+      {showTech && (
+        <TechEdgeHighlights edgeList={techEdges} spotlit={spotlit} />
+      )}
     </>
   );
 }
