@@ -25,6 +25,18 @@ export type Vec3 = [number, number, number];
  * has no bad angle. It also gives `/nebula` an interior to fly into and
  * `/work/[slug]` an exterior to rotate.
  *
+ * **The radius is tuned for the view from inside, not from outside.** Node
+ * radii are fixed constants in lib/node-geometry.ts and do not scale with the
+ * layout, so shrinking the shell is the only thing that makes a node subtend a
+ * larger angle from the middle. Measured against this layout, halving the
+ * distance from 16 to 9 takes a project node from 3.5 degrees to 6.3 without
+ * changing *which* nodes are in frame at all — angular positions are
+ * scale-invariant, so the population you can see is set by the field of view
+ * and the camera's offset from centre, never by the radius. 11 is the
+ * compromise: projects read at ~5 degrees from the inside pose while the
+ * bounding radius stays large enough that the outside framing has somewhere
+ * to stand.
+ *
  * It replaces a filled ball. Cluster centroids were already on a sphere at 14
  * and projects sat near them, but technology nodes were placed as
  * `shellPosition * 0.3 + averageOfTheProjectsUsingIt * 0.7`, and an average of
@@ -39,19 +51,19 @@ export type Vec3 = [number, number, number];
  * still decides *where on the shell* a technology sits, so it stays beside the
  * work that uses it. It just cannot pull anything off the surface.
  */
-const SHELL_RADIUS = 16;
+const SHELL_RADIUS = 11;
 /**
  * Radial slack, so the shell reads as a cloud layer rather than a decal on a
  * ball. Small relative to SHELL_RADIUS — enough to give the surface depth
  * under fog, not enough to reintroduce occlusion.
  */
-const SHELL_THICKNESS = 1.2;
+const SHELL_THICKNESS = 0.85;
 /**
  * How far a cluster's projects spread across the shell from their centroid,
  * in world units along the surface. Read as an arc length, not a radius: the
  * spread is tangential now, so this is how wide a patch a cluster occupies.
  */
-const CLUSTER_SPREAD = 3.2;
+const CLUSTER_SPREAD = 2.2;
 
 /** Fibonacci sphere: even distribution, no clumping. */
 function fibonacciSphere(count: number, radius: number): Vec3[] {

@@ -103,15 +103,22 @@ const HOVER_EASE = 0.2;
 
 /**
  * Fog band, re-measured against actual per-node camera-space depth (not
- * guessed): nodes span depth 28.6–60.5 from this camera. Far was originally
- * 90, well past the real max depth of 60.5, so the falloff curve never got
- * close to completing — the farthest node only reached 51% fade, not
- * enough to read as recession. Far now sits just past the true max depth,
- * so the farthest cluster reaches ~90% fade (visibly receded, not erased)
- * while the nearest nodes stay untouched.
+ * guessed) after the shell shrank to 11: from the outside framing the nodes
+ * span depth 20.1–42.5, so far sits just past the true maximum and the
+ * farthest cluster reaches ~90% fade — visibly receded, not erased.
+ *
+ * Near is set by the *landing page* rather than by that framing. The landing
+ * cluster sits 19.6–26.4 from the home camera, and anything below 27 would
+ * start fogging its far edge, which has never had fog and is composed without
+ * it. So near clears that, and the outside framing gets its gradient over
+ * 27–42.5 instead of the whole range.
+ *
+ * Inside the globe fog does nothing at all, and shouldn't: from the inside
+ * pose every visible node lies between 13 and 17 units away — a depth ratio of
+ * 1.26 — so there is no recession for it to describe.
  */
-const FOG_NEAR = 30;
-const FOG_FAR = 68;
+const FOG_NEAR = 27;
+const FOG_FAR = 48;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };

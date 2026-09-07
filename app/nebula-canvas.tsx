@@ -92,9 +92,19 @@ const AMBIENT_EASE = 0.06;
  * front-facing while maximizing the closest pairwise screen-space distance
  * between all seven cluster centroids — verified against the actual
  * computed layout, not eyeballed.
+ *
+ * Scaled with the shell when it shrank from 16 to 11 (content/layout.ts), so
+ * the framing it was tuned for is preserved: same heading, same fraction of
+ * the viewport, 28.9 units from its target instead of 41.2.
+ *
+ * No route stands here any more — `/nebula` is entered from the inside. It
+ * survives because the inside pose is defined by reversing it, and because
+ * `/work/[slug]` is going to want the globe from outside with the relevant
+ * cluster turned to face the reader. Its field of view was 50, which is what
+ * FOCUS_CAMERA_FOV is set to below.
  */
-const CONSTELLATION_CAMERA_POSITION: [number, number, number] = [11.9, 42.8, -3.1];
-const CONSTELLATION_CAMERA_FOV = 50;
+const CONSTELLATION_CAMERA_POSITION: [number, number, number] = [8.4, 30.1, -2.2];
+
 
 /**
  * Aimed slightly above the origin: the oblique heading projects the nearest
@@ -103,13 +113,57 @@ const CONSTELLATION_CAMERA_FOV = 50;
  * and off-center. Raising the target pushes the whole composition down into
  * the usable area.
  */
-const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 3.5, 0];
+const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
 
-/** The constellation's resting pose, as a CameraPose for flights to use. */
-const RESTING_POSE: CameraPose = {
-  position: new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION),
-  target: new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET),
-};
+/**
+ * `/nebula`'s resting pose: **inside the globe**, looking across the middle.
+ *
+ * Three numbers, each measured rather than chosen.
+ *
+ * **Not at the centre.** From dead centre every node is the same distance
+ * away, so nothing varies in size and fog has nothing to grade; worse, a 50
+ * degree frame there covers 8.1% of the sphere's solid angle, and sampling 400
+ * headings against the real layout put the tenth percentile at *zero nodes in
+ * frame*. Half the shell radius out, looking back through the centre at the
+ * far side, the same sampling never drops below eleven and averages sixteen.
+ *
+ * **Opposite the front hemisphere.** The heading is the outside pose's,
+ * reversed: the composition puts the SEL clusters on the side the outside
+ * camera faces, so to look at them from within you have to stand on the other
+ * side of the middle. camera-controls orbits about the target, so dragging
+ * sweeps the far surface past you and the near shell swings in behind.
+ *
+ * **Wide, but not a fisheye.** Field of view is the only lever that changes
+ * *how many* nodes are in frame — shrinking the shell makes each one bigger
+ * but moves none of them into view, since angular position does not care about
+ * scale — so it is worth spending. 50 gives seven nodes, 75 gives thirteen, 90
+ * gives sixteen.
+ *
+ * It stops at 72 anyway, because three.js measures field of view vertically
+ * and a wide screen multiplies it: 90 vertical is 116 horizontal, and rendered
+ * at that width the spheres near the frame edge stretch into obvious ellipses.
+ * 72 is about 99 horizontal — wide enough to read as being surrounded, inside
+ * the range where a sphere still looks like one.
+ */
+const INSIDE_DISTANCE = 5.5;
+const INSIDE_CAMERA_FOV = 72;
+/**
+ * Focus narrows back down. A node approached at 90 degrees sits in a lot of
+ * distorted periphery; 50 puts it in the middle of a calm frame, and the
+ * widening and narrowing become part of entering and reading.
+ */
+const FOCUS_CAMERA_FOV = 50;
+
+const INSIDE_POSE: CameraPose = (() => {
+  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
+  const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
+    .sub(target)
+    .normalize();
+  return {
+    position: target.clone().addScaledVector(outward, -INSIDE_DISTANCE),
+    target,
+  };
+})();
 
 /**
  * The landing page's pose. Fixed and parallax-only per 01-design-system.md —
@@ -124,13 +178,13 @@ const HOME_POSE: CameraPose = {
   target: new THREE.Vector3(0, 0, 0),
 };
 
-// Distance-from-target clamp for the nebula dolly. Min sits just inside the
-// project-cluster radius (CLUSTER_RADIUS 14, content/layout.ts) so zooming in
-// reads as "flying toward a cluster," not literally passing through node
-// geometry; max keeps the whole seven-cluster composition on screen rather
-// than shrinking to a speck. Verified visually, not just computed.
-const DOLLY_MIN_DISTANCE = 10;
-const DOLLY_MAX_DISTANCE = 58;
+// Distance-from-target clamp for the nebula dolly. Both ends now keep the
+// camera *inside* the shell, whose nearest node sits at 10.08
+// (content/layout.ts): pulling back past it would leave the globe, which on
+// this route is the one thing hand-dollying may not do. Min stops short of the
+// exact centre, where the view flattens to nothing.
+const DOLLY_MIN_DISTANCE = 1.5;
+const DOLLY_MAX_DISTANCE = 9.5;
 
 /**
  * The one flight in progress, if any — **module scope on purpose**.
@@ -441,24 +495,21 @@ function CameraRig({
         const pose = focusPose(coldFocus);
         if (pose) {
           lastFocus.current = coldFocus;
-          settle(controls, pose, CONSTELLATION_CAMERA_FOV, { free: true, at: 1 });
+          settle(controls, pose, FOCUS_CAMERA_FOV, { free: true, at: 1 });
           return;
         }
       }
       // Reduced motion makes flights instant cuts, per 01-design-system.md.
       if (reducedMotion) {
-        settle(controls, RESTING_POSE, CONSTELLATION_CAMERA_FOV, {
-          free: false,
-          at: 1,
-        });
+        settle(controls, INSIDE_POSE, INSIDE_CAMERA_FOV, { free: false, at: 1 });
         return;
       }
       begin(controls, {
         from: HOME_POSE,
-        to: RESTING_POSE,
+        to: INSIDE_POSE,
         start: performance.now(),
         fovFrom: HOME_CAMERA_FOV,
-        fovTo: CONSTELLATION_CAMERA_FOV,
+        fovTo: INSIDE_CAMERA_FOV,
         placementFrom: 0,
         placementTo: 1,
         orbit: true,
@@ -480,7 +531,7 @@ function CameraRig({
       from: currentPose(controls),
       to: HOME_POSE,
       start: performance.now(),
-      fovFrom: CONSTELLATION_CAMERA_FOV,
+      fovFrom: INSIDE_CAMERA_FOV,
       fovTo: HOME_CAMERA_FOV,
       placementFrom: 1,
       placementTo: 0,
@@ -514,14 +565,12 @@ function CameraRig({
     // leaving back to the constellation — one flight from wherever the camera
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
-    const to = routeFocusId ? focusPose(routeFocusId) : RESTING_POSE;
+    const to = routeFocusId ? focusPose(routeFocusId) : INSIDE_POSE;
     if (!to) return;
+    const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
 
     if (reducedMotion) {
-      settle(controls, to, CONSTELLATION_CAMERA_FOV, {
-        free: routeFocusId !== null,
-        at: 1,
-      });
+      settle(controls, to, fovTo, { free: routeFocusId !== null, at: 1 });
       return;
     }
 
@@ -529,8 +578,8 @@ function CameraRig({
       from: currentPose(controls),
       to,
       start: performance.now(),
-      fovFrom: CONSTELLATION_CAMERA_FOV,
-      fovTo: CONSTELLATION_CAMERA_FOV,
+      fovFrom: (controls.camera as THREE.PerspectiveCamera).fov,
+      fovTo,
       placementFrom: 1,
       placementTo: 1,
       // A focus hop is short and barely turns; a straight line is the right

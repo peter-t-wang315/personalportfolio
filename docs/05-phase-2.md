@@ -50,6 +50,16 @@ Faint Geist Sans labels at each cluster centroid, `--ink-faint`, opacity scaling
 
 `CameraControls` from drei. Drag to rotate, scroll to dolly within a clamped range.
 
+**`/nebula` is inside the globe.** The camera rests at half the shell radius, on the opposite side of the middle from the front hemisphere, looking back across it — so the SEL clusters are what you face on arrival and dragging sweeps the far surface past you while the near shell swings in behind. Both dolly clamps keep the camera within the shell; leaving it is not something hand-dollying may do on this route.
+
+Three numbers, each measured against the real layout rather than chosen:
+
+- **Not dead centre.** From the exact middle every node is equidistant, so nothing varies in size and fog has nothing to grade. Worse, sampling 400 headings put the tenth percentile at *zero nodes in frame* at 50° fov. At half the shell radius the same sampling never drops below eleven and averages sixteen.
+- **Field of view is the only lever that changes how many nodes are in frame.** Shrinking the shell makes each node bigger but moves none into view — angular position is scale-invariant. 50° gives seven nodes, 75° thirteen, 90° sixteen.
+- **72°, not 90°.** three.js measures fov vertically and a wide screen multiplies it: 90 vertical is 116 horizontal, at which spheres near the frame edge stretch into visible ellipses. 72 is ~99 horizontal.
+
+Focus narrows back to 50° — a node approached at 72 sits in too much periphery — so the widening and narrowing become part of entering and reading.
+
 **Fly-in.** Clicking a node interpolates the camera to a position offset along the vector from the constellation center through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through the geometry.
 
 Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, the float simulation freezes, unrelated nodes drop to 25% opacity. Whether the focused node's material switches to real transmission is tier-dependent — see `02-architecture.md`'s Responsive tiers table. Desktop only; tablet and mobile keep the fresnel shader throughout.
