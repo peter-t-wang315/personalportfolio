@@ -47,6 +47,42 @@ html {
   scroll-behavior: smooth;
 }
 
+/*
+ * The graph's cursor states, set by app/nebula-cursor.tsx.
+ *
+ * `!important` on the descendants, which reads heavy and is the point: while
+ * the globe is being dragged the cursor has to stay `grabbing` across every
+ * paragraph and link the pointer crosses, and those set their own cursor.
+ * The attribute only exists while the pointer is somewhere the graph will
+ * actually respond, so this is never overriding anything a reader is using.
+ */
+html[data-globe-cursor="grab"],
+html[data-globe-cursor="grab"] * {
+  cursor: grab !important;
+}
+
+html[data-globe-cursor="node"],
+html[data-globe-cursor="node"] * {
+  cursor: pointer !important;
+}
+
+html[data-globe-cursor="grabbing"],
+html[data-globe-cursor="grabbing"] * {
+  cursor: grabbing !important;
+}
+
+/*
+ * Dragging the globe across an article used to leave the article highlighted
+ * behind it: the press anchors a selection like any other, and the drag then
+ * extends it. The drag clears whatever was anchored; this stops any more of it
+ * being made, for as long as the globe is moving.
+ */
+html[data-globe-cursor="grabbing"],
+html[data-globe-cursor="grabbing"] * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

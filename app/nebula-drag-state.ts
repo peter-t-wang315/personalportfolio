@@ -39,6 +39,27 @@ export function pointOnCluster(x: number, y: number) {
 }
 
 /**
+ * Where a drag may not begin.
+ *
+ * Controls, obviously — but prose too, and that is the important half. The
+ * landing page's affordance gave up being an element precisely so the hero
+ * headline stayed selectable underneath it; a drag that started on a sentence
+ * would take that back, since spinning the globe and selecting a line are the
+ * same gesture. Over text the text wins, and the cursor says so by not
+ * changing.
+ */
+const NON_DRAGGABLE_SELECTOR =
+  "a, button, input, textarea, select, summary, label, [role='button']," +
+  " [contenteditable], p, h1, h2, h3, h4, li, blockquote, figcaption, code, pre";
+
+/** Would a drag beginning on this element be allowed to move the globe? */
+export function canDragFrom(target: EventTarget | null) {
+  const el = target as Element | null;
+  if (!el || typeof el.closest !== "function") return true;
+  return !el.closest(NON_DRAGGABLE_SELECTOR);
+}
+
+/**
  * How far the reader has spun the globe, in radians: yaw about the screen's
  * vertical axis, pitch about its horizontal one.
  */

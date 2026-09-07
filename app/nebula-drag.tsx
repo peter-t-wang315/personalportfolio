@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname } from "next/navigation";
 import {
   addDragDelta,
+  canDragFrom,
   pointOnCluster,
   resetDrag,
   setDragging,
@@ -16,9 +17,6 @@ import {
  * graph while the other spins it would be the reader getting both.
  */
 const DRAG_SLOP_PX = 4;
-
-const INTERACTIVE_SELECTOR =
-  "a, button, input, textarea, select, summary, label, [role='button'], [contenteditable]";
 
 /**
  * Lets the reader spin the globe on the routes where it is a backdrop.
@@ -59,6 +57,7 @@ export function NebulaDrag() {
     if (!active) return;
 
     let pointerId: number | null = null;
+    let isDraggingNow = false;
     let lastX = 0;
     let lastY = 0;
     let travelled = 0;
@@ -69,9 +68,7 @@ export function NebulaDrag() {
       // Text and controls under the globe keep their own behaviour. On a wide
       // viewport the sphere clears the measure entirely and this never fires;
       // on a narrow one they overlap, and selecting a sentence has to win.
-      if ((event.target as Element | null)?.closest(INTERACTIVE_SELECTOR)) {
-        return;
-      }
+      if (!canDragFrom(event.target)) return;
       pointerId = event.pointerId;
       lastX = event.clientX;
       lastY = event.clientY;
@@ -93,7 +90,16 @@ export function NebulaDrag() {
         end();
         return;
       }
-      setDragging(true);
+      if (!isDraggingNow) {
+        isDraggingNow = true;
+        setDragging(true);
+        // Whatever the browser started selecting between the press and here
+        // goes, and nebula-cursor.tsx's `grabbing` state stops it selecting
+        // any more. Dragging a globe across an article should not leave the
+        // article highlighted behind it — and preventDefault on the move alone
+        // does not undo a selection already anchored at the press.
+        window.getSelection()?.removeAllRanges();
+      }
       // Only once the drag is real, so a plain click never suppresses the
       // selection or the navigation it was going to make.
       event.preventDefault();
@@ -103,6 +109,7 @@ export function NebulaDrag() {
     function end() {
       pointerId = null;
       travelled = 0;
+      isDraggingNow = false;
       setDragging(false);
     }
 
