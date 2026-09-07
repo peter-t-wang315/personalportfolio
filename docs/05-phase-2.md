@@ -108,6 +108,12 @@ This section used to ask instead for connected nodes to remain visible past the 
 
 **Technology nodes open too**, at `/nebula/tech/[id]`: the blurb, and every project that uses the technology grouped by cluster, each linked to its own node. There is no `/work` counterpart, so it is the one place a technology is read — and it is the "follow C# out of a project and see everything else written in it" move that makes sideways navigation mean something. The project panel's technology line links into it.
 
+**A hop within the graph is not the same move as the journey into it.** Opening a node, closing one, and travelling sideways between two all used `01-design-system.md`'s 1400ms, which is specified for the approach between the landing page and the graph — a long arrival that is the site's signature moment and wants the time it takes. A focus hop crosses a few units and barely turns, and at 1400ms it read as sluggish rather than considered.
+
+Worse, it compounded: the shell only begins opening once the flight has *landed* (`focusSettled`), so opening a node cost the full flight plus the 240ms opening, strictly in series. Measured click-to-readable, that was 1728ms. At 650ms for focus flights it is 978ms, and the two beats — arrive, then open — are preserved rather than overlapped, which is what keeps the opening legible as the node stretching rather than as a card appearing mid-flight.
+
+The duration is carried per flight rather than read from a constant, so the arrival and the departure keep their 1400ms while everything inside the graph moves at its own pace.
+
 **Leaving a node is the arrival in reverse.** Clearing focus closes the shell, and a single departure flight carries the camera out to the landing pose while the constellation shrinks back to its landing footprint — the two halves of "camera pulls back, shell contracts" running together rather than in sequence, so the exit costs the same 1400ms as every other flight.
 
 It used to be a cut, and the reason was one line: the departure assumed it was leaving from the graph's resting pose and set `fovFrom` to `INSIDE_CAMERA_FOV`. From inside a node the camera is at `FOCUS_CAMERA_FOV`, so the flight opened by snapping 22 degrees wider — which looked worse than not flying at all. Reading the FOV off the camera fixes it. The path stays an orbit rather than a straight line, which matters more from a focused node than from the resting pose: the camera is parked against the inside of the shell there, and a straight line to the landing pose would leave through the wall.

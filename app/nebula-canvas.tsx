@@ -27,6 +27,7 @@ import {
 } from "@/lib/cluster-geometry";
 import {
   FLIGHT_DURATION_MS,
+  FOCUS_FLIGHT_DURATION_MS,
   flightEase,
   focusPose,
   lerpPose,
@@ -335,13 +336,19 @@ interface Flight {
    * sideways move — see shellLerpPose.
    */
   path: "line" | "orbit" | "shell";
+  /**
+   * How long it takes. Carried per flight rather than read from a constant,
+   * because the two kinds of move want different times — see
+   * FOCUS_FLIGHT_DURATION_MS.
+   */
+  duration: number;
 }
 let flight: Flight | null = null;
 
 /** Raw (un-eased) progress of a flight, 0..1. Kept raw so completion is an
  * exact `=== 1` rather than a question about the easing curve's endpoint. */
 function flightProgress(active: Flight): number {
-  return Math.min((performance.now() - active.start) / FLIGHT_DURATION_MS, 1);
+  return Math.min((performance.now() - active.start) / active.duration, 1);
 }
 
 /** camera-controls owns the camera, but FOV is not something it manages, so
@@ -973,6 +980,7 @@ function CameraRig({
         placementFrom: 0,
         placementTo: 1,
         path: "orbit",
+        duration: FLIGHT_DURATION_MS,
       });
       return;
     }
@@ -1001,6 +1009,7 @@ function CameraRig({
       fovTo: HOME_CAMERA_FOV,
       placementFrom: 1,
       placementTo: 0,
+      duration: FLIGHT_DURATION_MS,
       // Orbits out around the shell rather than cutting across its middle,
       // which matters more from a focused node than from the graph's resting
       // pose: the camera is parked against the inside of the surface there, so
@@ -1062,6 +1071,7 @@ function CameraRig({
       fovTo,
       placementFrom: 1,
       placementTo: 1,
+      duration: FOCUS_FLIGHT_DURATION_MS,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
       // Node to node follows the surface; anything involving the resting pose

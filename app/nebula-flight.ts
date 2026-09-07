@@ -12,6 +12,20 @@ import { getLivePosition } from "./nebula-simulation";
 
 /** 01-design-system.md's camera-flight duration and standard easing. */
 export const FLIGHT_DURATION_MS = 1400;
+
+/**
+ * How long a move *within* the graph takes: opening a node, closing one, or
+ * travelling sideways between two.
+ *
+ * Shorter than FLIGHT_DURATION_MS because it is a different kind of move. That
+ * duration is specified for the journey between the landing page and the
+ * graph — a long approach that is the site's signature moment and wants the
+ * time it takes. A focus hop crosses a few units and barely turns, and at the
+ * same 1400ms it read as sluggish rather than considered: the shell only
+ * begins opening once the flight has landed, so opening a node cost 1400ms of
+ * travel plus 240ms of opening, in series, before a word could be read.
+ */
+export const FOCUS_FLIGHT_DURATION_MS = 650;
 export const flightEase = cubicBezier(0.32, 0.72, 0, 1);
 
 /**
