@@ -147,6 +147,29 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
   whole viewport, so it would sit behind body prose. See 04-phase-1.md.
 - **Vertically**, narrow viewports drop it below the hero text rather than
   centring it behind them, for the same reason.
+- **Where the spotlight labels are drawn (`/work` and `/work/[slug]`), the
+  horizontal solve centres in the space left over instead.** Clearing the text
+  column is a floor, not a destination: stopping there parked the graph against
+  the prose with the rest of the row empty — 188px of unused width beyond it at
+  1440x900. Centred between the column's right edge and the viewport's, it sits
+  in its own space. It also reserves `LABEL_OVERHANG_PX` of extra clearance,
+  because the names reach past the sphere (measured 6–45px, more on smaller
+  globes since the text holds a constant size while the sphere shrinks); without
+  that, parallax sliding the graph across the column's edge made names vanish
+  and reappear — 12 with the pointer left, 10 with it top-right at 1280x720.
+  Where the leftover space is too narrow to centre in, the floor wins and the
+  clamp keeps the sphere on screen: at 1024x768 that is a 196px band for a
+  cluster needing 458px, so it stays hard against the right margin exactly as
+  before.
+- **The solved composition is damped, not switched.** Centre, vertical offset
+  and scale all move together when a project is spotlit, and on `/work` that
+  happens on the first hover — measured as a 191px jump of the graph in one
+  frame. Damped on the turn's clock, hovering a row is one movement: the globe
+  glides across and grows while it rotates to face the project. The parallax
+  offset is added afterwards and keeps its own easing; damping it twice makes
+  the pointer feel like it is dragging the graph through treacle. The first
+  frame of a route snaps, since a cold load of `/work/[slug]` is already
+  spotlit and easing in would animate a change the reader never made.
 
 `lib/use-cluster-screen.ts` and `app/nebula-canvas.tsx` apply these from the
 same functions, so the rendered cluster and every DOM overlay measured against

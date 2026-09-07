@@ -206,10 +206,40 @@ export function clusterBesideTextColumn(
   );
 }
 
+/**
+ * Room a spotlit cluster's names need beyond the sphere itself, in px.
+ *
+ * Measured, not guessed: across three projects at four viewports the labels
+ * reach 6-45px past the drawn radius. Less than a label's width, because the
+ * lit subgraph gathers toward its subject rather than spreading to the rim —
+ * and *more* on smaller globes, since the text holds a constant screen size
+ * while the sphere shrinks. One constant covering the worst case is enough;
+ * the alternative is re-deriving the label layout inside the placement solve,
+ * which would couple the two far more tightly than 45px of slack is worth.
+ */
+export const LABEL_OVERHANG_PX = 48;
+
+/**
+ * @param withLabels Does this route draw the spotlight labels? Two things
+ * change when it does. The cluster reserves LABEL_OVERHANG_PX of extra
+ * clearance, because the solve otherwise clears the text column by exactly the
+ * sphere's radius and the names hang past that — which is what made them
+ * vanish and reappear as parallax slid the globe across the column's edge.
+ * And it **centres in the space left over** rather than stopping as soon as it
+ * clears the text.
+ *
+ * That second one is the difference between the graph sitting in its own
+ * column and sitting shoved against the prose with dead space to its right. At
+ * 1440x900 clearing-and-stopping parked it at 1008 with 188px of unused room
+ * beyond it; centred it sits at 1102. The landing page keeps the old
+ * behaviour: its composition is a hero with a cluster beside it, tuned in
+ * 04-phase-1.md, and it has no labels to make room for.
+ */
 export function clusterCenterXFraction(
   viewportWidth: number,
   viewportHeight: number,
   radiusScale = 1,
+  withLabels = false,
 ) {
   if (!clusterBesideTextColumn(viewportWidth, viewportHeight)) return 0.5;
 
@@ -219,12 +249,27 @@ export function clusterCenterXFraction(
     pxPerWorldUnitFor(viewportHeight) *
     clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale);
 
-  const clearOfText = HERO_TEXT_RIGHT_PX + HERO_CLUSTER_GAP_PX + radiusPx;
+  const reach = radiusPx + (withLabels ? LABEL_OVERHANG_PX : 0);
+  const spaceLeft = HERO_TEXT_RIGHT_PX + HERO_CLUSTER_GAP_PX;
+  const spaceRight = viewportWidth - HERO_EDGE_MARGIN_PX;
+
+  // Clearing the text is the floor, not the destination. Where the leftover
+  // space is wide enough to centre in, centring is always the further right of
+  // the two — it puts an equal gap on both sides where clearing puts the
+  // minimum gap on one. Where it is not, the floor wins and the clamp below
+  // takes over, which is the 1024x768 case: a 196px band for a cluster that
+  // needs 458px, so it stays hard against the right margin exactly as before.
+  const clearOfText = spaceLeft + reach;
+  const centredInSpace = (spaceLeft + spaceRight) / 2;
+  const wanted = withLabels
+    ? Math.max(centredInSpace, clearOfText)
+    : clearOfText;
+
+  // The sphere itself may never leave the viewport, whatever the above wants.
+  // Only the sphere: a name clipped at the edge is a smaller loss than the
+  // graph being pushed back over the article to save it.
   const rightmost = viewportWidth - radiusPx - HERO_EDGE_MARGIN_PX;
-  const centerX = Math.max(
-    viewportWidth / 2,
-    Math.min(clearOfText, rightmost),
-  );
+  const centerX = Math.max(viewportWidth / 2, Math.min(wanted, rightmost));
 
   return centerX / viewportWidth;
 }

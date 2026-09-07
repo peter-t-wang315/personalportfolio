@@ -192,6 +192,7 @@ const _turnDelta = new THREE.Quaternion();
 const _turnRel = new THREE.Vector3();
 const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
+const _solvedTarget = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
@@ -433,6 +434,10 @@ function ConstellationPlacement({
     resetDrag();
   }, [spotlightNodeId]);
 
+  /** The solved landing composition — (x, y, scale) — damped as one thing. */
+  const solved = useRef(new THREE.Vector3());
+  const solvedVelocity = useRef(new THREE.Vector3());
+  const solvedReady = useRef(false);
   const parallax = useRef(new THREE.Vector2());
   /** Damped distance from the landing solve's centre to the lit cluster's. */
   const centreOffset = useRef(new THREE.Vector3());
@@ -531,24 +536,61 @@ function ConstellationPlacement({
     // origin leaves that untouched. Y is negated because world +Y is up while
     // CSS +Y is down; X needs no flip, since this camera has no roll.
     const pxPerWorldUnit = pxPerWorldUnitFor(state.size.height);
+    // **The solved composition is sprung, because it changes under the reader.**
+    // Spotlighting a project moves all three of these at once: the zoom goes
+    // to SPOTLIGHT_ZOOM, and with labels to make room for, the centre moves
+    // from hugging the text column to the middle of the space beside it. On
+    // `/work` that transition happens on the *first hover*, where it landed as
+    // a 191px jump of the graph in a single frame — the old solve jumped 51px
+    // there and centring tripled it.
+    //
+    // Damped on the same clock as the turn, so hovering a row starts one
+    // movement: the globe glides across and grows while it rotates to face the
+    // project, and the three finish together. Only the solved part; the
+    // parallax offset is added afterwards and keeps its own easing, since
+    // damping it twice makes the pointer feel like it is dragging the graph
+    // through treacle.
     const zoom = spotlightNodeId ? SPOTLIGHT_ZOOM : 1;
-    const landingScale =
-      LANDING_SCALE *
-      zoom *
-      ambientScale.current *
-      clusterScaleForViewport(state.size.width, state.size.height, zoom);
-    const landingX =
-      parallax.current.x +
+    _solvedTarget.set(
       (state.size.width *
-        (clusterCenterXFraction(state.size.width, state.size.height, zoom) -
+        (clusterCenterXFraction(
+          state.size.width,
+          state.size.height,
+          zoom,
+          spotlightNodeId !== null,
+        ) -
           0.5)) /
-        pxPerWorldUnit;
-    const landingY =
-      parallax.current.y -
-      (state.size.height *
-        (clusterCenterYFraction(state.size.width, state.size.height, zoom) -
-          0.5)) /
-        pxPerWorldUnit;
+        pxPerWorldUnit,
+      -(
+        state.size.height *
+        (clusterCenterYFraction(state.size.width, state.size.height, zoom) - 0.5)
+      ) / pxPerWorldUnit,
+      LANDING_SCALE *
+        zoom *
+        ambientScale.current *
+        clusterScaleForViewport(state.size.width, state.size.height, zoom),
+    );
+    if (!solvedReady.current || reducedMotion) {
+      // The first frame of a route is not a transition. A cold load of
+      // `/work/[slug]` is already spotlit, and easing in from the unspotlit
+      // composition would animate a change the reader never made.
+      solved.current.copy(_solvedTarget);
+      solvedVelocity.current.set(0, 0, 0);
+      solvedReady.current = true;
+    } else {
+      solved.current.sub(_solvedTarget);
+      smoothDampToZero(
+        solved.current,
+        solvedVelocity.current,
+        SPOTLIGHT_TURN_SECONDS,
+        dt,
+      );
+      solved.current.add(_solvedTarget);
+    }
+
+    const landingScale = solved.current.z;
+    const landingX = parallax.current.x + solved.current.x;
+    const landingY = parallax.current.y + solved.current.y;
 
     // `/work/[slug]` turns the globe so its project's cluster faces the
     // reader. The layout is preserved rather than deformed — 05-phase-2.md
