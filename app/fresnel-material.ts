@@ -61,6 +61,7 @@ export function createFresnelMaterial({
       uniform float uOpen;
       varying vec3 vNormal;
       varying vec3 vViewPosition;
+      varying float vShapeRim;
       void main() {
         vNormal = normalize(normalMatrix * normal);
         // Opening a node reshapes the node itself rather than swapping it for
@@ -79,13 +80,32 @@ export function createFresnelMaterial({
         vec3 a = abs(position);
         float k = pow(pow(a.x, 6.0) + pow(a.y, 6.0) + pow(a.z, 6.0), -1.0 / 6.0);
         vec3 shape = mix(position, position * k, uOpen);
-        // Breathing stands down as it opens: a silhouette that wobbles is
-        // right for a floating node and wrong for something being read.
+
+        // Distance from the face toward the silhouette, for the opened node.
+        //
+        // Flattening a sphere toward the camera destroys the fresnel term: the
+        // normal matrix is an inverse-transpose, so squashing z makes every
+        // normal point at the viewer and the rim-lit gradient collapses into
+        // one flat wash. That is what made an opened node read as a slab of
+        // colour rather than the same translucent thing it had been.
+        //
+        // The shape still knows where its own edge is, though. The mesh is
+        // turned to face the camera when it opens, so the sphere's own z runs
+        // along the view axis: |z| is 1 at the centre of the face and 0 all
+        // the way around the outline. So the gradient is recovered from
+        // geometry the flattening cannot touch.
+        vShapeRim = 1.0 - abs(position.z);
+        // Breathing continues while open, and is meant to. An opened node is
+        // still the node: its outline should keep drifting rather than settle
+        // into a drawn rectangle. The displacement rides the mesh's own
+        // non-uniform scale, so a wobble that is a few percent of a sphere's
+        // radius stays a few percent of the opened panel's width — the same
+        // amount of life at either size.
         float breathe =
             sin(position.x * 2.1 + uSeed       + uTime * 0.55)
           * sin(position.y * 1.7 + uSeed * 1.3 + uTime * 0.45)
           + 0.5 * sin(position.z * 2.6 + uSeed * 2.1 + uTime * 0.65);
-        vec3 displaced = shape + normal * (breathe * uAmp * (1.0 - uOpen));
+        vec3 displaced = shape + normal * (breathe * uAmp);
         vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
         vViewPosition = -mvPosition.xyz;
         gl_Position = projectionMatrix * mvPosition;
@@ -96,13 +116,22 @@ export function createFresnelMaterial({
       #include <fog_pars_fragment>
       uniform vec3 color;
       uniform float opacity;
+      uniform float uOpen;
       varying vec3 vNormal;
       varying vec3 vViewPosition;
+      varying float vShapeRim;
       void main() {
         vec3 viewDir = normalize(vViewPosition);
         float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.2);
-        float core = 0.16;
-        gl_FragColor = vec4(color, (fresnel * 0.9 + core) * opacity);
+        // Opened, the edge gradient comes from the shape rather than from the
+        // normals — see vShapeRim. Same falloff curve, so a node keeps the
+        // gradient it had as a sphere instead of flattening into a flat field.
+        float rim = mix(fresnel, pow(clamp(vShapeRim, 0.0, 1.0), 1.5), uOpen);
+        // The centre thins further as it opens, because an opened node is
+        // something to read *through*: the text wants to sit on --paper, not
+        // on a tinted plate.
+        float core = mix(0.16, 0.045, uOpen);
+        gl_FragColor = vec4(color, (rim * 0.9 + core) * opacity);
         #include <fog_fragment>
       }
     `,
