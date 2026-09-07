@@ -64,7 +64,15 @@ Focus narrows back to 50° — a node approached at 72 sits in too much peripher
 
 Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, the float simulation freezes, unrelated nodes drop to 25% opacity. Whether the focused node's material switches to real transmission is tier-dependent — see `02-architecture.md`'s Responsive tiers table. Desktop only; tablet and mobile keep the fresnel shader throughout.
 
-**The interior panel.** The node's shell expands and drops toward near-full transparency; see `02-architecture.md`'s Responsive tiers table for exact panel size per device. The silhouette morphs from a wobbling sphere toward a rounded rectangle as it opens — the rim stays curved and glassy, but the content area becomes honest about being a panel, because circular content areas fight lists, code, and links.
+**The interior panel — the node itself opens.** There is one object, not two: the node's own mesh turns to face the camera, scales to the panel's rectangle, and reshapes from sphere toward rounded box through a `uOpen` uniform in its own material. It keeps the `--mask` colour it had as a sphere, and the panel's text simply appears across it. The DOM panel has no background, border or shadow of its own — the surface under the text *is* the node.
+
+This replaced a version that used a second mesh, and the difference is the whole point. There, the node faded out, a separate shell faded in and morphed, and that faded out too leaving a DOM card: three objects in sequence, so opening a node read as a new object arriving rather than as the node opening. By the time there was anything to read, the node was gone.
+
+The fresnel material does the work a card would have done. Near-transparent across the face, so text sits on `--paper` and stays legible; strong at the silhouette, so the opened node keeps a soft `--mask` rim exactly where its edge is. The sphere's own normals are kept rather than recomputed — flattened toward the camera they still point away at the silhouette and toward the viewer across the face, which is exactly where the fresnel term should be strong and weak.
+
+Two consequences worth knowing. The shared sphere geometry went from 32 to 48 segments: a sphere needs only enough to look round, but the same vertices must describe a superellipsoid's far tighter corners when a node opens, and at 32 they creased. And under 500px of viewport height, where the node deliberately does not open, the full-height sheet has no node behind it and so does carry its own `--paper` background.
+
+The shell expands and drops toward near-full transparency; see `02-architecture.md`'s Responsive tiers table for exact panel size per device. The silhouette morphs from a wobbling sphere toward a rounded rectangle as it opens — the rim stays curved and glassy, but the content area becomes honest about being a panel, because circular content areas fight lists, code, and links.
 
 Under 500px of viewport height, in any tier, this morph doesn't happen at all: the panel is a full-height sheet instead, with no circular-to-rounded-rect transition. See `02-architecture.md`'s Orientation and short viewports.
 

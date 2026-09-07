@@ -50,6 +50,7 @@ export function createFresnelMaterial({
         uTime: { value: 0 },
         uAmp: { value: displacementAmplitude },
         uSeed: { value: seed },
+        uOpen: { value: 0 },
       },
     ]),
     vertexShader: `
@@ -57,15 +58,34 @@ export function createFresnelMaterial({
       uniform float uTime;
       uniform float uAmp;
       uniform float uSeed;
+      uniform float uOpen;
       varying vec3 vNormal;
       varying vec3 vViewPosition;
       void main() {
         vNormal = normalize(normalMatrix * normal);
+        // Opening a node reshapes the node itself rather than swapping it for
+        // something else: each vertex of the unit sphere is pushed out onto a
+        // superellipsoid of the same direction, |x|^n + |y|^n + |z|^n = 1,
+        // which at n = 6 is a rounded box. Computed here from the sphere
+        // position rather than supplied as a morph target, because the sphere
+        // is the only input it needs and a ShaderMaterial would otherwise have
+        // to carry three.js morph chunks to read one.
+        //
+        // The normal is deliberately left as the sphere's. Flattened toward
+        // the camera, sphere normals still point away at the silhouette and
+        // toward the viewer across the face, which is exactly where the
+        // fresnel term should be strong and weak — the opened node keeps its
+        // rim and stays near-transparent in the middle.
+        vec3 a = abs(position);
+        float k = pow(pow(a.x, 6.0) + pow(a.y, 6.0) + pow(a.z, 6.0), -1.0 / 6.0);
+        vec3 shape = mix(position, position * k, uOpen);
+        // Breathing stands down as it opens: a silhouette that wobbles is
+        // right for a floating node and wrong for something being read.
         float breathe =
             sin(position.x * 2.1 + uSeed       + uTime * 0.55)
           * sin(position.y * 1.7 + uSeed * 1.3 + uTime * 0.45)
           + 0.5 * sin(position.z * 2.6 + uSeed * 2.1 + uTime * 0.65);
-        vec3 displaced = position + normal * (breathe * uAmp);
+        vec3 displaced = shape + normal * (breathe * uAmp * (1.0 - uOpen));
         vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
         vViewPosition = -mvPosition.xyz;
         gl_Position = projectionMatrix * mvPosition;

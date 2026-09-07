@@ -37,18 +37,20 @@ import { hasWebgl } from "@/lib/webgl";
  * technology node starts at ~35% and stretches further, which is right: it is
  * a smaller thing opening.
  *
- * The two halves run as two beats, matching the shell behind it: the content
- * fades up inside the closed circle while the shell arrives, then the clip
- * opens as the shell morphs.
+ * Content and clip run together on the node's own 240ms, so the text appears
+ * as the node stretches rather than after it.
  *
- * **It wears the node's own rim.** The 3-D shell carries the morph and then
- * hands off — see OPEN_TINT_FACTOR — so from that point the edge of the opened
- * node is drawn here, as a `--mask` hairline and a soft inner wash in the same
- * colour the node was. Both are *inset* shadows, which is not a detail: an
- * outer shadow is outside the border box and `clip-path` would cut it away,
- * while inset shadows are painted within it and are clipped to the same
- * stretching shape, so the rim opens with the node instead of being a
- * rectangle that appears around it.
+ * **It has no surface of its own.** No background, no border, no shadow: the
+ * surface under this text is the node, which is still there — its own mesh,
+ * turned to face the camera and reshaped into this rectangle
+ * (nebula-constellation.tsx). Giving the panel a card background of its own
+ * was what made opening a node look like a new object arriving, because it
+ * put an opaque plane between the reader and the thing they had opened.
+ *
+ * The node's fresnel material does the work a card would have done: near
+ * transparent across the face, so the text sits on `--paper` and stays
+ * legible, and strong at the silhouette, so the opened node keeps a soft
+ * `--mask` rim exactly where its edge is.
  *
  * **Two entry paths, per 05-phase-2.md's Deep linking.** On a cold entry —
  * a direct link or a reload — the content must be visible at first paint, so
@@ -143,14 +145,20 @@ export function NebulaPanel({
           // Delayed by one beat so the content is already legible inside the
           // node before it starts pulling open, and so the clip runs with the
           // shell's own morph rather than against its arrival.
-          clipPath: { duration: 0.24, delay: 0.24, ease: [0.32, 0.72, 0, 1] },
+          // No delay any more: there is no separate shell to arrive first, so
+          // the text is revealed by the same 240ms the node spends stretching.
+          clipPath: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
         }}
         className={
           "pointer-events-auto overflow-y-auto overscroll-contain " +
           "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
           "px-8 py-10 md:px-14 md:py-14 " +
-          "bg-paper/90 " +
-          "shadow-[inset_0_0_0_1px_rgba(31,74,58,0.16),inset_0_0_90px_rgba(31,74,58,0.07)] " +
+
+          // Under 500px of height the node does not open at all — there is no
+          // room for a rounded rectangle to read — so the sheet has no node
+          // behind it to sit on and needs a surface of its own, or the text
+          // lands straight on the constellation.
+          "[@media(max-height:500px)]:bg-paper/95 " +
           "[@media(max-height:500px)]:w-screen [@media(max-height:500px)]:h-screen " +
           "[@media(max-height:500px)]:pt-20"
         }
