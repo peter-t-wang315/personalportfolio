@@ -92,13 +92,23 @@ const PARALLAX_WRITE_EPSILON = 0.0005;
 const AMBIENT_EASE = 0.06;
 
 /**
- * Where a spotlit node is turned to, in the group's own space: high on the
- * globe and tilted toward the reader, so the project sits near the top of the
- * disc on the near side — looking at the earth from above, rather than at its
- * equator. An earlier value was mostly +Z, which put the node dead centre and
- * read as facing rather than topping.
+ * Where a spotlit node is turned to, in the group's own space: on the near
+ * side and **below** the globe's equator, so the camera looks *down* onto it.
+ *
+ * This is the part that is easy to get backwards, and was twice. The camera on
+ * these routes is fixed and level with the group's centre, so a node's
+ * elevation decides which way the surface it sits on is seen: put it high and
+ * the reader is underneath looking up at the cluster, however "top" that
+ * sounds. A node's outward normal points along this vector, so a negative Y
+ * tilts that normal down toward the camera — which is what "looking at the
+ * earth from above" actually requires.
+ *
+ * The cost is that the project sits a little below the middle of the disc
+ * rather than at the top of it. That is the right trade: the viewing angle is
+ * what makes a gathered ring of neighbours legible as a group lying on a
+ * surface, and where it falls in the frame is not.
  */
-const SPOTLIGHT_FACING = new THREE.Vector3(0, 0.72, 0.7).normalize();
+const SPOTLIGHT_FACING = new THREE.Vector3(0, -0.5, 0.87).normalize();
 /** Layout up, kept as close to screen up as the facing allows — see below. */
 const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
 /**
