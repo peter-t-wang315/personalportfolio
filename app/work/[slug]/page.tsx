@@ -40,7 +40,7 @@ export default async function ProjectPage({
   return (
     <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
-        <HomeLink label="Work" href={`/work#${project.slug}`} pinned />
+        <HomeLink label="Work" href={`/work#${project.slug}`} />
         <ProjectArticle project={project} />
       </div>
     </div>

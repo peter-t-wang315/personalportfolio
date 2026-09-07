@@ -17,7 +17,7 @@ export default function Resume() {
   return (
     <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
-        <HomeLink pinned />
+        <HomeLink />
 
         <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4">
           <div>

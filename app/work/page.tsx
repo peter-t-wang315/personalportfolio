@@ -14,7 +14,7 @@ export default function WorkList() {
   return (
     <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
       <div className="max-w-[66ch]">
-        <HomeLink pinned />
+        <HomeLink />
 
         <h1
           className="font-display lowercase mt-4"
@@ -45,14 +45,13 @@ export default function WorkList() {
                 {clusterProjects.map((project) => (
                   // The slug is the anchor a project's own page links back to,
                   // so leaving one returns to its row rather than to the top of
-                  // a list it may be a long way down. `scroll-mt` clears both
-                  // sticky bars — the banner and the back-link pinned under it
-                  // — which a bare anchor would otherwise scroll the row
+                  // a list it may be a long way down. `scroll-mt` clears the
+                  // banner, which a bare anchor would scroll the row
                   // underneath. It also makes `/work#slug` a real address.
                   <li
                     key={project.id}
                     id={project.slug}
-                    className="scroll-mt-[calc(var(--spacing-header)+3.5rem)] py-5"
+                    className="scroll-mt-[calc(var(--spacing-header)+1.5rem)] py-5"
                   >
                     <WorkListLink
                       nodeId={project.id}
