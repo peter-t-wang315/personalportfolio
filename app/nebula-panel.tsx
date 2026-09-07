@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { useSceneStore } from "@/lib/scene-store";
@@ -78,6 +78,46 @@ export function NebulaPanel({
   const router = useRouter();
   const [cold] = useState(() => !wasHydratedBefore());
   const [viewport, setViewport] = useState({ width: 0, height: 0 });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [thumb, setThumb] = useState({ shown: false, top: 0, height: 0 });
+
+  /**
+   * The scroll indicator rides the wall of the opened node, and is only there
+   * while you are actually scrolling.
+   *
+   * The native scrollbar cannot do either. It sits at the scrolling element's
+   * own rectangular edge, and this node has an organic, breathing outline that
+   * wanders away from any rectangle — so wherever the element is put, the bar
+   * is a straight line beside a shape rather than part of it. And it is
+   * permanent furniture on a surface that otherwise has none.
+   *
+   * So the native one is hidden and this is drawn instead: a `--mask` thumb
+   * flush to the panel's right edge, which is *inside* the silhouette at every
+   * point of the wobble, because the blob only ever bulges further out than the
+   * panel rectangle, never further in. It spans the panel's full height rather
+   * than the padded column's, so it reads as running the length of the wall.
+   */
+  const trackScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const scrollable = el.scrollHeight - el.clientHeight;
+    if (scrollable <= 1) {
+      setThumb((t) => (t.shown ? { ...t, shown: false } : t));
+      return;
+    }
+    const ratio = el.clientHeight / el.scrollHeight;
+    const height = Math.max(ratio, 0.08);
+    const top = (el.scrollTop / scrollable) * (1 - height);
+    setThumb({ shown: true, top, height });
+    clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(
+      () => setThumb((t) => ({ ...t, shown: false })),
+      900,
+    );
+  }, []);
+
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
 
   // The clip is in percentages of the panel, but the circle it starts from is
   // sized against the viewport, so converting between them needs real pixels.
@@ -148,7 +188,7 @@ export function NebulaPanel({
           clipPath: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
         }}
         className={
-          "pointer-events-auto flex justify-center " +
+          "pointer-events-auto relative flex justify-center " +
           "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
           "px-8 py-10 md:px-14 md:py-14 " +
 
@@ -161,30 +201,42 @@ export function NebulaPanel({
           "[@media(max-height:500px)]:pt-20"
         }
       >
-        {/*
-          The scroll lives on the text column, not on the panel.
-
-          On the panel, the native scrollbar sits at the panel's rectangular
-          right edge — and the node it opened out of has an organic, breathing
-          outline that wanders well away from that rectangle, so the scrollbar
-          appeared stranded on bare paper beside the shape. Scrolling the
-          column instead puts it at the right margin of the text, comfortably
-          inside the silhouette at every point of the wobble.
-
-          Styled to the palette while it is here: a `--mask` thumb on no
-          track, which is the same hairline vocabulary as everything else.
-        */}
+        {/* Scrollable regions need to be reachable by keyboard, and hiding
+            the bar does not change that — so it stays a tab stop that arrow
+            keys scroll, exactly as the native one would have been. */}
         <div
+          ref={scrollRef}
+          onScroll={trackScroll}
+          tabIndex={0}
           className={
             "h-full w-full max-w-[66ch] overflow-y-auto overscroll-contain pb-6 " +
-            "[scrollbar-color:rgba(31,74,58,0.28)_transparent] [scrollbar-width:thin] " +
-            "[&::-webkit-scrollbar]:w-1.5 " +
-            "[&::-webkit-scrollbar-track]:bg-transparent " +
-            "[&::-webkit-scrollbar-thumb]:rounded-full " +
-            "[&::-webkit-scrollbar-thumb]:bg-mask/25"
+            "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           }
         >
           {children}
+        </div>
+        {/*
+          The track is inset from the panel's edge, and stops short of its
+          corners, because the wall it rides is not a rectangle.
+
+          Measured against a rendered panel: the blob's right edge sits at
+          x=1223 where the panel's own edge is at 1224 — a pixel *inside* it —
+          and above about 6% of the panel's height it curves away hard, to
+          1148 by 2%. A thumb flush to the panel edge therefore pokes out of
+          the shape near the top and bottom. Six pixels in and a track spanning
+          8% to 92% keeps it on the wall for the whole of its travel.
+        */}
+        <div className="pointer-events-none absolute right-1.5 top-[8%] h-[84%] w-[3px]">
+          <motion.div
+            aria-hidden="true"
+            className="absolute w-full rounded-full bg-mask/45"
+            style={{
+              top: `${thumb.top * 100}%`,
+              height: `${thumb.height * 100}%`,
+            }}
+            animate={{ opacity: thumb.shown ? 1 : 0 }}
+            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+          />
         </div>
       </motion.article>
     </div>
