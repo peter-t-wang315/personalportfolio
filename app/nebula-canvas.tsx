@@ -288,6 +288,35 @@ const INSIDE_POSE: CameraPose = (() => {
 })();
 
 /**
+ * The graph's resting framing, aimed at a given node instead of at the heading
+ * INSIDE_POSE was composed for.
+ *
+ * Same construction as INSIDE_POSE — camera one INSIDE_DISTANCE back from the
+ * target, looking through it at the far wall — with the node's direction
+ * substituted for the composed one. So it is the same shot, pointed somewhere
+ * else, and dragging afterwards still orbits the graph's centre rather than
+ * some point on its surface.
+ *
+ * Leaving a node used to fly to INSIDE_POSE flat, which meant every exit ended
+ * looking at the same cluster no matter which node you had been reading. That
+ * reads as the camera changing its mind: you close something and are somewhere
+ * unrelated. Backing out along the way you came in and finding what you left
+ * still in front of you is what "close this and look around" should do.
+ */
+function restingPoseFacing(nodeId: string | null): CameraPose {
+  const node = nodeId ? nodeGeometry[nodeId] : null;
+  if (!node) return INSIDE_POSE;
+  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
+  const direction = new THREE.Vector3().fromArray(node.position).sub(target);
+  if (direction.lengthSq() < 1e-6) return INSIDE_POSE;
+  direction.normalize();
+  return {
+    position: target.clone().addScaledVector(direction, -INSIDE_DISTANCE),
+    target,
+  };
+}
+
+/**
  * The landing page's pose. Fixed and parallax-only per 01-design-system.md —
  * the cluster moves on the landing page, the camera does not.
  *
@@ -676,7 +705,12 @@ function ConstellationPlacement({
     // whatever the reader was looking at before, and a departure winds it back
     // up in step.
     if (placement > 0) {
-      group.quaternion.copy(spotlightTarget.current).slerp(UNROTATED, placement);
+      // `orientationTarget`, not `spotlightTarget`: the reader's own spin is
+      // part of where the globe is, so a flight unwinds it along with the
+      // route's turn instead of dropping it on the first frame. It still lands
+      // exactly at UNROTATED, which is what keeps arriving at `/nebula` the
+      // same composition however you got there.
+      group.quaternion.copy(orientationTarget.current).slerp(UNROTATED, placement);
       turnVelocity.current.set(0, 0, 0);
     } else if (reducedMotion || isDragging()) {
       // A drag is direct manipulation: the sphere is under the pointer and has
@@ -1045,7 +1079,9 @@ function CameraRig({
     // leaving back to the constellation — one flight from wherever the camera
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
-    const to = routeFocusId ? focusPose(routeFocusId) : INSIDE_POSE;
+    const to = routeFocusId
+      ? focusPose(routeFocusId)
+      : restingPoseFacing(previousFocus);
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
     // Moving straight from one open node to another — following a link inside

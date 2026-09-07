@@ -47,11 +47,16 @@ export function NebulaDrag() {
   const active = !pathname.startsWith("/nebula");
 
   // A new route is a new view. Whatever the reader spun the last one to is not
-  // an instruction about this one.
+  // an instruction about this one — except on the way *into* the graph, where
+  // the arrival flight unwinds the spin as part of its own interpolation
+  // (nebula-canvas.tsx). Clearing it here would take it away on the first
+  // frame instead, which is a snap at exactly the moment the flight is meant
+  // to be the only thing moving.
   useEffect(() => {
-    resetDrag();
-    return resetDrag;
-  }, [pathname]);
+    // `active` is false *on* the graph route — the one place the spin must
+    // survive the transition, so the arrival can unwind it.
+    if (active) resetDrag();
+  }, [pathname, active]);
 
   useEffect(() => {
     if (!active) return;
