@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { usePathname, useRouter } from "next/navigation";
@@ -12,6 +12,7 @@ import {
   routeForNode,
 } from "@/lib/nebula-routes";
 import { nodeGeometry } from "@/lib/node-geometry";
+import { getLivePosition, neighborsOf } from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_BOUNDING_RADIUS,
@@ -103,12 +104,15 @@ const AMBIENT_EASE = 0.06;
  * tilts that normal down toward the camera — which is what "looking at the
  * earth from above" actually requires.
  *
- * The cost is that the project sits a little below the middle of the disc
- * rather than at the top of it. That is the right trade: the viewing angle is
- * what makes a gathered ring of neighbours legible as a group lying on a
- * surface, and where it falls in the frame is not.
+ * How far it tilts is a composition decision as much as a viewing one. The
+ * globe's centre lies opposite this direction from the node, so the further
+ * the facing leans off the view axis, the more of the sphere piles up on one
+ * side of the subject: at -0.5 the whole thing stacked above it and left the
+ * bottom of the frame empty. Close to the axis, the globe sits centred on the
+ * project instead, and the tilt is just enough to be looking down on the
+ * surface rather than along it.
  */
-const SPOTLIGHT_FACING = new THREE.Vector3(0, -0.5, 0.87).normalize();
+const SPOTLIGHT_FACING = new THREE.Vector3(0, -0.3, 0.954).normalize();
 /** Layout up, kept as close to screen up as the facing allows — see below. */
 const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
 /**
@@ -117,6 +121,13 @@ const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
  * text column by a real margin rather than growing across it.
  */
 const SPOTLIGHT_ZOOM = 1.32;
+
+/**
+ * Distance from the landing camera to the plane the cluster placement is
+ * solved on. The solve works in pixels at that plane; anything drawn nearer
+ * has to have its target scaled down to project to the same place.
+ */
+const CAMERA_TO_CLUSTER = HOME_CAMERA_POSITION[2] - CLUSTER_DEPTH;
 /**
  * Per-frame slerp toward that orientation. Exponential rather than a fixed
  * curve over a fixed time, matching the ambient scale and the pointer parallax
@@ -128,7 +139,9 @@ const SPOTLIGHT_ZOOM = 1.32;
  */
 const SPOTLIGHT_EASE = 0.04;
 
-/** Scratch for the roll solve below; it runs every frame. */
+/** Scratch for the roll solve and the centring below; both run every frame. */
+const _spotCentre = new THREE.Vector3();
+const _spotNode = new THREE.Vector3();
 const _rollUp = new THREE.Vector3();
 const _rollWanted = new THREE.Vector3();
 const _rollAxis = new THREE.Vector3();
@@ -343,6 +356,16 @@ function ConstellationPlacement({
   const groupRef = useRef<THREE.Group>(null);
   const spotlightTarget = useRef(new THREE.Quaternion());
   const spotlightDirection = useRef(new THREE.Vector3());
+  /** The subject and everything gathered around it — what "centred" means. */
+  const spotlightGroup = useMemo(
+    () =>
+      spotlightNodeId
+        ? [spotlightNodeId, ...neighborsOf(spotlightNodeId)].filter(
+            (id) => nodeGeometry[id],
+          )
+        : [],
+    [spotlightNodeId],
+  );
   const parallax = useRef(new THREE.Vector2());
   const ambientScale = useRef(1);
   const lastWrittenParallax = useRef({ x: 0, y: 0 });
@@ -517,10 +540,69 @@ function ConstellationPlacement({
       group.quaternion.slerp(spotlightTarget.current, SPOTLIGHT_EASE);
     }
 
-    group.scale.setScalar(THREE.MathUtils.lerp(landingScale, 1, placement));
+    const scale = THREE.MathUtils.lerp(landingScale, 1, placement);
+    group.scale.setScalar(scale);
+
+    // **Centre the project, not the globe.** Turning the sphere puts the node
+    // in the right place *on* it, but the sphere itself stays where the
+    // landing solve puts it — so the gathered cluster ended up parked off to
+    // one side of the space beside the article rather than sitting in it.
+    // Placing the group so that its lit cluster lands on the solved centre
+    // puts the project in the middle of that space and lets the globe hang
+    // around it. Faded out by placement, so a departure toward `/nebula`
+    // unwinds it in step with everything else.
+    // Where the lit group should sit is a **screen-space** question, so it is
+    // solved in screen space. A node's contribution to the on-screen middle of
+    // the group is its offset divided by its own distance from the camera, and
+    // those distances differ by a third of the globe's diameter across a
+    // cluster turned to face the reader. Averaging the group's positions in
+    // world space and matching that to the landing solve's world point — the
+    // obvious thing, and what this did first — therefore missed twice over:
+    // 48px right, because the cluster sits nearer the camera than the plane
+    // the solve is written for, and 44px high, because the near half of the
+    // cluster projects further from the view axis than the far half.
+    //
+    // Weights are projected area, r²/d²: what reads as the middle of a group
+    // is its centre of visual mass, and a project node covers several times
+    // the pixels of a technology node beside it.
+    //
+    // Only x and y. Shifting z would move the globe toward or away from the
+    // camera and change its apparent size, which is not what centring means.
+    // The current quaternion is used rather than the facing it is converging
+    // on, so the centring tracks the turn instead of arriving ahead of it.
+    let placedX = landingX;
+    let placedY = landingY;
+    if (spotlightGroup.length > 0) {
+      let sumW = 0;
+      let sumWoverD = 0;
+      let sumXoverD = 0;
+      let sumYoverD = 0;
+      for (const id of spotlightGroup) {
+        const live = getLivePosition(id);
+        _spotCentre
+          .copy(live ?? _spotNode.fromArray(nodeGeometry[id].position))
+          .applyQuaternion(group.quaternion)
+          .multiplyScalar(scale);
+        const d = Math.max(CAMERA_TO_CLUSTER - _spotCentre.z, 1);
+        const r = nodeGeometry[id].radius;
+        const w = (r * r) / (d * d);
+        sumW += w;
+        sumWoverD += w / d;
+        sumXoverD += (w * _spotCentre.x) / d;
+        sumYoverD += (w * _spotCentre.y) / d;
+      }
+      // Solve mean(w·(P + o)/d) = mean(w)·landing/CAMERA_TO_CLUSTER for P:
+      // the group offset that lands the group's visual centre on exactly the
+      // screen point the landing solve asked for.
+      placedX =
+        ((landingX / CAMERA_TO_CLUSTER) * sumW - sumXoverD) / sumWoverD;
+      placedY =
+        ((landingY / CAMERA_TO_CLUSTER) * sumW - sumYoverD) / sumWoverD;
+    }
+
     group.position.set(
-      THREE.MathUtils.lerp(landingX, 0, placement),
-      THREE.MathUtils.lerp(landingY, 0, placement),
+      THREE.MathUtils.lerp(placedX, 0, placement),
+      THREE.MathUtils.lerp(placedY, 0, placement),
       THREE.MathUtils.lerp(CLUSTER_DEPTH, 0, placement),
     );
   });
