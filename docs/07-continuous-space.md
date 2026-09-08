@@ -213,7 +213,7 @@ bringing the band in to 5–30 changes 13.8%, 17.0% and 71.4% of those. v26
 23/23, sweep 60/60, and `/nebula` reached through a turned work page is still 0
 differing pixels of 59,223.
 
-### Part 2 — The hero as an object in the scene — **built, and blocked**
+### Part 2 — The hero as an object in the scene — **done**
 
 A plane at the home location carrying an image of the hero column, depth-tested
 so nodes occlude it. Camera untouched; visible from inside `/nebula` only.
@@ -352,12 +352,20 @@ placement model that no longer exists.
 
 ## Open decisions
 
-- **What the stand-in contains.** The whole hero column, or the wordmark and
-  headline only. Everything visible is the stated intent; whether the stats row
-  and link row survive at distance is a looking question.
-- **`p`, the hero's distance from the standing point.** Sets how large home
-  reads from inside. Free within the constraint that it must not reach the
-  sphere.
+- ~~**What the stand-in contains.**~~ Settled: the wordmark, the role line, the
+  headline, and the metric *values*. The metric labels are a sentence each and
+  would be grey noise at this distance, where the numbers still read as
+  numbers.
+- ~~**`p`, the hero's distance from the standing point.**~~ Deferred rather
+  than decided, and deliberately: `p` is an offset *ahead of the standing
+  point*, and there is no standing point until Part 3. What exists today is
+  `HOME_DISTANCE`, home's distance from the graph, now 150.
 - **Whether `/work/[slug]` is a third standing point or the home point with a
-  different aim.** Both work. The second is fewer poses to reason about; the
-  first is easier to compose independently.
+  different aim.** Still open. Both work. The second is fewer poses to reason
+  about; the first is easier to compose independently.
+- **New, from Part 2:** the reader can now face empty paper. Looking away from
+  both the graph and home shows nothing at all, which is honest for a space and
+  is the first direction on this site that holds nothing. The corner Home link
+  is the way back. Whether that wants a gentler answer — a soft limit, a hint,
+  or nothing — is a decision Part 4 will have to take a view on, since it is
+  the part that gives the camera somewhere to be.

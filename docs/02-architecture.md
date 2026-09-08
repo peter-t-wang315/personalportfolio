@@ -38,6 +38,13 @@ appeared 64 units and 94 degrees away. The flight that followed was a short
 move from wherever that cut had landed, and the persistent canvas was
 preserving a WebGL context and nothing else.
 
+`app/nebula-home.tsx` shares that canvas: the home page as an object in the
+world, a plane 150 units out carrying a drawn image of the hero column, facing
+away so the reader inside the graph sees its back. It is scenery — the real
+hero stays the thing that is read, selected, indexed and tabbed through — and
+it is the first piece of `07-continuous-space.md` to ship. It is also why the
+scene fog exists again; see Scene fog.
+
 So `app/nebula-constellation.tsx` draws the same graph everywhere, inside
 `ConstellationPlacement`, whose transform is the only difference between the
 routes: shrunk to the landing footprint at `CLUSTER_DEPTH` off `/nebula`,
