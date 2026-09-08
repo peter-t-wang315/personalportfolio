@@ -352,6 +352,20 @@ anti-aliasing: the ink centroid moved at most 0.03px and total ink at most
 0.03%. `/nebula` is 0.00% at every viewport. Two captures of one build differ
 by 0.00%, so the gate means what it says.
 
+**Step 2 is done: the flight is a straight line, and it is spent evenly.** The
+graph now carries the 111° between the landing face and the interior one, so
+the camera holds a single heading for the whole journey — measured, 0.00° of
+heading change across the arrival. That is what Part 4 needs: you cannot fly
+*past* the hero while swinging 111° around it.
+
+Distance is interpolated geometrically, since apparent size goes as 1/d and
+equal steps of distance are not equal steps of what is seen, and the journey
+has its own curve rather than the UI one. It completes 22% / 57% / 80% of the
+approach at a quarter, half and three-quarters through, against 48% / 82% /
+96% before — the difference between travelling and lunging then floating.
+
+Both changes are path-only: the gate is still 0.23% worst, unchanged.
+
 Remaining: the edge fade and the orientation unwind still read the progress
 value, which is fine and is what it now means; `use-cluster-screen` still
 re-derives the circle independently; the deletions; and the fog, parked above

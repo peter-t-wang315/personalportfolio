@@ -26,6 +26,7 @@ import {
   pxPerWorldUnitFor,
 } from "@/lib/cluster-geometry";
 import {
+  approachEase,
   FLIGHT_DURATION_MS,
   FOCUS_FLIGHT_DURATION_MS,
   flightEase,
@@ -247,6 +248,8 @@ const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
 const _solvedTarget = new THREE.Vector3();
 const _tiltFallbackUp = new THREE.Vector3(1, 0, 0);
+/** The direction every camera on this site looks, now that the graph turns. */
+const FORWARD = new THREE.Vector3(0, 0, -1);
 const _parkForward = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
@@ -262,7 +265,7 @@ const _rollWanted = new THREE.Vector3();
 const _rollAxis = new THREE.Vector3();
 const _rollQuat = new THREE.Quaternion();
 /** The layout's own orientation, which is what `/nebula` is composed against. */
-const UNROTATED = new THREE.Quaternion();
+
 
 /**
  * Elevated, near-top-down heading, tilted slightly off pure vertical.
@@ -376,26 +379,70 @@ const LOOK_DISTANCE = 0.1;
  */
 const INTERIOR_TILT_DEGREES = 12;
 
-const INSIDE_POSE: CameraPose = (() => {
+/**
+ * **The orientation the graph turns to as the reader arrives, and the reason
+ * the arrival is a straight line.**
+ *
+ * `/` and `/nebula` want different faces of the constellation toward the
+ * camera, so between them *something* has to rotate. It used to be the camera:
+ * the interior heading was an oblique direction chosen against the layout, so
+ * flying in swung the view about 111 degrees and the reader ended up looking
+ * upward relative to where they had started. That reads as being carried
+ * around a corner, and it makes flying *past* anything impossible, which Part
+ * 4 needs.
+ *
+ * So the graph turns instead. This is the rotation that carries the composed
+ * interior heading onto straight down −z, which is where the standing camera
+ * already looks — so the camera keeps one heading for the whole journey and
+ * only travels. The picture at either end is identical; a rigid rotation of
+ * the world and the camera together cannot change what is rendered, which is
+ * what the pixel gate checks.
+ *
+ * The unwind in ConstellationOrientation already interpolated toward this
+ * value; it was the identity, so the graph stood still and the camera did the
+ * turning. Making it the rotation moves the turn from one to the other and
+ * nothing else.
+ */
+const NEBULA_BASE_ROTATION = (() => {
   const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
   const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
     .sub(target)
     .normalize();
-  // The camera keeps the position the composition put it in; only where it
-  // looks changes. Building the pose from a tilted *target* instead would move
-  // the camera too, since its position is derived from that target.
   const position = target.clone().addScaledVector(outward, -INSIDE_DISTANCE);
   const heading = target.clone().sub(position).normalize();
   const right = new THREE.Vector3()
     .crossVectors(heading, Math.abs(heading.y) > 0.9 ? _tiltFallbackUp : LAYOUT_UP)
     .normalize();
-  heading.applyAxisAngle(
-    right,
-    (INTERIOR_TILT_DEGREES * Math.PI) / 180,
-  );
+  heading.applyAxisAngle(right, (INTERIOR_TILT_DEGREES * Math.PI) / 180);
+  // A camera, not a plain Object3D. `lookAt` points an object's +z at its
+  // target but a camera's −z, and three special-cases that on `isCamera` — so
+  // deriving this from an Object3D gives an orientation flipped 180 degrees
+  // and the interior composition comes out inside-out. Measured that way, all
+  // of /nebula changed at every viewport.
+  const look = new THREE.PerspectiveCamera();
+  look.position.copy(position);
+  look.lookAt(position.clone().addScaledVector(heading, INSIDE_DISTANCE));
+  return look.quaternion.clone().invert();
+})();
+
+const UNROTATED = NEBULA_BASE_ROTATION;
+
+const INSIDE_POSE: CameraPose = (() => {
+  // The composed standing point, carried into the rotated world. Rotating the
+  // graph and the camera by the same amount leaves the view untouched, so this
+  // is the same place in the shell as before — it simply now has the reader
+  // facing −z, like every other route.
+  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
+  const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
+    .sub(target)
+    .normalize();
+  const position = target
+    .clone()
+    .addScaledVector(outward, -INSIDE_DISTANCE)
+    .applyQuaternion(NEBULA_BASE_ROTATION);
   return {
     position,
-    target: position.clone().addScaledVector(heading, INSIDE_DISTANCE),
+    target: position.clone().addScaledVector(FORWARD, INSIDE_DISTANCE),
   };
 })();
 
@@ -422,7 +469,13 @@ function restingPoseFacing(nodeId: string | null): CameraPose {
   // this is it. Only the heading changes, which is the whole difference
   // between looking around a room and being carried around it.
   const position = INSIDE_POSE.position.clone();
-  const direction = new THREE.Vector3().fromArray(node.position).sub(position);
+  // Node positions are in the graph's own space, and the graph is turned by
+  // NEBULA_BASE_ROTATION once the reader is inside — so where a node actually
+  // is, is its local position carried through that turn.
+  const direction = new THREE.Vector3()
+    .fromArray(node.position)
+    .applyQuaternion(NEBULA_BASE_ROTATION)
+    .sub(position);
   if (direction.lengthSq() < 1e-6) return INSIDE_POSE;
   direction.normalize();
   return {
@@ -467,6 +520,12 @@ interface Flight {
    * FOCUS_FLIGHT_DURATION_MS.
    */
   duration: number;
+  /**
+   * The curve, when the standard one is not right. The journey between the
+   * landing page and the graph uses `approachEase`; everything else is a UI
+   * transition and keeps `flightEase`.
+   */
+  ease?: (t: number) => number;
   /**
    * How long the camera holds still before it starts, in ms.
    *
@@ -1054,7 +1113,7 @@ function CameraRig({
       // from reading the same route as a change and flying to where it is.
       const coldFocus = wasNebula === undefined ? routeFocusId : null;
       if (coldFocus) {
-        const pose = focusPose(coldFocus);
+        const pose = focusPose(coldFocus, NEBULA_BASE_ROTATION);
         if (pose) {
           lastFocus.current = coldFocus;
           // 05-phase-2.md: a cold entry lands "shell expanded, panel open,
@@ -1080,6 +1139,7 @@ function CameraRig({
         placementTo: 1,
         path: "orbit",
         duration: FLIGHT_DURATION_MS,
+        ease: approachEase,
         delay: 0,
       });
       return;
@@ -1113,6 +1173,7 @@ function CameraRig({
       placementFrom: 1,
       placementTo: 0,
       duration: FLIGHT_DURATION_MS,
+      ease: approachEase,
       // Only when there is a shell to close. Leaving the graph itself has no
       // second beat to wait for.
       delay: leavingNode ? SHELL_CLOSE_MS : 0,
@@ -1155,7 +1216,7 @@ function CameraRig({
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
     const to = routeFocusId
-      ? focusPose(routeFocusId)
+      ? focusPose(routeFocusId, NEBULA_BASE_ROTATION)
       : restingPoseFacing(previousFocus);
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
@@ -1219,7 +1280,7 @@ function CameraRig({
     }
 
     const t = flightProgress(active);
-    const eased = flightEase(t);
+    const eased = (active.ease ?? flightEase)(t);
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );

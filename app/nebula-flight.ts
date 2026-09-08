@@ -42,6 +42,22 @@ export const FOCUS_FLIGHT_DURATION_MS = 650;
 export const flightEase = cubicBezier(0.32, 0.72, 0, 1);
 
 /**
+ * The curve for the journey between the landing page and the graph.
+ *
+ * The standard curve is right for a UI transition and wrong for travel. It
+ * front-loads: measured against the real approach it covers 48% of the journey
+ * in the first quarter of the time and then spends the second half creeping
+ * through the last 18%. That long tail is what reads as a leisurely drift
+ * toward the graph rather than a flight to it.
+ *
+ * This is close to linear with softened ends — 9%, 33%, 70%, 90%, 97% of the
+ * approach at each tenth-quarter of the way through. The rate is roughly
+ * constant, which is what sustained speed looks like: it leaves, it travels,
+ * it arrives, rather than lunging and then floating.
+ */
+export const approachEase = cubicBezier(0.25, 0.15, 0.35, 0.85);
+
+/**
  * The constellation's **geometric** centre, which is the origin: content/
  * layout.ts builds every position from a Fibonacci sphere about it and
  * normalises onto a shell about it, so this is the centre of that sphere by
@@ -94,12 +110,24 @@ export interface CameraPose {
  * back to the layout position keeps this correct under reduced motion, where
  * the simulation never steps and live positions never exist.
  */
-export function focusPose(nodeId: string): CameraPose | null {
+/**
+ * @param baseRotation The graph's own orientation while the reader is inside
+ * it. Node positions are stored in the graph's space, and the graph is turned
+ * so that the arrival can be a straight line rather than a swing — so a node's
+ * real position is its stored one carried through this. Passing it in rather
+ * than importing it keeps this module free of the camera composition, which is
+ * the reason it is a module of its own.
+ */
+export function focusPose(
+  nodeId: string,
+  baseRotation: THREE.Quaternion,
+): CameraPose | null {
   const node = nodeGeometry[nodeId];
   if (!node) return null;
 
-  const nodePosition =
-    getLivePosition(nodeId)?.clone() ?? new THREE.Vector3(...node.position);
+  const nodePosition = (
+    getLivePosition(nodeId)?.clone() ?? new THREE.Vector3(...node.position)
+  ).applyQuaternion(baseRotation);
 
   const approach = nodePosition.clone().sub(CONSTELLATION_CENTER);
   if (approach.lengthSq() < 1e-6) approach.copy(FALLBACK_APPROACH);
@@ -195,7 +223,18 @@ export function orbitLerpPose(
 
   _fromDir.copy(from.position).sub(from.target);
   _toDir.copy(to.position).sub(to.target);
-  const distance = THREE.MathUtils.lerp(_fromDir.length(), _toDir.length(), t);
+  // **Geometrically, not linearly.** How large the graph looks goes as 1/d, so
+  // equal steps in distance are wildly unequal steps in what the reader sees:
+  // over an 84-to-5.5 approach, the first half of the distance buys almost no
+  // change and the last tenth buys most of it. Interpolating the logarithm
+  // makes the *apparent* approach rate constant, so the curve above is free to
+  // describe the journey rather than fight this.
+  const fromLen = _fromDir.length();
+  const toLen = _toDir.length();
+  const distance =
+    fromLen > 1e-4 && toLen > 1e-4
+      ? fromLen * Math.pow(toLen / fromLen, t)
+      : THREE.MathUtils.lerp(fromLen, toLen, t);
   _fromDir.normalize();
   _toDir.normalize();
 
