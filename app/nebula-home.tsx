@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import { heroMetrics, site } from "@/content";
+import { useDeviceTier } from "@/lib/device-tier";
 import { palette } from "@/lib/palette";
 
 /**
@@ -57,6 +58,13 @@ const PLANE_HEIGHT = 32;
  */
 const TEXTURE_WIDTH = 1024;
 const TEXTURE_HEIGHT = 720;
+/**
+ * Halved below desktop. The plane is a third of the frame at most and a
+ * quarter faded, so the resolution buys nothing there, while a full-size
+ * texture is around 2.8MB of GPU memory on the tier with the least of it —
+ * and 2.8's budget is 30fps on a mid-range phone.
+ */
+const COMPACT_TEXTURE_SCALE = 0.5;
 
 /** Matches the hero's own left gutter as a fraction of the column. */
 const PADDING = 0.06;
@@ -79,21 +87,26 @@ function familyFor(token: string, fallback: string) {
  * reads the same strings from `content/` that the hero does, so the two cannot
  * describe different people.
  */
-function paintHero(canvas: HTMLCanvasElement) {
+function paintHero(canvas: HTMLCanvasElement, scale: number) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const W = (canvas.width = TEXTURE_WIDTH);
-  const H = (canvas.height = TEXTURE_HEIGHT);
+  const W = (canvas.width = Math.round(TEXTURE_WIDTH * scale));
+  const H = (canvas.height = Math.round(TEXTURE_HEIGHT * scale));
+  // Everything below is authored against the full-size canvas and scaled as a
+  // whole, so a smaller texture is the same picture rather than a different
+  // layout with the same words.
+  ctx.scale(scale, scale);
   const display = familyFor("--font-display", "ui-monospace, monospace");
   const body = familyFor("--font-body", "ui-sans-serif, sans-serif");
 
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = palette.paper;
-  ctx.fillRect(0, 0, W, H);
+  ctx.fillRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
 
-  const x = W * PADDING;
-  const maxWidth = W * (1 - PADDING * 2);
-  let y = H * 0.14;
+  const authoredW = TEXTURE_WIDTH;
+  const x = authoredW * PADDING;
+  const maxWidth = authoredW * (1 - PADDING * 2);
+  let y = TEXTURE_HEIGHT * 0.14;
 
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = palette.ink;
@@ -140,11 +153,12 @@ function paintHero(canvas: HTMLCanvasElement) {
 
 export function NebulaHome({ visible }: { visible: boolean }) {
   const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const tier = useDeviceTier();
+
+  const scale = tier === "desktop" ? 1 : COMPACT_TEXTURE_SCALE;
 
   useEffect(() => {
     const canvas = document.createElement("canvas");
-    canvasRef.current = canvas;
     const map = new THREE.CanvasTexture(canvas);
     map.colorSpace = THREE.SRGBColorSpace;
     // Anisotropy is the difference between a page seen at a glancing angle and
@@ -154,7 +168,7 @@ export function NebulaHome({ visible }: { visible: boolean }) {
     let live = true;
     const draw = () => {
       if (!live) return;
-      paintHero(canvas);
+      paintHero(canvas, scale);
       map.needsUpdate = true;
       setTexture(map);
     };
@@ -168,7 +182,7 @@ export function NebulaHome({ visible }: { visible: boolean }) {
       live = false;
       map.dispose();
     };
-  }, []);
+  }, [scale]);
 
   const aspect = TEXTURE_WIDTH / TEXTURE_HEIGHT;
   const geometry = useMemo(

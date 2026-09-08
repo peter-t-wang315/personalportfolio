@@ -87,7 +87,7 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
 | `/work/[slug]` | Full project page | Outside the globe, turned so the project's cluster faces the reader. Full scale and lifted opacity, its connected subgraph lit and the rest receded, simulation stopped. See `05-phase-2.md`'s Work-page rotate-to-top |
-| `/nebula` | The graph | At the constellation's framing pose — outside it, whole composition in view. `05a-phase-2-sequence.md`'s 2.1 is the authority: "frames the whole constellation at roughly 70% of viewport height" (measured, 65%). Not *inside* it; that is where the node fly-in and hand-dollying go, below. |
+| `/nebula` | The graph | **Inside the shell**, at half its radius, on the far side of the middle looking back across it. The reader stands still there and drags to look around; the wheel does nothing. This row said "outside it, whole composition in view" long after that stopped being true — see the note under Going inside. |
 | `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
 | `/nebula/tech/[id]` | Graph with a technology node open: its blurb and every project that uses it, each linked onward | As `/nebula/[slug]`. Tech nodes have no `/work` page, so no canonical tag; without WebGL it falls back to `/work` |
 
@@ -100,6 +100,16 @@ specify a camera distance. Read literally it contradicts 2.1, which is the line
 carrying an actual number, and which the build has always followed — the camera
 rests 41.2 units from its target against a constellation bounding radius of
 17.6, so it sits ~23.6 units clear of the outermost node.
+
+> **This section describes the constellation as a filled ball framed from
+> outside, and it has not been that since the layout became a hollow shell and
+> `/nebula` moved inside it.** The arrival lands the camera *within* the shell;
+> there is no hand-dolly any more, on any route; `DOLLY_MIN_DISTANCE` and the
+> 14-unit cluster-centroid radius belong to a layout that was replaced. The
+> same rot left the scene fog inert for as long — see Scene fog. Kept here
+> because the reasoning about what going inside is *for* still holds, and
+> because a doc that quietly describes a dead composition is worse than one
+> that says so.
 
 Going **inside** the constellation is a thing the visitor does, not a thing the
 arrival does. Three routes in: the node fly-in stops ~1.9 units off a node's
@@ -298,7 +308,7 @@ Fog matched to `--paper` is the primary depth cue in the constellation — it's 
 | Tech nodes | Always visible | Visible, reduced opacity, toggleable | Hidden by default, toggleable |
 | Transmission | **None, on any tier — see below.** The focused node's shell is a `--mask` `MeshPhysicalMaterial` with transmission off | None | None |
 | Particle count | ~600 | 350 | 200 |
-| Interaction | `CameraControls`: drag to rotate, scroll to dolly. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | Persistent bottom sheet is the primary navigation; the 3D is ambient. Tap to select, tap again to open. |
+| Interaction | `CameraControls`: drag to look around from a fixed standing point; the wheel does nothing. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | Persistent bottom sheet is the primary navigation; the 3D is ambient. Tap to select, tap again to open. |
 | Interior panel size | 70% of viewport | 85% of viewport | 85% of viewport — no separate mobile value has been specified; inherits the tablet override |
 
 **Real transmission was removed from every tier**, having been desktop-only before. It cannot work in this scene: the canvas is `alpha: true` over the page's `--paper` background, so the paper is CSS *behind* a transparent canvas and is not in the WebGL scene — transmission had nothing to transmit. It looked correct on the focused sphere only because a thick, short attenuation distance tinted the result `--mask` whatever lay behind it. The moment the shell flattened into a panel and cleared for legibility that tint went, the empty backdrop came through, and the opened node rendered as a bright white plate over the paper — the one colour not in the palette. Moving the camera inside the shell made it worse, since a focused node's backdrop is now mostly nothing.

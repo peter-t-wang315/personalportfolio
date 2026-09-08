@@ -48,9 +48,9 @@ Faint Geist Sans labels at each cluster centroid, `--ink-faint`, opacity scaling
 
 ## Camera and focus
 
-`CameraControls` from drei. Drag to rotate, scroll to dolly within a clamped range.
+`CameraControls` from drei. Drag to look around; the wheel does nothing. The reader stands at one point inside the shell and turns — the pivot sits a tenth of a unit ahead of the camera rather than at the graph's centre, which is what makes it looking around rather than being carried around. See `07-continuous-space.md`.
 
-**`/nebula` is inside the globe.** The camera rests at half the shell radius, on the opposite side of the middle from the front hemisphere, looking back across it — so the SEL clusters are what you face on arrival and dragging sweeps the far surface past you while the near shell swings in behind. Both dolly clamps keep the camera within the shell; leaving it is not something hand-dollying may do on this route.
+**`/nebula` is inside the globe.** The camera rests at half the shell radius, on the opposite side of the middle from the front hemisphere, looking back across it — so the SEL clusters are what you face on arrival and dragging sweeps the far surface past you while the near shell swings in behind. There is no hand-dolly on this route: a wheel that pushed the reader through the shell or shrank the room is not something the space offers, so the clamps pin the look-around pivot instead of bounding a distance.
 
 Three numbers, each measured against the real layout rather than chosen:
 

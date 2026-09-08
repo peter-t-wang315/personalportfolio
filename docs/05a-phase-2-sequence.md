@@ -247,7 +247,9 @@ Full behavioural spec is in `05-phase-2.md`. Device tier rules are in `02-archit
 
 Build `layout.ts` into the scene. The shared fresnel node material and `--paper`-matched scene fog for depth (both pulled forward from 2.2 by revision), correct radius per type. Project nodes at `major` 0.85 and `standard` 0.6, tech nodes at 0.34. Camera parked at a fixed position that frames the whole constellation at roughly 70% of viewport height.
 
-**This sentence is the authority on the `/nebula` resting camera**, and it means what it says: the camera is *outside* the graph with the whole composition in view. 02-architecture.md's routes table used to say "Inside the constellation", which contradicted it; that was a wording error and has been corrected to point here. Going inside is something the visitor does — the 2.5 node fly-in, hand-dollying to `DOLLY_MIN_DISTANCE`, 2.6's node interior — not something the arrival does. Measured on the built scene: 65% of viewport height, camera 41.2 units from its target against a bounding radius of 17.6.
+~~**This sentence is the authority on the `/nebula` resting camera**~~ — **it is not, any more.** It was written for 2.1, when the constellation was a filled ball framed from outside at 65% of viewport height, camera 41.2 units out against a bounding radius of 17.6. The layout is now a hollow shell of radius 11 and `/nebula` rests *inside* it, at half that radius. Every number in the struck sentence describes a composition that was replaced, including the `DOLLY_MIN_DISTANCE` it cites, which no longer exists on any route.
+
+Left in place rather than rewritten, because 2.1 is a record of what was built at 2.1 and the correction is the interesting part. `05-phase-2.md`'s Camera section is the authority now.
 
 Verify the seeded generator produces identical positions across reloads — reload ten times and confirm nothing moves.
 

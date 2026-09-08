@@ -265,7 +265,18 @@ Notes from building it, for whoever does the rest:
 - `p` was not picked, because `p` is the hero's offset ahead of the *standing
   point* and there is no standing point until Part 3. The plane sits at the
   home location itself. `HOME_DISTANCE` and `PLANE_HEIGHT` are the two dials
-  that exist today.
+  that exist today, and both were set from arithmetic rather than by looking.
+- The texture halves below the desktop tier. At a third of the frame and a
+  quarter faded it buys nothing there, and full size is ~2.8MB of GPU memory on
+  the tier with the least of it.
+
+Checked afterwards, since neither was in the plan: home reads the same under
+`prefers-reduced-motion` (there is no motion in it), it stays out of frame
+while a node is open rather than intruding behind the panel, and touch can
+turn to it — a phone reaches NDC 1.3 on one drag, just past the frame edge, so
+it is a shorter drag away rather than unreachable. Its fog was measured rather
+than assumed: 25% at rest inside the graph, which is the quarter the Part 1
+band was chosen for.
 
 ### Part 3 — One fixed world
 
