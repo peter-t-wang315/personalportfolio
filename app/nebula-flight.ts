@@ -10,8 +10,21 @@ import { getLivePosition } from "./nebula-simulation";
  * frame loop. See docs/05a-phase-2-sequence.md.
  */
 
-/** 01-design-system.md's camera-flight duration and standard easing. */
-export const FLIGHT_DURATION_MS = 1400;
+/**
+ * The journey between the landing page and the graph, in ms.
+ *
+ * 01-design-system.md specified 1400. Longer now because this flight is the
+ * one piece of motion on the site that is supposed to read as *travel* rather
+ * than as a transition, and it was over before it registered as either.
+ *
+ * Worth knowing what actually moves during it: the camera covers very little
+ * ground, and almost all of the apparent motion is the constellation growing
+ * from its landing footprint to life-size around the viewer. Time makes that
+ * growth more legible; it does not make it more like flying. See
+ * docs/05-phase-2.md on why a real approach would have to change the path
+ * rather than the clock.
+ */
+export const FLIGHT_DURATION_MS = 2000;
 
 /**
  * How long a move *within* the graph takes: opening a node, closing one, or
