@@ -195,6 +195,7 @@ const _turnRel = new THREE.Vector3();
 const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
 const _solvedTarget = new THREE.Vector3();
+const _parkForward = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
@@ -277,6 +278,24 @@ const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
 const INSIDE_DISTANCE = 5.5;
 const INSIDE_CAMERA_FOV = 72;
 
+/**
+ * How far in front of the camera its pivot sits while parked inside the graph,
+ * in world units.
+ *
+ * camera-controls has no first-person mode: it orbits the camera around a
+ * target, so the view always points at that target. With the target at the
+ * graph's centre the reader could circle the graph and never turn their back
+ * on it — measured, the angle to anything outside the shell never fell below
+ * 83.8 degrees against a 36-degree half-field. Putting the pivot a hand's
+ * breadth ahead of the camera instead turns the same drag into looking around:
+ * the camera sweeps a sphere this small, which is standing still, and the view
+ * goes wherever it is pointed.
+ *
+ * Not zero, because a zero-length offset has no direction to rotate and the
+ * controls lose the heading entirely.
+ */
+const LOOK_DISTANCE = 0.1;
+
 const INSIDE_POSE: CameraPose = (() => {
   const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
   const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
@@ -307,13 +326,16 @@ const INSIDE_POSE: CameraPose = (() => {
 function restingPoseFacing(nodeId: string | null): CameraPose {
   const node = nodeId ? nodeGeometry[nodeId] : null;
   if (!node) return INSIDE_POSE;
-  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
-  const direction = new THREE.Vector3().fromArray(node.position).sub(target);
+  // The camera does not move: there is one place to stand inside the graph and
+  // this is it. Only the heading changes, which is the whole difference
+  // between looking around a room and being carried around it.
+  const position = INSIDE_POSE.position.clone();
+  const direction = new THREE.Vector3().fromArray(node.position).sub(position);
   if (direction.lengthSq() < 1e-6) return INSIDE_POSE;
   direction.normalize();
   return {
-    position: target.clone().addScaledVector(direction, -INSIDE_DISTANCE),
-    target,
+    position,
+    target: position.clone().addScaledVector(direction, INSIDE_DISTANCE),
   };
 }
 
@@ -329,14 +351,6 @@ const HOME_POSE: CameraPose = {
   position: new THREE.Vector3(...HOME_CAMERA_POSITION),
   target: new THREE.Vector3(0, 0, 0),
 };
-
-// Distance-from-target clamp for the nebula dolly. Both ends now keep the
-// camera *inside* the shell, whose nearest node sits at 10.08
-// (content/layout.ts): pulling back past it would leave the globe, which on
-// this route is the one thing hand-dollying may not do. Min stops short of the
-// exact centre, where the view flattens to nothing.
-const DOLLY_MIN_DISTANCE = 1.5;
-const DOLLY_MAX_DISTANCE = 9.5;
 
 /**
  * The one flight in progress, if any — **module scope on purpose**.
@@ -416,19 +430,62 @@ function applyPose(controls: CameraControlsImpl, pose: CameraPose) {
 }
 
 /**
- * Hand-dolly clamps, applied whenever the camera settles.
+ * Pivot clamps, applied whenever the camera settles.
  *
- * They have to be lifted for every flight and while focused, and they have to
- * be *off* on the landing page too: the home pose sits 9 units from its target,
- * inside DOLLY_MIN_DISTANCE, so a live clamp would quietly drag the camera
- * back out of the framing the whole landing page is composed against.
+ * They pin the orbit radius rather than bounding it. Inside the graph the
+ * reader stands still and looks around, so the only distance the controls may
+ * hold is the small one that makes rotation happen in place; there is no
+ * hand-dolly left to bound. Everywhere else they come off entirely — the
+ * landing pose sits 9 units from its target and a live clamp would quietly
+ * drag the camera out of the framing the landing page is composed against.
  */
 function applyDollyClamps(
   controls: CameraControlsImpl,
   { free }: { free: boolean },
 ) {
-  controls.minDistance = free ? 0 : DOLLY_MIN_DISTANCE;
-  controls.maxDistance = free ? Infinity : DOLLY_MAX_DISTANCE;
+  controls.minDistance = free ? 0 : LOOK_DISTANCE;
+  controls.maxDistance = free ? Infinity : LOOK_DISTANCE;
+}
+
+/**
+ * Park the camera for looking around: same position, same heading, pivot moved
+ * to `LOOK_DISTANCE` ahead of it.
+ *
+ * Called on landing rather than baked into `INSIDE_POSE`, so the flights keep
+ * interpolating between poses a comfortable distance from their targets. A
+ * pose whose target sits 0.1 units from its own camera would drag the orbit
+ * path's interpolated radius down to nothing on the way in.
+ *
+ * Position and direction are read off the camera and written straight back, so
+ * this cannot move the picture — it only changes what a subsequent drag
+ * rotates about.
+ */
+function parkForLookingAround(
+  controls: CameraControlsImpl,
+  pose: CameraPose,
+) {
+  // Derived from the pose just applied, **not** read back off the camera.
+  // camera-controls writes `camera.position` during its own update, so
+  // immediately after a `setLookAt` the camera object still holds wherever it
+  // was before — and aiming the pivot from there put the reader at the centre
+  // of the graph instead of at the standing point. Measured, that changed
+  // 99.7% of the interior's pixels.
+  _parkForward.copy(pose.target).sub(pose.position);
+  if (_parkForward.lengthSq() < 1e-9) return;
+  _parkForward.normalize();
+  // Clamps first: `setLookAt` would otherwise be pulled back to the old
+  // minimum distance the moment it is applied.
+  controls.minDistance = LOOK_DISTANCE;
+  controls.maxDistance = LOOK_DISTANCE;
+  controls.setLookAt(
+    pose.position.x,
+    pose.position.y,
+    pose.position.z,
+    pose.position.x + _parkForward.x * LOOK_DISTANCE,
+    pose.position.y + _parkForward.y * LOOK_DISTANCE,
+    pose.position.z + _parkForward.z * LOOK_DISTANCE,
+    false,
+  );
 }
 
 function currentPose(controls: CameraControlsImpl): CameraPose {
@@ -967,6 +1024,7 @@ function CameraRig({
     applyPose(controls, pose);
     applyFov(controls, fov);
     applyDollyClamps(controls, { free });
+    if (!free) parkForLookingAround(controls, pose);
     useSceneStore.getState().setFlying(false);
     useSceneStore.getState().setFocusSettled(true);
   }
@@ -1181,11 +1239,12 @@ function CameraRig({
       // Hand-dollying is only arbitrated inside the constellation, and only
       // when the camera is parked at the framing distance — not on the landing
       // page, and not while focused, where it is legitimately much closer in.
-      applyDollyClamps(controls, {
-        free:
-          active.placementTo < 1 ||
-          useSceneStore.getState().focusedNodeId !== null,
-      });
+      const free =
+        active.placementTo < 1 ||
+        useSceneStore.getState().focusedNodeId !== null;
+      applyDollyClamps(controls, { free });
+      // Landed inside with nothing open: hand the drag over to looking around.
+      if (!free) parkForLookingAround(controls, active.to);
     }
   }, -2);
 
@@ -1199,7 +1258,12 @@ function CameraRig({
       mouseButtons-left={CameraControlsImpl.ACTION.ROTATE}
       mouseButtons-right={CameraControlsImpl.ACTION.NONE}
       mouseButtons-middle={CameraControlsImpl.ACTION.NONE}
-      mouseButtons-wheel={CameraControlsImpl.ACTION.DOLLY}
+      // Nothing. Inside the graph there is one place to stand, and the reader
+      // looks around from it — a dolly would either push them through the
+      // shell or shrink the room, and neither is a thing the space offers.
+      mouseButtons-wheel={CameraControlsImpl.ACTION.NONE}
+      touches-two={CameraControlsImpl.ACTION.NONE}
+      touches-three={CameraControlsImpl.ACTION.NONE}
     />
   );
 }

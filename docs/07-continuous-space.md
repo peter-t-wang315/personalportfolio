@@ -205,8 +205,13 @@ so nodes occlude it. Camera untouched; visible from inside `/nebula` only.
 through the nodes, and it reads as *the home page* rather than as a stray
 object.
 
-**The object is built and correct. The second half of that sentence cannot be
-tested yet, because the camera cannot turn around.**
+**Done.** The object is built, and the camera can now turn to face it: two
+drags brings home from 92° off-axis to 17°, on screen at NDC (0.21, 0.26),
+while the camera moves 0.156 world units in total. You stand inside the graph
+and look around it.
+
+Getting there needed the control model to change, which the plan had folded
+into Part 4. What was wrong:
 
 `CameraControls` always looks *at* its target. Orbiting moves the camera around
 the graph's centre, but the view direction points inward from wherever it ends
@@ -222,14 +227,27 @@ So the texture, the fog band from Part 1, the depth ordering and the
 orientation are all right, and what remains is a control-model question rather
 than a rendering one.
 
-**This moves a decision forward that the plan had folded into Part 4.** Looking
-around from inside the graph means rotating the camera *in place* rather than
-orbiting a point, which is a different control model, not a tuning of this one.
-Options, roughly in order of how much they disturb: let the target move with
-the camera so the graph's centre stops being the pivot; keep orbit for the
-graph and add a separate look-around mode once you are inside; or leave the
-turn to Part 4 and let home come into view only during the fly-out, which
-satisfies the plan's spatial continuity but not the sentence above.
+**The fix: the pivot moves to a hand's breadth in front of the camera.**
+camera-controls has no first-person mode — it orbits a target, so the view
+always points at that target. With the pivot at `LOOK_DISTANCE` ahead instead,
+the same drag sweeps the camera around a sphere 0.1 units across, which is
+standing still, and the heading goes wherever it is pointed. There is one place
+to stand inside the graph and the reader never leaves it: closing a node
+returns to that same point and turns to face what was left, rather than moving
+the camera to the far side of the graph to look back through the middle.
+
+The wheel does nothing inside the graph, by decision. A dolly would either push
+the reader through the shell or shrink the room, and neither is something the
+space offers; `DOLLY_MIN_DISTANCE` and `DOLLY_MAX_DISTANCE` are gone with it,
+and the clamps now pin the pivot rather than bounding a distance.
+
+**One trap, and it cost a full verification round.** Parking the pivot by
+reading `camera.position` back off the camera does not work: camera-controls
+writes that during its own update, so immediately after a `setLookAt` the
+camera object still holds wherever it was before. Aiming the pivot from there
+put the reader at the centre of the graph instead of at the standing point —
+99.7% of the interior's pixels changed, which the composition diff caught and
+nothing else would have. The pivot is derived from the pose just applied.
 
 Notes from building it, for whoever does the rest:
 

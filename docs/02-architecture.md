@@ -114,6 +114,17 @@ The static `tech` segment wins over the dynamic `[slug]` beside it, so `/nebula/
 move inside the graph, against 2000ms for the journey between the landing page
 and it (`app/nebula-flight.ts`). If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
+**Inside the graph the reader stands still and looks around.** `CameraControls`
+orbits a target, so with the target at the graph's centre the camera could
+circle the graph and never turn its back on it — measured, the angle to
+anything outside the shell never fell below 83.8° against a 36° half-field. The
+pivot now sits a tenth of a unit in front of the camera instead, which turns
+the same drag into looking around: the camera sweeps a sphere too small to
+notice and the heading goes wherever it is pointed. There is one place to stand
+and it is not left; closing a node returns to it and turns to face what was
+left. The wheel does nothing there — a dolly would push the reader through the
+shell or shrink the room. See `07-continuous-space.md`.
+
 Graph state resets on each visit. No persistence.
 
 ### Landing cluster placement
