@@ -252,9 +252,21 @@ Never use `Math.random()` in layout. Use a seeded PRNG.
 
 ## Scene fog
 
+> **Fog is currently inert, and has been since the camera moved inside the
+> shell.** Every node on every route now sits within 28 units, and the band
+> starts at 55. This section describes what fog is *for*, which is still true
+> and is why `07-continuous-space.md` needs it; it does not describe anything
+> visible today. Measured, with motion frozen so only the fog differs: moving
+> the band from 27–48 to 55–130 changes 0 pixels of 67,102 with ink on a work
+> page, 0 of 42,576 on the landing page, 0 of 66,315 inside the graph. Bringing
+> it in to 5–30 changes 13.8%, 17.0% and 71.4% of those — so the wiring works,
+> it simply has nothing in range.
+
 Fog matched to `--paper` is the primary depth cue in the constellation — it's what makes distant clusters recede instead of just getting smaller. `<fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />`, wired into the fresnel shader by hand (`ShaderMaterial` doesn't pick up scene fog automatically — the fog chunks and uniforms have to be included explicitly).
 
 **`FOG_FAR` must track real measured scene depth, not an estimate.** Depth varies with the camera heading and the actual computed layout, not some assumed constellation radius — measure per-node camera-space depth from the real camera position against the real `layout.ts` output, then set `FOG_FAR` just past the true max. Guessing too far means the falloff curve never gets close to completing and the farthest cluster barely fades; guessing too near erases nodes that should still read. `FOG_NEAR` can stay conservative — it only has to sit in front of the nearest node.
+
+**And it must track the framing that actually ships.** The band this replaced was measured correctly against an *outside* view of the constellation, nodes spanning depth 20.1 to 42.5 — and then `/nebula` moved inside the shell and nobody re-measured. Inert fog and absent fog look identical, so it went unnoticed until the distances were recomputed for `07-continuous-space.md`. A depth cue tuned against a composition that has been replaced is not a depth cue.
 
 ## Performance budget
 

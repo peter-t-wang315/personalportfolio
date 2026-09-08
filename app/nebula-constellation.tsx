@@ -139,23 +139,44 @@ const HOVER_OPACITY = 1;
 const HOVER_EASE = 0.2;
 
 /**
- * Fog band, re-measured against actual per-node camera-space depth (not
- * guessed) after the shell shrank to 11: from the outside framing the nodes
- * span depth 20.1–42.5, so far sits just past the true maximum and the
- * farthest cluster reaches ~90% fade — visibly receded, not erased.
+ * Fog band, in world units.
  *
- * Near is set by the *landing page* rather than by that framing. The landing
- * cluster sits 19.6–26.4 from the home camera, and anything below 27 would
- * start fogging its far edge, which has never had fog and is composed without
- * it. So near clears that, and the outside framing gets its gradient over
- * 27–42.5 instead of the whole range.
+ * **These numbers are for a world that does not exist yet** — see
+ * `07-continuous-space.md`. Today they do nothing at all, and that is
+ * deliberate and proven rather than hoped: every node on every route currently
+ * sits nearer than 28 units, so a band starting at 55 never engages. Measured,
+ * moving it from 27–48 to here changes 0 pixels of 67,102 with ink on a work
+ * page, 0 of 42,576 on the landing page and 0 of 66,315 inside the graph, with
+ * motion frozen so only the fog differs.
  *
- * Inside the globe fog does nothing at all, and shouldn't: from the inside
- * pose every visible node lies between 13 and 17 units away — a depth ratio of
- * 1.26 — so there is no recession for it to describe.
+ * The band it replaces was not doing anything either, which took some finding.
+ * Its 27–48 was measured against an *outside* framing of the constellation —
+ * nodes spanning depth 20.1 to 42.5 — and that framing was abandoned when
+ * `/nebula` moved inside the shell. From the inside pose the whole graph sits
+ * between 7.8 and 14.2 units away, and the landing and work-page placements
+ * put it between 18.7 and 27.3. Nothing has reached the old near plane since.
+ * The fog has been inert for as long as the camera has been inside, and the
+ * docs describing it as grading the far cluster to 90% were describing a
+ * composition that no longer ships.
+ *
+ * That the plumbing works is worth stating too, since inert fog and absent fog
+ * look identical: bringing the band in to 5–30 changes 13.8% of the work
+ * page's ink, 17.0% of the landing page's and 71.4% of the graph's.
+ *
+ * What these are chosen for is the fixed world, where the graph is life-size at
+ * the origin and the landing viewpoint stands ~74 units away. Near clears the
+ * graph seen from inside (14.2 at most) by a wide margin, so fog goes on doing
+ * nothing there — from within a shell there is no recession for it to describe.
+ * Far is set so an object at 74 units reads about a quarter faded: present and
+ * hazed rather than erased, which is the whole reason this part exists. Seen
+ * from the landing standing point the graph will span 63–85 and grade from 11%
+ * to 40%, which is a first guess at a recession, not a considered one.
+ *
+ * **Both numbers are provisional and belong to Part 3**, when there is finally
+ * something at those distances to tune them against.
  */
-const FOG_NEAR = 27;
-const FOG_FAR = 48;
+const FOG_NEAR = 55;
+const FOG_FAR = 130;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };

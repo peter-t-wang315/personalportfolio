@@ -63,10 +63,20 @@ radius on the landing page and 212px on a work page. So:
 | `/` | **~74 units** |
 | `/work/[slug]` | **~56 units** |
 
-**Fog erases both.** `FOG_NEAR = 27`, `FOG_FAR = 48`, fogged to paper — the
-same colour as the background — so anything past 48 units is not dimmed, it is
-gone. The band has to be re-derived before any of this is visible at all. That
-is Part 1, and it blocks everything.
+**Fog erases both.** Fogged to paper — the same colour as the background — so
+anything past the far plane is not dimmed, it is gone. The band has to be
+re-derived before any of this is visible at all. That is Part 1, and it blocks
+everything.
+
+Part 1 turned up something that was not in the plan: **the old band was inert
+and had been for some time.** Its 27–48 was measured correctly against an
+outside view of the constellation, and then `/nebula` moved inside the shell
+and nothing re-measured. Every node on every route now sits within 28 units, so
+the fog has been describing a composition that no longer ships. Inert fog and
+absent fog look the same, which is why it survived. The upshot is that Part 1
+cost nothing to land — there was no working depth cue to preserve — and that
+the "fog grades the far cluster to 90%" line in the older docs was describing a
+framing that had already been replaced.
 
 **How large home looks from inside is a free parameter.** If the hero plane
 sits distance `p` in front of the standing point, it appears from the shell's
@@ -162,13 +172,29 @@ budget of 30fps on a mid-range phone should be unaffected.
 Each is independently verifiable. Each should land on its own commit with its
 measurements in the message, as the rest of this project has.
 
-### Part 1 — Fog for a deeper world
+### Part 1 — Fog for a deeper world — **done**
 
 Re-derive `FOG_NEAR` / `FOG_FAR` for a world where things sit 60–90 units out
 instead of 20–42. Nothing else changes.
 
 **Done when:** an object at 74 units is a faint presence rather than erased,
 and the landing and `/nebula` compositions are unchanged where they matter.
+
+**Landed at 55–130.** Near clears the graph seen from inside (14.2 units at the
+most) by a wide margin, so fog goes on doing nothing there, which is right —
+from within a shell there is no recession to describe. Far puts an object at 74
+units about a quarter faded: present and hazed rather than erased. Seen from
+the landing standing point the graph will span 63–85 and grade from 11% to 40%,
+which is a first guess at a recession rather than a considered one, and both
+numbers properly belong to Part 3 when there is finally something at those
+distances to tune them against.
+
+Unchanged where it matters, measured with motion frozen so only the fog
+differs: 0 pixels of 67,102 with ink on a work page, 0 of 42,576 on the landing
+page, 0 of 66,315 inside the graph. The wiring is live rather than missing —
+bringing the band in to 5–30 changes 13.8%, 17.0% and 71.4% of those. v26
+23/23, sweep 60/60, and `/nebula` reached through a turned work page is still 0
+differing pixels of 59,223.
 
 ### Part 2 — The hero as an object in the scene
 
