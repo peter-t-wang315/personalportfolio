@@ -60,7 +60,7 @@ Three numbers, each measured against the real layout rather than chosen:
 
 Focus narrows back to 50° — a node approached at 72 sits in too much periphery — so the widening and narrowing become part of entering and reading.
 
-**Fly-in.** Clicking a node interpolates the camera along the surface normal at that node — the vector from the constellation's geometric centre, the origin, through the node — stopping just short of the surface **on the inner side** and looking outward at it. Inner because `/nebula` is a place you are inside: stopping beyond the node would punch the camera out through the shell and leave it hanging outside the globe. It frames better too, since the backdrop is then open paper and the node's own neighbours rather than the entire rest of the constellation. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through the geometry.
+**Fly-in.** Clicking a node interpolates the camera along the surface normal at that node — the vector from the constellation's geometric centre, the origin, through the node — stopping just short of the surface **on the inner side** and looking outward at it. Inner because `/nebula` is a place you are inside: stopping beyond the node would punch the camera out through the shell and leave it hanging outside the globe. It frames better too, since the backdrop is then open paper and the node's own neighbours rather than the entire rest of the constellation. 650ms, `cubic-bezier(0.32, 0.72, 0, 1)` — see the two durations below. **Never fly to the node's exact position** — that clips through the geometry.
 
 Simultaneously: `router.push('/nebula/[slug]', { scroll: false })`, the float simulation freezes, unrelated nodes drop to 25% opacity. Whether the focused node's material switches to real transmission is tier-dependent — see `02-architecture.md`'s Responsive tiers table. Desktop only; tablet and mobile keep the fresnel shader throughout.
 
@@ -108,11 +108,11 @@ This section used to ask instead for connected nodes to remain visible past the 
 
 **Technology nodes open too**, at `/nebula/tech/[id]`: the blurb, and every project that uses the technology grouped by cluster, each linked to its own node. There is no `/work` counterpart, so it is the one place a technology is read — and it is the "follow C# out of a project and see everything else written in it" move that makes sideways navigation mean something. The project panel's technology line links into it.
 
-**A hop within the graph is not the same move as the journey into it.** Opening a node, closing one, and travelling sideways between two all used `01-design-system.md`'s 1400ms, which is specified for the approach between the landing page and the graph — a long arrival that is the site's signature moment and wants the time it takes. A focus hop crosses a few units and barely turns, and at 1400ms it read as sluggish rather than considered.
+**A hop within the graph is not the same move as the journey into it.** Opening a node, closing one, and travelling sideways between two all used `01-design-system.md`'s 1400ms, which is specified for the approach between the landing page and the graph — a long arrival that is the site's signature moment and wants the time it takes. A focus hop crosses a few units and barely turns, and at that duration it read as sluggish rather than considered.
 
 Worse, it compounded: the shell only begins opening once the flight has *landed* (`focusSettled`), so opening a node cost the full flight plus the 240ms opening, strictly in series. Measured click-to-readable, that was 1728ms. At 650ms for focus flights it is 978ms, and the two beats — arrive, then open — are preserved rather than overlapped, which is what keeps the opening legible as the node stretching rather than as a card appearing mid-flight.
 
-The duration is carried per flight rather than read from a constant, so the arrival and the departure keep their 1400ms while everything inside the graph moves at its own pace.
+The duration is carried per flight rather than read from a constant, so the arrival and the departure go at their own pace — 2000ms, lengthened again once the hop was separated out, because that journey is the one piece of motion here meant to read as travel and it was over before it registered as either.
 
 **The graph holds still while a node is open, and lets go when it closes.** Two faults, one cause: `freezeSimulation` freezes the wander *clock*, not the step, and the attraction springs integrate on the frame delta regardless — so nothing was holding the hover attraction back while a node was open.
 
@@ -130,7 +130,15 @@ The hold has to key off the rig's own record of where it last flew, not the stor
 
 **And a flight unwinds the reader's own spin instead of dropping it.** The placement branch that ties orientation to the flight read the *route's* target and ignored the drag, so entering the graph after turning the globe by hand discarded that turn on the first frame: measured, 104.07 degrees in a single frame at placement 0.05, then nothing for the rest of the flight. Reading the dragged orientation instead spreads the same rotation across the flight in proportion to placement, and it still lands exactly at the layout's own orientation — the arrival composition is unchanged, 0 differing pixels of 59,223.
 
-**Leaving a node is the arrival in reverse.** Clearing focus closes the shell, and a single departure flight carries the camera out to the landing pose while the constellation shrinks back to its landing footprint — the two halves of "camera pulls back, shell contracts" running together rather than in sequence, so the exit costs the same 1400ms as every other flight.
+> **The placement model behind several passages in this document is scheduled
+> for replacement** — see `07-continuous-space.md`. The graph currently grows
+> from a 29% landing transform to life size while the camera barely moves, and
+> the rotation unwind, the centring spring and the split between flight
+> durations all exist to cope with that. In a fixed world where only the camera
+> moves, none of them are needed. Everything written here is what ships today.
+
+**Leaving a node is the arrival in reverse.** Clearing focus closes the shell, and a single departure flight carries the camera out to the landing pose while the constellation shrinks back to its landing footprint — the two halves of "camera pulls back, shell contracts" running together rather than in sequence, so the exit costs the same as every other journey between the landing page and
+the graph.
 
 It used to be a cut, and the reason was one line: the departure assumed it was leaving from the graph's resting pose and set `fovFrom` to `INSIDE_CAMERA_FOV`. From inside a node the camera is at `FOCUS_CAMERA_FOV`, so the flight opened by snapping 22 degrees wider — which looked worse than not flying at all. Reading the FOV off the camera fixes it. The path stays an orbit rather than a straight line, which matters more from a focused node than from the resting pose: the camera is parked against the inside of the shell there, and a straight line to the landing pose would leave through the wall.
 
@@ -221,7 +229,7 @@ It works despite the freeze, and not by accident of ordering: freezing holds the
 `/nebula/[slug]` behaves differently depending on how it's reached:
 
 - **Cold entry** (a direct link or a reload): no approach flight. The page lands already inside the node — shell expanded, panel open, content visible at first paint, constellation visible around it. On exit, the camera pulls back and the shell contracts, revealing the constellation — the arrival experience, played in reverse.
-- **Reached by navigating within the graph** (clicking a node from `/nebula` or sideways from another open node): the full 1400ms approach flight, as specified above.
+- **Reached by navigating within the graph** (clicking a node from `/nebula` or sideways from another open node): the full 650ms approach flight, as specified above.
 
 `/nebula/[slug]` sets a canonical link tag pointing to `/work/[slug]` — the same prose exists at both URLs, and this is what prevents the duplication from being a duplicate-content SEO problem. There is no visitor-facing redirect between them under normal conditions.
 

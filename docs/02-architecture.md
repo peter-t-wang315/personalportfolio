@@ -51,7 +51,7 @@ changed.
 
 **The arrival flight is what that decision buys.** It starts at the landing
 page's own camera pose, looking at the same cluster the visitor just clicked,
-and closes to the framing pose over the standard 1400ms while the placement
+and closes to the framing pose over 2000ms while the placement
 grows to life-size around it, widening the FOV from 45 to 50 so the two
 framings meet rather than snap. Leaving plays the same flight in reverse.
 
@@ -110,11 +110,21 @@ inside would spend the overview before there was any reason to explore.
 
 The static `tech` segment wins over the dynamic `[slug]` beside it, so `/nebula/tech/csharp` can never be read as a project called "tech". Twelve of the twenty project ids differ from their slugs (`th-supervisor` is `/station-supervisor`); `lib/nebula-routes.ts` is the one mapping, both directions.
 
-**`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
+**`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full approach — 650ms for a
+move inside the graph, against 2000ms for the journey between the landing page
+and it (`app/nebula-flight.ts`). If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
 Graph state resets on each visit. No persistence.
 
 ### Landing cluster placement
+
+> **Scheduled for replacement.** `07-continuous-space.md` replaces this whole
+> model: the constellation stops scaling and stops moving, and the landing view
+> becomes a camera standing ~74 units away in a fixed world. The solve below
+> does not disappear — it is re-expressed as camera distance and lateral offset,
+> and every behaviour named here has to survive that. It is documented as it
+> stands because it is what ships today, and because Part 3 needs something to
+> be checked against.
 
 The cluster's on-screen size derives from viewport **height** (the camera's
 vertical FOV), while the hero's text column is a fixed ~764px wide. Those two

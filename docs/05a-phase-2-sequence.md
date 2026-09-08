@@ -50,11 +50,24 @@ opening a node from bare `/nebula` mounted the first panel the document had
 ever had, which read as cold. And a full-viewport sheet paints over corner
 chrome that is earlier in the DOM; the corners need their own stacking order.
 
+**A re-foundation is now planned, and it changes what 2.7 and 2.8 sit on.**
+`07-continuous-space.md` replaces the placement model this whole sequence is
+built over: the constellation stops scaling, the home page becomes an object in
+the world, and `/`, `/work/[slug]` and `/nebula` become three places to stand
+rather than three transforms of one object. It deletes several mechanisms this
+document describes as load-bearing — the rotation unwind, the centring spring,
+the split between flight durations — and it is where the remaining 2.6 gap
+belongs too: connected nodes are not reachable past the panel edges on every
+project (measured, 0 of 717 sampled points on two of them) because the focus
+pose frames a small cap of a shell, which is a composition question that the
+fixed world re-opens. Sequence it against 2.7 deliberately; building the
+information layer twice would be the avoidable mistake.
+
 **Both of this block's open items are now closed.** The `/work/[slug]`
 gathering is built — neighbours gather to a ring at `GATHER_RADIUS`, strangers
 inside it are pushed out to `CLEAR_RADIUS`. And leaving `/nebula/[slug]`
 straight to `/` is a flight rather than a cut: `clearFocus` closes the shell
-while a single 1400ms departure carries the camera out, starting from the
+while a single departure carries the camera out, starting from the
 camera's own FOV rather than the graph's, which is what made the exit worth
 cutting before — assuming `INSIDE_CAMERA_FOV` opened it by snapping 22 degrees
 wider.
@@ -107,7 +120,7 @@ still shrinking for a second after the flight lands. It isn't.
 Clicking a node flies the camera along the vector from the
 constellation's centre through that node, stopping outside its surface and
 looking back at it — never at the node's own position, which would put the
-camera inside the shell. 1400ms on 01-design-system.md's standard curve, driven
+camera inside the shell. 650ms on 01-design-system.md's standard curve, driven
 by hand rather than by camera-controls' `enableTransition`, because that
 smooths exponentially with no fixed duration and the spec asks for a specific
 curve over a specific time. The dolly clamp lifts for the flight; with it live,
@@ -302,7 +315,7 @@ This step needs edges (2.3) to exist first, since the springs attach to runtime-
 
 **Two flights, not one.** This step owes the node fly-in described below *and* the landing-page arrival that 02-architecture.md's persistent-canvas decision exists for — 2.1 explicitly deferred that one here. Building only the node half leaves the canvas living in the root layout for a transition that never happens.
 
-Camera interpolates to a position offset along the vector from constellation centre through the node, stopping just outside the surface and looking at it. 1400ms, `cubic-bezier(0.32, 0.72, 0, 1)`. **Never fly to the node's exact position** — that clips through geometry.
+Camera interpolates to a position offset along the vector from constellation centre through the node, stopping just outside the surface and looking at it. 650ms, `cubic-bezier(0.32, 0.72, 0, 1)` (1400ms as originally specified; split into two durations later — see 05-phase-2.md). **Never fly to the node's exact position** — that clips through geometry.
 
 On focus: the float simulation freezes (per the hook built in 2.3a), unrelated nodes drop to 25% opacity, and on desktop only the focused node's material switches to real transmission.
 
