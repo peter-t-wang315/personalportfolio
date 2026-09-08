@@ -380,10 +380,31 @@ and evenly spent: leaving the graph completes 44% / 70% / 91% of the way at a
 quarter, half and three-quarters through, leaving a node 34% / 70% / 90%, and
 arriving 24% / 67% / 90%.
 
-Remaining: the edge fade and the orientation unwind still read the progress
-value, which is fine and is what it now means; `use-cluster-screen` still
-re-derives the circle independently; the deletions; and the fog, parked above
-every standing distance while the geometry is proven and re-derived last. `/`, `/work/[slug]` and
+**Step 3 is done: one source of truth for where the graph is on screen.** The
+rig publishes the circle it solves; `lib/use-cluster-screen.ts` reads it rather
+than deriving it a second time from the parallax offset and the viewport size.
+That second derivation matched on the landing page and was wrong by two terms
+anywhere a project is spotlit — the zoom that enlarges the graph on a work page
+and the offset that centres its lit cluster beside the article. Measured, the
+idle pulse ring now sits within 12px of the graph's own ink centre at three
+desktop widths, with diameters matching to within 4%.
+
+The store's `clusterParallax` is gone with it, and the rig no longer imports
+`pxPerWorldUnitFor`: it has no pixels to convert, because the camera's distance
+*is* the conversion.
+
+**Most of "What this deletes" above turned out to be wrong, and the reason is
+worth keeping.** The rotation unwind, the centring spring and the split between
+flight durations were all predicted to fall out with the scale trick. None of
+them did, because none of them were compensating for it. The unwind is now
+*more* load-bearing than before — it is what turns the graph to meet the reader
+so the arrival can be a straight line. The centring spring still centres a lit
+cluster. And a hop inside the graph is still a different kind of move from the
+journey to it. What actually went was the duplicated screen-space arithmetic:
+one derivation, one owner.
+
+Remaining: the fog, parked above every standing distance while the geometry was
+proven, and re-derived against the real distances as the last step. `/`, `/work/[slug]` and
 `/nebula` become camera positions. The landing composition solve is
 re-expressed as camera distance and lateral offset; `use-cluster-screen`, the
 affordance, the work-page centring and the label overhang are rewired to the

@@ -23,7 +23,6 @@ import {
   clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
-  pxPerWorldUnitFor,
 } from "@/lib/cluster-geometry";
 import {
   approachEase,
@@ -97,7 +96,8 @@ const PARALLAX_EASE = 0.09;
 // World units — far below anything visible (radiusPx conversion is roughly
 // 40-70px per world unit depending on viewport height), just enough to
 // collapse the tail of the lerp's asymptotic approach into a single write.
-const PARALLAX_WRITE_EPSILON = 0.0005;
+/** Half a pixel: below this the overlays would not move anyway. */
+const CIRCLE_WRITE_EPSILON_PX = 0.5;
 /** Route-change easing for the ambient scale, matching the opacity fade. */
 const AMBIENT_EASE = 0.06;
 
@@ -834,7 +834,32 @@ function CameraRig({
   const ambientSize = useRef(1);
   /** Pointer parallax in screen px, with world-like signs: +x right, +y up. */
   const parallaxPx = useRef(new THREE.Vector2());
-  const lastWrittenParallax = useRef({ x: 0, y: 0 });
+  const lastPublished = useRef({ ready: false, centerX: 0, centerY: 0, radiusPx: 0 });
+
+  /**
+   * Tell the DOM overlays where the graph is, when it has moved enough to
+   * matter. Guarded because the solve springs and a spring never exactly
+   * arrives: an unguarded per-frame write would re-render every subscriber at
+   * 60fps forever, even at rest.
+   */
+  function publishCircle(
+    ready: boolean,
+    centerX: number,
+    centerY: number,
+    radiusPx: number,
+  ) {
+    const last = lastPublished.current;
+    if (
+      last.ready === ready &&
+      Math.abs(last.centerX - centerX) < CIRCLE_WRITE_EPSILON_PX &&
+      Math.abs(last.centerY - centerY) < CIRCLE_WRITE_EPSILON_PX &&
+      Math.abs(last.radiusPx - radiusPx) < CIRCLE_WRITE_EPSILON_PX
+    ) {
+      return;
+    }
+    lastPublished.current = { ready, centerX, centerY, radiusPx };
+    useSceneStore.getState().setClusterScreen({ ready, centerX, centerY, radiusPx });
+  }
   /** Damped camera offset that centres the lit cluster rather than the globe. */
   const centreOffset = useRef(new THREE.Vector3());
   const centreVelocity = useRef(new THREE.Vector3());
@@ -888,21 +913,6 @@ function CameraRig({
           pointer.y * CLUSTER_PARALLAX_MAX_PX,
           PARALLAX_EASE,
         );
-      }
-      // Published for the DOM overlays in the world units they still convert
-      // from, and only when it has moved meaningfully: a lerp toward a fixed
-      // target never exactly arrives, and a per-frame write would re-render
-      // every subscriber at 60fps forever, even at rest.
-      const px = pxPerWorldUnitFor(H);
-      const wx = parallaxPx.current.x / px;
-      const wy = parallaxPx.current.y / px;
-      if (
-        Math.abs(wx - lastWrittenParallax.current.x) > PARALLAX_WRITE_EPSILON ||
-        Math.abs(wy - lastWrittenParallax.current.y) > PARALLAX_WRITE_EPSILON
-      ) {
-        lastWrittenParallax.current.x = wx;
-        lastWrittenParallax.current.y = wy;
-        useSceneStore.getState().setClusterParallax({ x: wx, y: wy });
       }
     }
 
@@ -1022,13 +1032,15 @@ function CameraRig({
     // Hand the pointer half the circle the globe actually occupies: the
     // origin projected through the standing camera, and the bounding radius
     // at its distance. Inside the graph there is no circle to speak of.
-    if (isNebula) setClusterCircle(0, 0, 0);
-    else {
-      setClusterCircle(
-        W / 2 - camX * k,
-        H / 2 + camY * k,
-        CONSTELLATION_BOUNDING_RADIUS * k,
-      );
+    if (isNebula) {
+      setClusterCircle(0, 0, 0);
+      publishCircle(false, 0, 0, 0);
+    } else {
+      const cx = W / 2 - camX * k;
+      const cy = H / 2 + camY * k;
+      const r = CONSTELLATION_BOUNDING_RADIUS * k;
+      setClusterCircle(cx, cy, r);
+      publishCircle(true, cx, cy, r);
     }
     },
     [isNebula, isHome, spotlightNodeId, spotlightGroup, size],

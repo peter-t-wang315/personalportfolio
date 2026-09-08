@@ -70,18 +70,30 @@ interface SceneState {
    */
   previewNodeId: string | null;
   /**
-   * The constellation's current parallax offset, in world
-   * units — written every frame from nebula-canvas.tsx's
-   * ConstellationPlacement (imperative `getState().setClusterParallax(...)`,
-   * not a subscription; that component doesn't need to re-render off its own
-   * write), and only while the constellation is in its landing placement.
-   * Exists so
-   * DOM overlays (nebula-affordance.tsx's hover region, hover label, and
-   * idle pulse ring) can track the cluster's real, currently-rendered
-   * on-screen position instead of assuming it always sits at viewport
-   * center — true only when the eased parallax offset happens to be zero.
+   * **Where the graph actually is on screen**, in viewport pixels: the circle
+   * its bounding radius occupies, as currently rendered.
+   *
+   * Written every frame by the camera rig (imperatively, not through a
+   * subscription — the rig does not need to re-render off its own write) and
+   * guarded by an epsilon, so a lerp that never exactly arrives cannot
+   * re-render every subscriber at 60fps forever.
+   *
+   * DOM overlays read this rather than re-deriving it. There used to be a
+   * second implementation in lib/use-cluster-screen.ts working from the
+   * parallax offset and the viewport size, which was correct on the landing
+   * page and wrong by both the spotlight zoom and the work-page centring
+   * anywhere a project is lit. One source of truth: the thing that draws it
+   * says where it is.
+   *
+   * `ready` is false until the scene has published once, which also means the
+   * overlays stand down when there is no canvas to overlay.
    */
-  clusterParallax: { x: number; y: number };
+  clusterScreen: {
+    ready: boolean;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+  };
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
   setHoveredNodeId: (id: string | null) => void;
@@ -91,7 +103,12 @@ interface SceneState {
   setFlying: (flying: boolean) => void;
   setTravellingBetween: (pair: { from: string; to: string } | null) => void;
   setPreviewNodeId: (id: string | null) => void;
-  setClusterParallax: (offset: { x: number; y: number }) => void;
+  setClusterScreen: (circle: {
+    ready: boolean;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+  }) => void;
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
@@ -103,7 +120,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   flying: false,
   travellingBetween: null,
   previewNodeId: null,
-  clusterParallax: { x: 0, y: 0 },
+  clusterScreen: { ready: false, centerX: 0, centerY: 0, radiusPx: 0 },
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
   setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
@@ -117,5 +134,5 @@ export const useSceneStore = create<SceneState>((set) => ({
   setFlying: (flying) => set({ flying }),
   setTravellingBetween: (travellingBetween) => set({ travellingBetween }),
   setPreviewNodeId: (previewNodeId) => set({ previewNodeId }),
-  setClusterParallax: (clusterParallax) => set({ clusterParallax }),
+  setClusterScreen: (clusterScreen) => set({ clusterScreen }),
 }));

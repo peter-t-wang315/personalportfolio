@@ -209,6 +209,11 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
   frame of a route snaps, since a cold load of `/work/[slug]` is already
   spotlit and easing in would animate a change the reader never made.
 
+> These rules are still the authority, and they are now read as a **camera
+> distance**: they produce a size on screen, and the camera stands the
+> reference distance divided by that size away. `07-continuous-space.md` has
+> the equivalence. Nothing below changes; only what consumes it.
+
 `lib/use-cluster-screen.ts` and `app/nebula-canvas.tsx` apply these from the
 same functions, so the rendered cluster and every DOM overlay measured against
 it (hover region, pulse ring, phrase label) cannot drift apart.
