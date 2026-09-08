@@ -10,8 +10,35 @@ import { getLivePosition } from "./nebula-simulation";
  * frame loop. See docs/05a-phase-2-sequence.md.
  */
 
-/** 01-design-system.md's camera-flight duration and standard easing. */
-export const FLIGHT_DURATION_MS = 1400;
+/**
+ * The journey between the landing page and the graph, in ms.
+ *
+ * 01-design-system.md specified 1400. Longer now because this flight is the
+ * one piece of motion on the site that is supposed to read as *travel* rather
+ * than as a transition, and it was over before it registered as either.
+ *
+ * Worth knowing what actually moves during it: the camera covers very little
+ * ground, and almost all of the apparent motion is the constellation growing
+ * from its landing footprint to life-size around the viewer. Time makes that
+ * growth more legible; it does not make it more like flying. See
+ * docs/05-phase-2.md on why a real approach would have to change the path
+ * rather than the clock.
+ */
+export const FLIGHT_DURATION_MS = 2000;
+
+/**
+ * How long a move *within* the graph takes: opening a node, closing one, or
+ * travelling sideways between two.
+ *
+ * Shorter than FLIGHT_DURATION_MS because it is a different kind of move. That
+ * duration is specified for the journey between the landing page and the
+ * graph — a long approach that is the site's signature moment and wants the
+ * time it takes. A focus hop crosses a few units and barely turns, and at the
+ * same 1400ms it read as sluggish rather than considered: the shell only
+ * begins opening once the flight has landed, so opening a node cost 1400ms of
+ * travel plus 240ms of opening, in series, before a word could be read.
+ */
+export const FOCUS_FLIGHT_DURATION_MS = 650;
 export const flightEase = cubicBezier(0.32, 0.72, 0, 1);
 
 /**

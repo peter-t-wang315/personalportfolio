@@ -1,0 +1,135 @@
+"use client";
+
+import { useEffect } from "react";
+import { usePathname } from "next/navigation";
+import {
+  addDragDelta,
+  canDragFrom,
+  pointOnCluster,
+  resetDrag,
+  setDragging,
+} from "./nebula-drag-state";
+
+/**
+ * Beyond this the pointer is dragging the globe, not clicking it. The same
+ * number the landing affordance uses to decide a click is a click, and it has
+ * to be: on `/` both handlers watch the same pointer, and one entering the
+ * graph while the other spins it would be the reader getting both.
+ */
+const DRAG_SLOP_PX = 4;
+
+/**
+ * Lets the reader spin the globe on the routes where it is a backdrop.
+ *
+ * `/nebula` is excluded: camera-controls owns the pointer there, and it moves
+ * the camera through the shell rather than turning the sphere in front of it.
+ * That is the right verb when you are inside the graph and the wrong one when
+ * you are beside an article — orbiting a camera whose framing was solved to
+ * clear a text column would swing the globe straight through the prose.
+ *
+ * So this turns the *graph*, not the camera: the composition the page solved
+ * for holds still and the sphere rotates within it, which is also why the
+ * spotlight's centring deliberately ignores the spin (nebula-canvas.tsx).
+ *
+ * **No element, on purpose.** An `<a>` sized to the cluster used to sit over
+ * the hero and swallowed 21-24% of the headline's selectable area; the
+ * affordance replaced it with a window listener and a circle test, and this
+ * follows it rather than reintroducing the surface. It also means the two
+ * cannot disagree about what a click is, since they share DRAG_SLOP_PX.
+ *
+ * Mouse and pen only. On touch the same gesture is the page scroll, and a
+ * globe that hijacks a swipe over an article is a worse trade than a globe you
+ * cannot spin — `/nebula` is where touch gets to move it, full screen, with
+ * nothing behind it to scroll.
+ */
+export function NebulaDrag() {
+  const pathname = usePathname();
+  const active = !pathname.startsWith("/nebula");
+
+  // A new route is a new view. Whatever the reader spun the last one to is not
+  // an instruction about this one — except on the way *into* the graph, where
+  // the arrival flight unwinds the spin as part of its own interpolation
+  // (nebula-canvas.tsx). Clearing it here would take it away on the first
+  // frame instead, which is a snap at exactly the moment the flight is meant
+  // to be the only thing moving.
+  useEffect(() => {
+    // `active` is false *on* the graph route — the one place the spin must
+    // survive the transition, so the arrival can unwind it.
+    if (active) resetDrag();
+  }, [pathname, active]);
+
+  useEffect(() => {
+    if (!active) return;
+
+    let pointerId: number | null = null;
+    let isDraggingNow = false;
+    let lastX = 0;
+    let lastY = 0;
+    let travelled = 0;
+
+    function onPointerDown(event: PointerEvent) {
+      if (event.pointerType === "touch" || event.button !== 0) return;
+      if (!pointOnCluster(event.clientX, event.clientY)) return;
+      // Text and controls under the globe keep their own behaviour. On a wide
+      // viewport the sphere clears the measure entirely and this never fires;
+      // on a narrow one they overlap, and selecting a sentence has to win.
+      if (!canDragFrom(event.target)) return;
+      pointerId = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled = 0;
+    }
+
+    function onPointerMove(event: PointerEvent) {
+      if (pointerId === null || event.pointerId !== pointerId) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled += Math.hypot(dx, dy);
+      if (travelled <= DRAG_SLOP_PX) return;
+      if (!event.buttons) {
+        // The button came up somewhere this listener never saw — over an
+        // iframe, or outside the window. Treat it as released rather than
+        // leaving the globe stuck to the pointer.
+        end();
+        return;
+      }
+      if (!isDraggingNow) {
+        isDraggingNow = true;
+        setDragging(true);
+        // Whatever the browser started selecting between the press and here
+        // goes, and nebula-cursor.tsx's `grabbing` state stops it selecting
+        // any more. Dragging a globe across an article should not leave the
+        // article highlighted behind it — and preventDefault on the move alone
+        // does not undo a selection already anchored at the press.
+        window.getSelection()?.removeAllRanges();
+      }
+      // Only once the drag is real, so a plain click never suppresses the
+      // selection or the navigation it was going to make.
+      event.preventDefault();
+      addDragDelta(dx, dy);
+    }
+
+    function end() {
+      pointerId = null;
+      travelled = 0;
+      isDraggingNow = false;
+      setDragging(false);
+    }
+
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setDragging(false);
+    };
+  }, [active]);
+
+  return null;
+}

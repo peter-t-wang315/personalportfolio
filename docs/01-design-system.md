@@ -109,7 +109,7 @@ Everything else is response to action: fly-in, panel open, hover.
 
 No fade-and-slide-up entrance on every section. No hover transition on every card. Those are the generated-page default.
 
-Standard easing: `cubic-bezier(0.32, 0.72, 0, 1)`. Standard duration: 240ms for UI, 1400ms for camera flights.
+Standard easing: `cubic-bezier(0.32, 0.72, 0, 1)`. Standard duration: 240ms for UI. Camera flights were also 1400ms; they are now two figures, because they turned out to be two kinds of move — **2000ms** for the journey between the landing page and the graph, which is meant to read as travel, and **650ms** for a hop inside the graph (opening a node, closing one, moving sideways), which crosses a few units and barely turns. One duration for both made the hop sluggish and the journey perfunctory. The shell's own opening is 240ms, and its closing 160ms: a reveal is the thing you came for, a dismissal is over the moment you have decided.
 
 `prefers-reduced-motion: reduce` disables cursor parallax, edge pulses, the float simulation (nodes render frozen at their seeded initial layout position), the work-page gathering (renders already-settled, no animation), the scroll-cue ripple, and camera interpolation (flights become instant cuts). The site must be fully usable with all motion off.
 

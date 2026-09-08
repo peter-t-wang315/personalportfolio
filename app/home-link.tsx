@@ -1,7 +1,14 @@
 import Link from "next/link";
 
 /**
- * The back-link every page carries — "Home" / "/" by default. Not a general
+ * The back-link every page carries — "Home" / "/" by default.
+ *
+ * It scrolls away with the document rather than sticking under the banner, and
+ * that is deliberate: the banner is already the persistent way out (the site
+ * name goes home, "Work" goes to the list), so a second bar pinned beneath it
+ * is two layers of chrome doing one job. This is an orientation cue for the
+ * top of a page — where the reader is, and what is above them — and once they
+ * are reading it has said what it has to say. Not a general
  * "return to previous route" system: browser back already covers that, and
  * a fixed, predictable target avoids the unpredictability of tracking
  * navigation history. /work/[slug] is the one deliberate exception, since

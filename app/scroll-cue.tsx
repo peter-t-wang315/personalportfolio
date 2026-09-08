@@ -20,6 +20,25 @@ export const FADE_DISTANCE_PX = 240;
  * pushes the links up by exactly this much. Trimmed on short viewports, where
  * there is no spare height for it to come out of.
  */
+/**
+ * The easing lives here rather than in a `scroll-behavior` on `html`, which is
+ * where it used to be. As a document-wide rule it also governed scrolls that
+ * want to be instant — notably the work list restoring a reader's place, which
+ * it turned into a 2,147px glide past everything they had already read.
+ *
+ * Still a real anchor underneath: the href is what makes it work before
+ * hydration and what a keyboard or a middle-click expects, and the history
+ * entry is pushed by hand so Back still returns to the top of the hero.
+ */
+function scrollToWork(event: React.MouseEvent<HTMLAnchorElement>) {
+  const target = document.getElementById("selected-work");
+  if (!target || event.metaKey || event.ctrlKey || event.shiftKey) return;
+  event.preventDefault();
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  target.scrollIntoView({ behavior: reduced ? "auto" : "smooth" });
+  history.pushState(null, "", "#selected-work");
+}
+
 export function ScrollCue() {
   const { scrollY } = useScroll();
   const opacity = useTransform(scrollY, [0, FADE_DISTANCE_PX], [1, 0]);
@@ -28,6 +47,7 @@ export function ScrollCue() {
     <motion.a
       href="#selected-work"
       aria-label="Scroll to selected work"
+      onClick={scrollToWork}
       style={{ opacity }}
       className="self-start flex flex-row items-center gap-2 text-ink-muted hover:text-ink mt-10 [@media(max-height:500px)]:mt-4"
     >

@@ -17,6 +17,20 @@ import { nodeGeometry } from "./node-geometry";
 export const FOCUS_CAMERA_FOV = 50;
 
 /**
+ * How long the shell takes to open into its panel, and to close again.
+ *
+ * Closing is quicker than opening on purpose: a reveal is the thing you came
+ * for and can take its time, a dismissal is over the moment you have decided.
+ *
+ * They live here rather than in the constellation because the camera needs the
+ * closing figure too. Leaving a node is the arrival in reverse — close, then
+ * pull back — and the flight holds for exactly this long before it starts, so
+ * the two beats stay beats instead of overlapping into one muddle.
+ */
+export const SHELL_OPEN_MS = 240;
+export const SHELL_CLOSE_MS = 160;
+
+/**
  * How far off a node's surface the camera stops, in world units. Applied
  * toward the middle of the shell rather than away from it — see focusPose.
  */

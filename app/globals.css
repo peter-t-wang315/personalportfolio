@@ -31,18 +31,65 @@
   --color-mask-tint: #e2e7dc;
   --color-lamp: #c8862a;
 
+  /*
+   * Height of the sticky site header. Named because two things need to
+   * agree on it: the header sets it as its own height, and every page's
+   * back-link pins itself directly underneath. Left to each side to guess,
+   * the link either overlaps the banner or floats below it.
+   */
+  --spacing-header: 4rem;
+
   --font-display: var(--font-geist-mono), ui-monospace, monospace;
   --font-body: var(--font-geist-sans), ui-sans-serif, sans-serif;
 }
 
-html {
-  scroll-behavior: smooth;
+/*
+ * There is deliberately no `scroll-behavior: smooth` here.
+ *
+ * It used to be on `html`, which made it the behaviour of *every* scroll the
+ * document ever performs — including the one that returns a reader to their
+ * place in the work list, where it animated 2,147px past the whole list on
+ * arrival instead of simply being there. Returning to where you were should
+ * look like never having left.
+ *
+ * The one scroll that genuinely wants easing is the landing page's cue, and it
+ * asks for it itself (app/scroll-cue.tsx), where it can also honour reduced
+ * motion without a second rule here having to remember to.
+ */
+/*
+ * The graph's cursor states, set by app/nebula-cursor.tsx.
+ *
+ * `!important` on the descendants, which reads heavy and is the point: while
+ * the globe is being dragged the cursor has to stay `grabbing` across every
+ * paragraph and link the pointer crosses, and those set their own cursor.
+ * The attribute only exists while the pointer is somewhere the graph will
+ * actually respond, so this is never overriding anything a reader is using.
+ */
+html[data-globe-cursor="grab"],
+html[data-globe-cursor="grab"] * {
+  cursor: grab !important;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+html[data-globe-cursor="node"],
+html[data-globe-cursor="node"] * {
+  cursor: pointer !important;
+}
+
+html[data-globe-cursor="grabbing"],
+html[data-globe-cursor="grabbing"] * {
+  cursor: grabbing !important;
+}
+
+/*
+ * Dragging the globe across an article used to leave the article highlighted
+ * behind it: the press anchors a selection like any other, and the drag then
+ * extends it. The drag clears whatever was anchored; this stops any more of it
+ * being made, for as long as the globe is moving.
+ */
+html[data-globe-cursor="grabbing"],
+html[data-globe-cursor="grabbing"] * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
 }
 
 body {

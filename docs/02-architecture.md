@@ -51,7 +51,7 @@ changed.
 
 **The arrival flight is what that decision buys.** It starts at the landing
 page's own camera pose, looking at the same cluster the visitor just clicked,
-and closes to the framing pose over the standard 1400ms while the placement
+and closes to the framing pose over 2000ms while the placement
 grows to life-size around it, widening the FOV from 45 to 50 so the two
 framings meet rather than snap. Leaving plays the same flight in reverse.
 
@@ -110,11 +110,21 @@ inside would spend the overview before there was any reason to explore.
 
 The static `tech` segment wins over the dynamic `[slug]` beside it, so `/nebula/tech/csharp` can never be read as a project called "tech". Twelve of the twenty project ids differ from their slugs (`th-supervisor` is `/station-supervisor`); `lib/nebula-routes.ts` is the one mapping, both directions.
 
-**`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full 1400ms approach. If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
+**`/nebula/[slug]` camera behavior depends on entry path**, not a single fixed state — cold entry (direct link or reload) lands already inside the node with no approach flight, exit reverses that same arrival; navigating there from within the graph plays the full approach — 650ms for a
+move inside the graph, against 2000ms for the journey between the landing page
+and it (`app/nebula-flight.ts`). If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
 Graph state resets on each visit. No persistence.
 
 ### Landing cluster placement
+
+> **Scheduled for replacement.** `07-continuous-space.md` replaces this whole
+> model: the constellation stops scaling and stops moving, and the landing view
+> becomes a camera standing ~74 units away in a fixed world. The solve below
+> does not disappear — it is re-expressed as camera distance and lateral offset,
+> and every behaviour named here has to survive that. It is documented as it
+> stands because it is what ships today, and because Part 3 needs something to
+> be checked against.
 
 The cluster's on-screen size derives from viewport **height** (the camera's
 vertical FOV), while the hero's text column is a fixed ~764px wide. Those two
@@ -147,6 +157,29 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
   whole viewport, so it would sit behind body prose. See 04-phase-1.md.
 - **Vertically**, narrow viewports drop it below the hero text rather than
   centring it behind them, for the same reason.
+- **Where the spotlight labels are drawn (`/work` and `/work/[slug]`), the
+  horizontal solve centres in the space left over instead.** Clearing the text
+  column is a floor, not a destination: stopping there parked the graph against
+  the prose with the rest of the row empty — 188px of unused width beyond it at
+  1440x900. Centred between the column's right edge and the viewport's, it sits
+  in its own space. It also reserves `LABEL_OVERHANG_PX` of extra clearance,
+  because the names reach past the sphere (measured 6–45px, more on smaller
+  globes since the text holds a constant size while the sphere shrinks); without
+  that, parallax sliding the graph across the column's edge made names vanish
+  and reappear — 12 with the pointer left, 10 with it top-right at 1280x720.
+  Where the leftover space is too narrow to centre in, the floor wins and the
+  clamp keeps the sphere on screen: at 1024x768 that is a 196px band for a
+  cluster needing 458px, so it stays hard against the right margin exactly as
+  before.
+- **The solved composition is damped, not switched.** Centre, vertical offset
+  and scale all move together when a project is spotlit, and on `/work` that
+  happens on the first hover — measured as a 191px jump of the graph in one
+  frame. Damped on the turn's clock, hovering a row is one movement: the globe
+  glides across and grows while it rotates to face the project. The parallax
+  offset is added afterwards and keeps its own easing; damping it twice makes
+  the pointer feel like it is dragging the graph through treacle. The first
+  frame of a route snaps, since a cold load of `/work/[slug]` is already
+  spotlit and easing in would animate a change the reader never made.
 
 `lib/use-cluster-screen.ts` and `app/nebula-canvas.tsx` apply these from the
 same functions, so the rendered cluster and every DOM overlay measured against

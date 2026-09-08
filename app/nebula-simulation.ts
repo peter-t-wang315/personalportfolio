@@ -250,6 +250,9 @@ interface NeighborSpring {
  */
 const neighborSprings = new Map<string, NeighborSpring>();
 
+/** Scratch for the separation pass, which runs over every pair every frame. */
+const _separation = new THREE.Vector3();
+
 /** Given a node id, pull everything connected to it toward it. 2.4 wires this to hover. */
 /**
  * How far a gathered neighbour ends up from its subject, and how strictly.
@@ -266,6 +269,43 @@ const neighborSprings = new Map<string, NeighborSpring>();
  * arrangement still shows through and the ring does not read as a dial.
  */
 export const GATHER_RADIUS = 3.4;
+
+/**
+ * Clear space kept between any two node surfaces, in world units.
+ *
+ * Sized against what the layout already does rather than picked to taste: the
+ * seeded arrangement's tightest pair sits about 0.45 apart and the wander only
+ * dips below that occasionally, so this is close enough to the natural floor
+ * to leave the composition alone and only act where something has genuinely
+ * been pushed too close. On `/work` it reads as about 6px of daylight at the
+ * globe's drawn size, which is what separates two nodes from one lumpy one.
+ */
+const SEPARATION_GAP = 0.35;
+/** Enough to clear every overlap measured; see the pass itself for why >1. */
+const SEPARATION_PASSES = 3;
+
+/**
+ * How much room a gathered ring is given, in world units: anything *not* part
+ * of the lit subgraph that sits closer than this to the subject is pushed out
+ * to it.
+ *
+ * Comfortably outside GATHER_RADIUS, so a stranger cannot end up inside the
+ * ring its neighbours were gathered into — measured on
+ * `/work/station-supervisor`, `tcp` sat 1.9 units from the subject, well
+ * within a ring at 3.4, close enough to read as one of its connections.
+ *
+ * Set past where the node should end up, not at it: the blend is
+ * GATHER_EQUALISING and the shell re-projection and collision pass both give a
+ * little back, so a target of 4.6 left `tcp` at 3.62 — outside the ring by
+ * two tenths of a unit, which is not outside it to look at.
+ *
+ * This only reaches the handful of nodes genuinely near the subject on the
+ * shell — one to three, typically. It is deliberately not the answer to nodes
+ * that merely *look* close: those are the far side of the sphere showing
+ * through, already 20 units away, and no amount of pushing moves them on
+ * screen. nebula-constellation.tsx fades those instead.
+ */
+const CLEAR_RADIUS = 5.5;
 const GATHER_EQUALISING = 0.8;
 
 export function attractNeighbors(
@@ -279,6 +319,42 @@ export function attractNeighbors(
   // releases — its own spring, at its own pace, same as letting go.
   for (const [id, spring] of neighborSprings) {
     if (spring.active && !neighbors.has(id)) spring.active = false;
+  }
+
+  // Strangers standing inside the ring are moved out of it, using the same
+  // spring and the same blend — `wanted` moves toward the target radius from
+  // whichever side the node starts on, so gathering in and pushing out are one
+  // piece of arithmetic. Only those already inside are touched; the rest of
+  // the globe keeps its arrangement.
+  if (gatherRadius !== undefined) {
+    const subject = nodeGeometry[nodeId]?.position;
+    if (subject) {
+      for (const node of nodeList) {
+        if (node.id === nodeId || neighbors.has(node.id)) continue;
+        const distance = Math.hypot(
+          node.position[0] - subject[0],
+          node.position[1] - subject[1],
+          node.position[2] - subject[2],
+        );
+        if (distance >= CLEAR_RADIUS) continue;
+        const existing = neighborSprings.get(node.id);
+        if (existing) {
+          existing.targetId = nodeId;
+          existing.active = true;
+          existing.strength = strength;
+          existing.gatherRadius = CLEAR_RADIUS;
+        } else {
+          neighborSprings.set(node.id, {
+            value: 0,
+            velocity: 0,
+            targetId: nodeId,
+            active: true,
+            strength,
+            gatherRadius: CLEAR_RADIUS,
+          });
+        }
+      }
+    }
   }
 
   for (const id of neighbors) {
@@ -467,6 +543,49 @@ export function stepSimulation(clockTime: number, delta: number) {
     const radius = Math.hypot(home[0], home[1], home[2]);
     const length = live.length();
     if (length > 1e-6) live.multiplyScalar(radius / length);
+  }
+
+  // **Nothing above stops two nodes occupying the same place.** The wander is
+  // per-node noise that knows nothing of its neighbours, and the gather is
+  // worse: it holds each neighbour's *direction* from the subject and only
+  // equalises the distance, so two neighbours that happen to lie on the same
+  // bearing are sent to the same point. Measured on /work, that put
+  // maintenance-client and rest 0.19 units *inside* each other, and the
+  // ambient wander alone closed a pair to a 0.09 gap.
+  //
+  // So the surface gets a collision pass: push any overlapping pair apart
+  // along the line between them, half the correction each, then put everyone
+  // back on the shell. Re-projecting can reintroduce a shallower overlap, so
+  // it repeats — three passes clears every case measured, and the loop exits
+  // early on the common frame where nothing touches at all.
+  for (let pass = 0; pass < SEPARATION_PASSES; pass++) {
+    let collided = false;
+    for (let i = 0; i < nodeList.length; i++) {
+      const a = livePositions[nodeList[i].id];
+      for (let j = i + 1; j < nodeList.length; j++) {
+        const b = livePositions[nodeList[j].id];
+        const minimum =
+          nodeList[i].radius + nodeList[j].radius + SEPARATION_GAP;
+        _separation.subVectors(a, b);
+        const distance = _separation.length();
+        if (distance >= minimum || distance < 1e-6) continue;
+        collided = true;
+        _separation.multiplyScalar((minimum - distance) / distance / 2);
+        a.add(_separation);
+        b.sub(_separation);
+      }
+    }
+    if (!collided) break;
+    for (const node of nodeList) {
+      const live = livePositions[node.id];
+      const radius = Math.hypot(
+        node.position[0],
+        node.position[1],
+        node.position[2],
+      );
+      const length = live.length();
+      if (length > 1e-6) live.multiplyScalar(radius / length);
+    }
   }
 }
 
