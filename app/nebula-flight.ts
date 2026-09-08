@@ -190,73 +190,86 @@ export function lerpPose(from: CameraPose, to: CameraPose, t: number): CameraPos
   };
 }
 
-/** Scratch vectors for orbitLerpPose — it runs every frame of a flight. */
+/** Scratch vectors for approachLerpPose — it runs every frame of a flight. */
 const _fromDir = new THREE.Vector3();
 const _toDir = new THREE.Vector3();
-const _axis = new THREE.Vector3();
-const _quat = new THREE.Quaternion();
+const _lookFrom = new THREE.Vector3();
+const _lookTo = new THREE.Vector3();
 
 /**
- * Interpolation for a flight that crosses a large distance **and** a large
- * heading change — the arrival from the landing page and its reverse.
+ * Interpolation for the journey between the landing page and the graph.
  *
- * `lerpPose` walks the camera along a straight line, which is right for a
- * focus hop (a short move that barely changes heading) and wrong here. The
- * landing pose sits 9 units from its target and the constellation's resting
- * pose sits 41 units from its, on a heading 94 degrees away; a straight line
- * between them passes closer to the subject at t≈0.1 than it started, so the
- * approach reads as a lurch inward before it pulls back out. Measured, the
- * camera's distance from the constellation's centre went 23 -> 20 -> 44.5.
+ * Everything here is measured from the **graph's centre**, which is the only
+ * quantity that means anything on this flight: how far the reader is from the
+ * thing they are flying to or away from. The pose's own target is not that. A
+ * camera parked inside the graph has its target a tenth of a unit ahead of it,
+ * because that is what makes a drag look around rather than orbit — so a path
+ * that interpolated distance-from-target ran the departure from 0.1 to 84,
+ * which put the camera still 2.9 units out at half time and then threw it to
+ * the landing pose in the last few frames. It read as nothing happening and
+ * then a snap.
  *
- * Interpolating the orbit instead — slerp the direction, lerp the distance,
- * both about the (also interpolating) target — makes that distance
- * monotonic by construction, so the subject's apparent size only ever grows.
- * Same endpoints, same duration, same easing: only the path between them
- * differs.
+ * Distance from the centre is interpolated **geometrically**. Apparent size
+ * goes as 1/d, so equal steps of distance are wildly unequal steps of what the
+ * reader sees: over an 84-to-3 approach the first half of the distance buys
+ * almost no change and the last tenth buys most of it. A constant ratio per
+ * unit time is a constant apparent rate, which is what sustained travel looks
+ * like — and it is monotonic by construction, so the graph only ever grows on
+ * the way in and only ever shrinks on the way out.
+ *
+ * Direction and heading are slerped separately: where the camera is around the
+ * graph, and where it is pointing. On the arrival the heading is already
+ * constant — the graph turns instead of the camera (nebula-canvas.tsx) — so
+ * that term does nothing and the flight is a straight run. Leaving a node it
+ * carries the turn off the node's surface.
  */
-export function orbitLerpPose(
+export function approachLerpPose(
   from: CameraPose,
   to: CameraPose,
   t: number,
 ): CameraPose {
-  const target = from.target.clone().lerp(to.target, t);
-
-  _fromDir.copy(from.position).sub(from.target);
-  _toDir.copy(to.position).sub(to.target);
-  // **Geometrically, not linearly.** How large the graph looks goes as 1/d, so
-  // equal steps in distance are wildly unequal steps in what the reader sees:
-  // over an 84-to-5.5 approach, the first half of the distance buys almost no
-  // change and the last tenth buys most of it. Interpolating the logarithm
-  // makes the *apparent* approach rate constant, so the curve above is free to
-  // describe the journey rather than fight this.
-  const fromLen = _fromDir.length();
-  const toLen = _toDir.length();
+  const fromLen = from.position.length();
+  const toLen = to.position.length();
   const distance =
-    fromLen > 1e-4 && toLen > 1e-4
+    fromLen > 1e-3 && toLen > 1e-3
       ? fromLen * Math.pow(toLen / fromLen, t)
       : THREE.MathUtils.lerp(fromLen, toLen, t);
-  _fromDir.normalize();
-  _toDir.normalize();
 
-  // Rotate one direction toward the other about their common perpendicular.
-  // Parallel directions have no such axis to find, and a normalised cross
-  // product of two parallel vectors is NaN rather than zero, so that case
-  // takes the straight lerp it degenerates to anyway.
-  _axis.crossVectors(_fromDir, _toDir);
-  const direction =
-    _axis.lengthSq() < 1e-12
-      ? _fromDir.clone()
-      : _fromDir
-          .clone()
-          .applyQuaternion(
-            _quat.setFromAxisAngle(
-              _axis.normalize(),
-              _fromDir.angleTo(_toDir) * t,
-            ),
-          );
+  // Where the camera sits around the graph.
+  _fromDir.copy(from.position);
+  _toDir.copy(to.position);
+  const position =
+    fromLen > 1e-3 && toLen > 1e-3
+      ? slerpDirection(_fromDir.divideScalar(fromLen), _toDir.divideScalar(toLen), t)
+          .multiplyScalar(distance)
+      : from.position.clone().lerp(to.position, t);
+
+  // Where it points, and how far ahead its pivot sits — the second only so
+  // camera-controls has a sane radius to hand over to on arrival.
+  _lookFrom.copy(from.target).sub(from.position);
+  _lookTo.copy(to.target).sub(to.position);
+  const lookLen = THREE.MathUtils.lerp(_lookFrom.length(), _lookTo.length(), t);
+  const heading = slerpDirection(
+    _lookFrom.normalize(),
+    _lookTo.normalize(),
+    t,
+  );
 
   return {
-    position: target.clone().addScaledVector(direction, distance),
-    target,
+    position,
+    target: position.clone().addScaledVector(heading, lookLen),
   };
+}
+
+/** Slerps between two unit vectors, falling back to a lerp when parallel. */
+function slerpDirection(a: THREE.Vector3, b: THREE.Vector3, t: number) {
+  const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1);
+  const angle = Math.acos(dot);
+  if (angle < 1e-4) return a.clone();
+  const sin = Math.sin(angle);
+  return a
+    .clone()
+    .multiplyScalar(Math.sin((1 - t) * angle) / sin)
+    .addScaledVector(b, Math.sin(t * angle) / sin)
+    .normalize();
 }

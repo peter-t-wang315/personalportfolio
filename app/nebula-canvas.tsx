@@ -32,7 +32,7 @@ import {
   flightEase,
   focusPose,
   lerpPose,
-  orbitLerpPose,
+  approachLerpPose,
   shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
@@ -506,14 +506,14 @@ interface Flight {
   /** Constellation placement at each end: 0 = landing footprint, 1 = life-size. */
   placementFrom: number;
   placementTo: number;
-  /** Orbit-interpolate the path (see orbitLerpPose) rather than lerp it straight. */
+  /** Orbit-interpolate the path (see approachLerpPose) rather than lerp it straight. */
   /**
    * How to get there. `line` is a straight lerp, right for a short hop that
-   * barely turns. `orbit` swings around the target, for the arrival and the
-   * departure. `shell` sweeps across the surface between two nodes, for a
-   * sideways move — see shellLerpPose.
+   * barely turns. `approach` is the journey between the landing page and the
+   * graph, measured from the graph's centre — see approachLerpPose. `shell`
+   * sweeps across the surface between two nodes, for a sideways move.
    */
-  path: "line" | "orbit" | "shell";
+  path: "line" | "approach" | "shell";
   /**
    * How long it takes. Carried per flight rather than read from a constant,
    * because the two kinds of move want different times — see
@@ -1137,7 +1137,7 @@ function CameraRig({
         fovTo: INSIDE_CAMERA_FOV,
         placementFrom: 0,
         placementTo: 1,
-        path: "orbit",
+        path: "approach",
         duration: FLIGHT_DURATION_MS,
         ease: approachEase,
         delay: 0,
@@ -1177,11 +1177,10 @@ function CameraRig({
       // Only when there is a shell to close. Leaving the graph itself has no
       // second beat to wait for.
       delay: leavingNode ? SHELL_CLOSE_MS : 0,
-      // Orbits out around the shell rather than cutting across its middle,
-      // which matters more from a focused node than from the graph's resting
-      // pose: the camera is parked against the inside of the surface there, so
-      // a straight line to the landing pose would leave through the wall.
-      path: "orbit",
+      // Measured from the graph's centre, so the retreat is monotonic — the
+      // graph only ever shrinks — whether it starts at the standing point
+      // inside the shell or against a node's surface.
+      path: "approach",
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
@@ -1285,8 +1284,8 @@ function CameraRig({
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );
     const pose =
-      active.path === "orbit"
-        ? orbitLerpPose(active.from, active.to, eased)
+      active.path === "approach"
+        ? approachLerpPose(active.from, active.to, eased)
         : active.path === "shell"
           ? shellLerpPose(active.from, active.to, eased)
           : lerpPose(active.from, active.to, eased);

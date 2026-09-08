@@ -366,6 +366,20 @@ approach at a quarter, half and three-quarters through, against 48% / 82% /
 
 Both changes are path-only: the gate is still 0.23% worst, unchanged.
 
+**The geometric interpolation broke the way out, and the fix was to measure
+from the right thing.** It was interpolating distance from the *pose's own
+target*, and a camera parked inside the graph has its target a tenth of a unit
+ahead of it — that is what makes a drag look around rather than orbit. So the
+departure ran 0.1 to 84: still 2.9 units out at half time, then thrown to the
+landing pose in the last few frames. It read as nothing happening and then a
+snap.
+
+Distance from the **graph's centre** is the quantity that means something on
+this flight, and the path measures that now. All three journeys are monotonic
+and evenly spent: leaving the graph completes 44% / 70% / 91% of the way at a
+quarter, half and three-quarters through, leaving a node 34% / 70% / 90%, and
+arriving 24% / 67% / 90%.
+
 Remaining: the edge fade and the orientation unwind still read the progress
 value, which is fine and is what it now means; `use-cluster-screen` still
 re-derives the circle independently; the deletions; and the fog, parked above
