@@ -35,6 +35,7 @@ import {
   shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
+import { NebulaHome } from "./nebula-home";
 import { getPlacement, setPlacement } from "./nebula-placement";
 import {
   getDragAngles,
@@ -1258,6 +1259,12 @@ export function NebulaCanvas() {
           nothing reads, and the lights' positions are in their parent's space,
           so inside the group they would shrink with the landing placement. */}
       <SceneEnvironment />
+      {/* Home, as a thing in the world rather than a route you came from.
+          Outside the placement group on purpose: it is fixed in space while
+          the constellation is still the one that scales and moves. On every
+          route but the graph it sits squarely behind the camera, so the gate
+          is about not paying for it rather than about hiding it. */}
+      <NebulaHome visible={isNebula} />
       <RouteFocus id={routeFocusId} />
       <CameraRig isNebula={isNebula} routeFocusId={routeFocusId} />
       <ConstellationPlacement

@@ -196,16 +196,58 @@ bringing the band in to 5–30 changes 13.8%, 17.0% and 71.4% of those. v26
 23/23, sweep 60/60, and `/nebula` reached through a turned work page is still 0
 differing pixels of 59,223.
 
-### Part 2 — The hero as an object in the scene
+### Part 2 — The hero as an object in the scene — **built, and blocked**
 
 A plane at the home location carrying an image of the hero column, depth-tested
 so nodes occlude it. Camera untouched; visible from inside `/nebula` only.
-Decide here how the image is produced — pre-rendered texture against 3D text —
-and pick `p`.
 
 **Done when:** you can look back from inside the graph and see the home page
 through the nodes, and it reads as *the home page* rather than as a stray
-object. This is the cheap answer to the question every later part assumes.
+object.
+
+**The object is built and correct. The second half of that sentence cannot be
+tested yet, because the camera cannot turn around.**
+
+`CameraControls` always looks *at* its target. Orbiting moves the camera around
+the graph's centre, but the view direction points inward from wherever it ends
+up — the camera can circle the graph and can never turn its back on it. Swept
+by hand, the angle between the view and the home object never falls below
+**83.8°**, with the camera pinned at the polar clamp (0, 8, 0); the interior's
+field of view is 72°, so a half-angle of 36° is the most that could ever be in
+frame. Home projects to NDC x = 7.7, where anything past 1 is off screen.
+
+Pointed at it directly, it reads exactly as intended: wordmark, role, headline
+and metric values, at a quarter faded, with nodes and edges crossing in front.
+So the texture, the fog band from Part 1, the depth ordering and the
+orientation are all right, and what remains is a control-model question rather
+than a rendering one.
+
+**This moves a decision forward that the plan had folded into Part 4.** Looking
+around from inside the graph means rotating the camera *in place* rather than
+orbiting a point, which is a different control model, not a tuning of this one.
+Options, roughly in order of how much they disturb: let the target move with
+the camera so the graph's centre stops being the pivot; keep orbit for the
+graph and add a separate look-around mode once you are inside; or leave the
+turn to Part 4 and let home come into view only during the fly-out, which
+satisfies the plan's spatial continuity but not the sentence above.
+
+Notes from building it, for whoever does the rest:
+
+- The texture is **drawn**, not photographed. `html2canvas` and `foreignObject`
+  round-trips are heavy and get the fonts subtly wrong, for something that is a
+  third of the frame tall and a quarter faded. It reads the same strings from
+  `content/` that the hero does, so the two cannot describe different people.
+- It waits on `document.fonts.ready`. Canvas has no fallback-swap, so painting
+  early bakes the system font into a texture nothing repaints.
+- `depthWrite: false`, so the transparent shells still blend over it. That is
+  the groundwork for Part 6 — the plane has to be *behind* the glass in the
+  render, not merely behind it in space.
+- It never raycasts. A page-sized invisible click target behind the graph would
+  swallow drags aimed at the nodes in front of it.
+- `p` was not picked, because `p` is the hero's offset ahead of the *standing
+  point* and there is no standing point until Part 3. The plane sits at the
+  home location itself. `HOME_DISTANCE` and `PLANE_HEIGHT` are the two dials
+  that exist today.
 
 ### Part 3 — One fixed world
 
