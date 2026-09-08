@@ -78,6 +78,23 @@ cost nothing to land — there was no working depth cue to preserve — and that
 the "fog grades the far cluster to 90%" line in the older docs was describing a
 framing that had already been replaced.
 
+**"Further from both, and still able to see the graph well from home" is not a
+paradox — it is what focal length is for.** Apparent size depends on distance
+*and* field of view together: at distance `d` and vertical fov `θ` it goes as
+`1 / (d · tan(θ/2))`. Double the distance and halve `tan(θ/2)` and the graph
+occupies exactly the same fraction of the frame while everything about it reads
+as further off — perspective flattens, parallax between near and far shrinks,
+and fog has twice the depth to work across. Concretely: the graph subtends its
+current landing size at 74 units through a 45° lens, and at 150 units through a
+23° one. The longer lens is the whole difference between a small thing nearby
+and a large thing far away.
+
+That is a Part 3 change, because today the landing view's distance is not real
+— the graph is scaled down to meet a camera nine units out, so moving the
+camera changes nothing until the scale trick is gone. What Part 2 can do
+already is put *home* properly far from the graph, which is the half of the
+distance that is real.
+
 **How large home looks from inside is a free parameter.** If the hero plane
 sits distance `p` in front of the standing point, it appears from the shell's
 centre at roughly `p / (74 − p)` of its at-home size: 19% at `p = 12`, 51% at
@@ -264,8 +281,18 @@ Notes from building it, for whoever does the rest:
   swallow drags aimed at the nodes in front of it.
 - `p` was not picked, because `p` is the hero's offset ahead of the *standing
   point* and there is no standing point until Part 3. The plane sits at the
-  home location itself. `HOME_DISTANCE` and `PLANE_HEIGHT` are the two dials
-  that exist today, and both were set from arithmetic rather than by looking.
+  home location itself.
+- **Home faces away.** Its front points down +z, away from the graph, so from
+  inside the shell the reader sees its *back*: the page mirrored, the way
+  anything reads once you have gone past it. Turned around to face the reader
+  it was a sign that happened to be pointed at whoever was looking, which is
+  the opposite of having been left behind.
+- `HOME_DISTANCE` and `PLANE_HEIGHT` began at 74 and 32, set from arithmetic
+  rather than by looking, and read as a slightly grey card hung just outside
+  the graph. They are 150 and 40 now: half the apparent size, and 61% fogged
+  where 74 units gave 25%. A quarter faded is not distance, it is a slightly
+  grey sign. `FOG_FAR` moved from 130 to 210 to put that fade where home
+  actually is.
 - The texture halves below the desktop tier. At a third of the frame and a
   quarter faded it buys nothing there, and full size is ~2.8MB of GPU memory on
   the tier with the least of it.

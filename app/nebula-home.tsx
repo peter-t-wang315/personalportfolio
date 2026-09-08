@@ -35,7 +35,7 @@ import { palette } from "@/lib/palette";
  * graph is at the origin and `HOME_CAMERA_POSITION` is at +9z, so "back the
  * way you came" from inside the shell is +z.
  */
-export const HOME_DISTANCE = 74;
+export const HOME_DISTANCE = 150;
 
 /**
  * The plane's height in world units, which is what sets how large home reads
@@ -48,7 +48,7 @@ export const HOME_DISTANCE = 74;
  * than derive — it and `HOME_DISTANCE` are the two dials this part exists to
  * let us turn.
  */
-const PLANE_HEIGHT = 32;
+const PLANE_HEIGHT = 40;
 
 /**
  * Texture resolution. The plane is far away and fogged, so this is not about
@@ -195,10 +195,12 @@ export function NebulaHome({ visible }: { visible: boolean }) {
   return (
     <mesh
       geometry={geometry}
-      // Turned to face the graph. A plane's front is +z and home sits at +z,
-      // so without this the reader inside the shell is looking at its back.
+      // **Not** turned to face the graph. A plane's front is +z and home sits
+      // at +z, so leaving it alone means the reader inside the shell sees its
+      // *back* — the page mirrored, the way anything reads once you have gone
+      // past it. Turned around it was a sign that happened to be pointed at
+      // whoever was looking, which is the opposite of having left it behind.
       position={[0, 0, HOME_DISTANCE]}
-      rotation={[0, Math.PI, 0]}
       visible={visible}
       // Never raycast: it is scenery, and a page-sized invisible click target
       // behind the graph would swallow drags aimed at the nodes in front of it.
@@ -218,6 +220,8 @@ export function NebulaHome({ visible }: { visible: boolean }) {
         // effect this is groundwork for.
         depthWrite={false}
         toneMapped={false}
+        // The back face is the one being looked at, so it has to be drawn.
+        side={THREE.DoubleSide}
       />
     </mesh>
   );

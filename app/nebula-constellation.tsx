@@ -167,16 +167,16 @@ const HOVER_EASE = 0.2;
  * the origin and the landing viewpoint stands ~74 units away. Near clears the
  * graph seen from inside (14.2 at most) by a wide margin, so fog goes on doing
  * nothing there — from within a shell there is no recession for it to describe.
- * Far is set so an object at 74 units reads about a quarter faded: present and
- * hazed rather than erased, which is the whole reason this part exists. Seen
- * from the landing standing point the graph will span 63–85 and grade from 11%
- * to 40%, which is a first guess at a recession, not a considered one.
+ * Far is set against where home actually sits, which is 150 units out: it
+ * lands about 60% faded there, hazed enough to read as somewhere else rather
+ * than as a card hung nearby. It was 130 when home was at 74 and a quarter
+ * faded, and a quarter is not distance — it is a slightly grey sign.
  *
  * **Both numbers are provisional and belong to Part 3**, when there is finally
  * something at those distances to tune them against.
  */
 const FOG_NEAR = 55;
-const FOG_FAR = 130;
+const FOG_FAR = 210;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };
