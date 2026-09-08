@@ -42,7 +42,7 @@ import {
   resetDrag,
   setClusterCircle,
 } from "./nebula-drag-state";
-import { FOCUS_CAMERA_FOV } from "@/lib/focus-framing";
+import { FOCUS_CAMERA_FOV, SHELL_CLOSE_MS } from "@/lib/focus-framing";
 import {
   Constellation,
   SceneEnvironment,
@@ -371,13 +371,29 @@ interface Flight {
    * FOCUS_FLIGHT_DURATION_MS.
    */
   duration: number;
+  /**
+   * How long the camera holds still before it starts, in ms.
+   *
+   * Leaving a node is two beats, the arrival's two in reverse: the shell
+   * closes, *then* the camera pulls back. Without the hold they ran together
+   * and the camera won — its easing is front-loaded, so measured on an exit it
+   * had travelled from 8.2 units out through the middle of the shell and away
+   * again while the node was still a tenth open. The node finished closing
+   * somewhere behind the reader, which is what "it closes after we have
+   * already zoomed out" describes.
+   *
+   * A hold rather than a `setTimeout`, so it cannot race a route change: the
+   * flight exists from the moment it is asked for, it simply has not started.
+   */
+  delay: number;
 }
 let flight: Flight | null = null;
 
 /** Raw (un-eased) progress of a flight, 0..1. Kept raw so completion is an
  * exact `=== 1` rather than a question about the easing curve's endpoint. */
 function flightProgress(active: Flight): number {
-  return Math.min((performance.now() - active.start) / active.duration, 1);
+  const elapsed = performance.now() - active.start - active.delay;
+  return Math.min(Math.max(elapsed, 0) / active.duration, 1);
 }
 
 /** camera-controls owns the camera, but FOV is not something it manages, so
@@ -980,6 +996,13 @@ function CameraRig({
     lastRoute.current = isNebula;
 
     const { reducedMotion } = useSceneStore.getState();
+    // **Not the store's focusedNodeId.** RouteFocus is rendered ahead of this
+    // rig precisely so its effect runs first, which means by the time this
+    // reads the store the focus has already been cleared and every exit looks
+    // like it came from the bare graph. The rig's own record of where it last
+    // flew is still intact here, because the focus effect that maintains it is
+    // declared after this one.
+    const leavingNode = lastFocus.current != null;
 
     if (isNebula) {
       // Cold entry to a node — a direct link or a reload of /nebula/[slug]:
@@ -1015,6 +1038,7 @@ function CameraRig({
         placementTo: 1,
         path: "orbit",
         duration: FLIGHT_DURATION_MS,
+        delay: 0,
       });
       return;
     }
@@ -1044,6 +1068,9 @@ function CameraRig({
       placementFrom: 1,
       placementTo: 0,
       duration: FLIGHT_DURATION_MS,
+      // Only when there is a shell to close. Leaving the graph itself has no
+      // second beat to wait for.
+      delay: leavingNode ? SHELL_CLOSE_MS : 0,
       // Orbits out around the shell rather than cutting across its middle,
       // which matters more from a focused node than from the graph's resting
       // pose: the camera is parked against the inside of the surface there, so
@@ -1108,6 +1135,9 @@ function CameraRig({
       placementFrom: 1,
       placementTo: 1,
       duration: FOCUS_FLIGHT_DURATION_MS,
+      // Closing one waits for the shell; opening one has nothing to wait for,
+      // and a sideways move carries its shell with it.
+      delay: routeFocusId === null ? SHELL_CLOSE_MS : 0,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
       // Node to node follows the surface; anything involving the resting pose

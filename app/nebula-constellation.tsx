@@ -16,6 +16,10 @@ import {
 } from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
 import {
+  SHELL_CLOSE_MS,
+  SHELL_OPEN_MS,
+} from "@/lib/focus-framing";
+import {
   focusScroll,
   SCROLL_FADE_MS,
   SCROLL_HOLD_MS,
@@ -218,7 +222,7 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
  * there is no morph at all: the panel is a full-height sheet and the node stays
  * a sphere (Orientation and short viewports).
  */
-const OPEN_MS = 240;
+
 const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
 const PANEL_FRACTION_DESKTOP = 0.7;
 const PANEL_FRACTION_COMPACT = 0.85;
@@ -863,7 +867,9 @@ export function Constellation({
       focusOpen.snap = false;
       if (openTarget) focusOpen.value = 1;
     }
-    const openStep = reducedMotion ? 1 : (delta * 1000) / OPEN_MS;
+    const openStep = reducedMotion
+      ? 1
+      : (delta * 1000) / (openTarget ? SHELL_OPEN_MS : SHELL_CLOSE_MS);
     focusOpen.value = THREE.MathUtils.clamp(
       focusOpen.value + (openTarget ? openStep : -openStep),
       0,
