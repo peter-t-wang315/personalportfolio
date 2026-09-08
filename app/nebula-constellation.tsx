@@ -175,7 +175,15 @@ const HOVER_EASE = 0.2;
  * **Both numbers are provisional and belong to Part 3**, when there is finally
  * something at those distances to tune them against.
  */
-const FOG_NEAR = 55;
+// **Temporarily 175 while Part 3 lands.** The camera now genuinely stands
+// 78-170 units from the graph off /nebula (the old scale trick expressed as
+// distance), which puts the graph inside the band this was tuned to — so a
+// composition that used to be unfogged would fog, and the pixel gate the
+// refactor is verified against would fail for a reason that is not the
+// refactor. Held above every standing distance until the geometry is proven
+// exact; then re-derived against the real distances, which is the last step of
+// Part 3 and the whole point of having them.
+const FOG_NEAR = 175;
 const FOG_FAR = 210;
 
 /** One shared clock uniform drives every breathing material. */

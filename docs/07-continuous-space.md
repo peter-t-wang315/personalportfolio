@@ -305,9 +305,57 @@ it is a shorter drag away rather than unreachable. Its fog was measured rather
 than assumed: 25% at rest inside the graph, which is the quarter the Part 1
 band was chosen for.
 
-### Part 3 — One fixed world
+### Part 3 — One fixed world — **in progress**
 
-The constellation stops scaling and stops moving. `/`, `/work/[slug]` and
+The constellation stops scaling and stops moving.
+
+**The idea it rests on: the scale trick was always a distance in disguise.** A
+group scaled by `s` at `(Lx, Ly, −14)`, seen by a camera at `(0, 0, 9)`
+looking down −z, projects a local point `p` to `(s·p + L) / (23 − s·p.z)`. A
+life-size graph at the origin, seen by a camera at `(−Lx/s, −Ly/s, 23/s)`
+looking down −z, projects the same point to `(p − c) / (23/s − p.z)` — which
+is the same expression. Identical, for every point, at every viewport. Rotation
+about the group's own origin commutes with scale about it, so the spotlight
+turn and the reader's drag carry over unchanged.
+
+Two things follow. The landing and work pages can be reproduced **pixel for
+pixel** by moving the camera instead of scaling the graph, so this part's gate
+is not "looks the same" but 0.00% of pixels changed on every route at every
+viewport, motion frozen. And the responsive rules in `lib/cluster-geometry.ts`
+do not have to be re-derived from scratch: they produce a size on screen, and
+the camera's distance is `23 / sizeFactor`. Once that holds, "further away"
+is one dial — multiply the distance and narrow the field of view to match,
+and the composition is untouched while the perspective flattens.
+
+The camera becomes the thing that is solved every frame, in the rig, which
+already owns it. The group keeps only its rotation.
+
+Sequenced so each step lands at the gate before the next begins.
+
+**Step 1 is done: the transform is gone and the camera stands.** The
+constellation is life-size at the origin on every route — group scale 1,
+group position (0,0,0), measured — and the rig solves where the camera stands
+each frame from the same rules in `lib/cluster-geometry.ts` that used to solve
+a scale. Those rules give a size; the camera stands `REFERENCE_DISTANCE`
+divided by that size away.
+
+| route | camera distance | group scale |
+| --- | --- | --- |
+| `/` | 83.8 | 1 |
+| `/work/[slug]` | 63.5 | 1 |
+| `/about` (ambient) | 110.7 | 1 |
+| `/nebula` | inside, 0.42 from the origin | 1 |
+
+Against the pixel gate — 5 routes × 6 viewports, motion frozen, the DOM hidden
+so only the scene is compared — the worst frame changed **0.23%**, and that is
+anti-aliasing: the ink centroid moved at most 0.03px and total ink at most
+0.03%. `/nebula` is 0.00% at every viewport. Two captures of one build differ
+by 0.00%, so the gate means what it says.
+
+Remaining: the edge fade and the orientation unwind still read the progress
+value, which is fine and is what it now means; `use-cluster-screen` still
+re-derives the circle independently; the deletions; and the fog, parked above
+every standing distance while the geometry is proven and re-derived last. `/`, `/work/[slug]` and
 `/nebula` become camera positions. The landing composition solve is
 re-expressed as camera distance and lateral offset; `use-cluster-screen`, the
 affordance, the work-page centring and the label overhang are rewired to the
