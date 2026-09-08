@@ -114,6 +114,12 @@ Worse, it compounded: the shell only begins opening once the flight has *landed*
 
 The duration is carried per flight rather than read from a constant, so the arrival and the departure keep their 1400ms while everything inside the graph moves at its own pace.
 
+**The graph holds still while a node is open, and lets go when it closes.** Two faults, one cause: `freezeSimulation` freezes the wander *clock*, not the step, and the attraction springs integrate on the frame delta regardless — so nothing was holding the hover attraction back while a node was open.
+
+Hovering a neighbour past the panel edges therefore re-targeted every spring in the graph, and with the camera parked inches off one surface the whole scene lurched around the thing being read. Hover still registers — those neighbours are the way sideways, so they light and the cursor says they can be clicked — but it no longer moves anything. Measured, 0.00 world units of drift where it used to move the graph under the reader.
+
+And nothing ever released the attraction the click was made through. `handlePointerOut` never fired: what left the node was the camera, not the pointer. So the graph stayed in the shape the hover had pulled it into — measured, unchanged 6 seconds after leaving — until the next hover re-targeted every spring at once, which is the shooting-around. Closing a node now releases it: the same measurement relaxes within 700ms. Released on the way *out* rather than the way in, so the connections stay gathered around the panel while it is open, which is what makes them legible past its edges.
+
 **Closing a node is two beats, the arrival's two in reverse: the shell closes, then the camera pulls back.** They used to run together, and the camera won. Its easing is front-loaded, so measured on an exit it had travelled from 8.2 units out, through the middle of the shell and away again, while the node was still a tenth open — the node finished closing somewhere behind the reader. The departure now holds for `SHELL_CLOSE_MS` before it starts. A hold inside the flight rather than a `setTimeout`, so it cannot race a route change: the flight exists from the moment it is asked for, it simply has not begun.
 
 Closing is quicker than opening (160ms against 240ms) because a reveal is the thing you came for and a dismissal is over the moment you have decided. Measured after: on Escape the camera sits at 8.22 for the full 166ms the shell takes to close, then moves; leaving to `/` holds the same way.

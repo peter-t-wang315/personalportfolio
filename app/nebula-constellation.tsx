@@ -260,17 +260,34 @@ export function snapFocusShellOpen() {
  * "out" before the new node's "over", but this makes the handler correct
  * either way rather than depending on that ordering).
  */
+/**
+ * Hover still *registers* while a node is open — the neighbours past the panel
+ * edges are the way sideways, so they light and the cursor says they can be
+ * clicked. What it stops doing is **moving anything**.
+ *
+ * The attraction is a browsing affordance: drawing a node's connections in so
+ * you can see what it talks to. Inside an open node it is neither wanted nor
+ * harmless. The camera is parked inches off one surface, so a stray pointer
+ * crossing a neighbour re-targeted every spring in the graph and the whole
+ * scene lurched around the thing being read.
+ */
+function attractionIsWelcome() {
+  const { focusedNodeId, flying } = useSceneStore.getState();
+  return !focusedNodeId && !flying;
+}
+
 function handlePointerOver(e: ThreeEvent<PointerEvent>, nodeId: string) {
   e.stopPropagation();
   useSceneStore.getState().setHoveredNodeId(nodeId);
-  attractNeighbors(nodeId);
+  if (attractionIsWelcome()) attractNeighbors(nodeId);
 }
 
 function handlePointerOut(e: ThreeEvent<PointerEvent>, nodeId: string) {
   e.stopPropagation();
   if (useSceneStore.getState().hoveredNodeId === nodeId) {
     useSceneStore.getState().setHoveredNodeId(null);
-    releaseAttraction();
+    // Releasing while focused would be the same lurch in reverse.
+    if (attractionIsWelcome()) releaseAttraction();
   }
 }
 
@@ -819,6 +836,27 @@ export function Constellation({
   }, [focusedNodeId, flying, spotlightNodeId]);
 
   /**
+   * **Closing a node lets its neighbours go.**
+   *
+   * The hover that preceded the click drew them in, and nothing released it:
+   * the pointer never left the node in a way `handlePointerOut` saw, because
+   * what moved was the camera. So the graph stayed in the shape the hover had
+   * pulled it into long after the reader had left, and the next hover
+   * re-targeted every spring at once — the whole constellation snapping from
+   * one cluster to another with nothing on screen to explain it.
+   *
+   * Released on the way out rather than on the way in, so the connections stay
+   * gathered around the panel while it is open, which is what makes them
+   * legible past its edges (05a's sideways navigation).
+   *
+   * Work pages are excluded: their gather is owned by the effect below, and a
+   * blanket release here would undo it on every render.
+   */
+  useEffect(() => {
+    if (!spotlightNodeId && !focusedNodeId) releaseAttraction();
+  }, [focusedNodeId, spotlightNodeId]);
+
+  /**
    * A spotlit project draws its neighbours in, using 2.3a's attraction — the
    * same mechanic hover uses, and the "gathering" 05-phase-2.md originally
    * asked this page for. The turn alone left the subgraph as sparse as the
@@ -947,11 +985,12 @@ export function Constellation({
     }
 
     // Stop advancing the clock and the breathing displacement freezes in
-    // place. Skipping stepSimulation the same way leaves every node at its
-    // seeded layout position, since livePositions starts there and nothing
-    // ever moves it — attractNeighbors/releaseAttraction (below) still get
-    // called on hover, but with stepSimulation never running, that state
-    // never gets read, so it can't reintroduce drift.
+    // place. The step itself keeps running: freezing the *clock* is what stops
+    // the wander, while the attraction springs integrate on the frame delta
+    // and must keep doing so, since a spotlit work page gathers its subgraph
+    // while frozen. Which is why hover attraction has to be withheld by hand
+    // when a node is open (attractionIsWelcome) — the freeze does not, and was
+    // never going to, hold it still.
     if (!reducedMotion) {
       breatheTime.value = state.clock.elapsedTime;
       stepSimulation(state.clock.elapsedTime, delta);
