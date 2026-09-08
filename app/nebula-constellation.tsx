@@ -139,51 +139,37 @@ const HOVER_OPACITY = 1;
 const HOVER_EASE = 0.2;
 
 /**
- * Fog band, in world units.
+ * Fog band, in world units — **derived from the distances the camera actually
+ * stands at**, which is the first time that has been possible.
  *
- * **These numbers are for a world that does not exist yet** — see
- * `07-continuous-space.md`. Today they do nothing at all, and that is
- * deliberate and proven rather than hoped: every node on every route currently
- * sits nearer than 28 units, so a band starting at 55 never engages. Measured,
- * moving it from 27–48 to here changes 0 pixels of 67,102 with ink on a work
- * page, 0 of 42,576 on the landing page and 0 of 66,315 inside the graph, with
- * motion frozen so only the fog differs.
+ * It has been describing a composition that did not ship for a long time. The
+ * 27-48 it started at was measured correctly against an *outside* framing of
+ * the constellation, and then `/nebula` moved inside the shell and nothing
+ * re-measured; every node on every route sat nearer than 28 units, so the fog
+ * was simply inert. Part 3 made the distances real: the graph is life-size at
+ * the origin and the camera stands where the composition asks, so there are
+ * finally numbers to tune against rather than a scale factor to guess from.
  *
- * The band it replaces was not doing anything either, which took some finding.
- * Its 27–48 was measured against an *outside* framing of the constellation —
- * nodes spanning depth 20.1 to 42.5 — and that framing was abandoned when
- * `/nebula` moved inside the shell. From the inside pose the whole graph sits
- * between 7.8 and 14.2 units away, and the landing and work-page placements
- * put it between 18.7 and 27.3. Nothing has reached the old near plane since.
- * The fog has been inert for as long as the camera has been inside, and the
- * docs describing it as grading the far cluster to 90% were describing a
- * composition that no longer ships.
+ * What each end is for:
  *
- * That the plumbing works is worth stating too, since inert fog and absent fog
- * look identical: bringing the band in to 5–30 changes 13.8% of the work
- * page's ink, 17.0% of the landing page's and 71.4% of the graph's.
+ * - **Near clears the graph seen from inside**, which spans 8 to 14 units from
+ *   the standing point. From within a shell there is no recession to describe:
+ *   every node is about as far away as every other, and fog there would only
+ *   flatten the one view that has real depth cues of its own.
+ * - **The landing page finally gets some.** The graph sits 71 to 96 units away
+ *   there — genuinely distant now rather than small and near — and grades from
+ *   11% to 27% across its own depth. That gradient is the difference between a
+ *   far-off object and a near one drawn small, and it could not exist while the
+ *   graph was a shrunken copy 23 units from the camera.
+ * - **Ambient routes recede further**, 28% to 44%, which is what they are for.
+ * - **Far is set against home**, 147 units from the reader once they turn
+ *   around inside the graph: 59% faded, present and hazed rather than erased.
  *
- * What these are chosen for is the fixed world, where the graph is life-size at
- * the origin and the landing viewpoint stands ~74 units away. Near clears the
- * graph seen from inside (14.2 at most) by a wide margin, so fog goes on doing
- * nothing there — from within a shell there is no recession for it to describe.
- * Far is set against where home actually sits, which is 150 units out: it
- * lands about 60% faded there, hazed enough to read as somewhere else rather
- * than as a card hung nearby. It was 130 when home was at 74 and a quarter
- * faded, and a quarter is not distance — it is a slightly grey sign.
- *
- * **Both numbers are provisional and belong to Part 3**, when there is finally
- * something at those distances to tune them against.
+ * Four bands were compared against these distances. This one is the only one
+ * that keeps the interior clear, gives the landing page a real gradient, and
+ * still leaves home legible.
  */
-// **Temporarily 175 while Part 3 lands.** The camera now genuinely stands
-// 78-170 units from the graph off /nebula (the old scale trick expressed as
-// distance), which puts the graph inside the band this was tuned to — so a
-// composition that used to be unfogged would fog, and the pixel gate the
-// refactor is verified against would fail for a reason that is not the
-// refactor. Held above every standing distance until the geometry is proven
-// exact; then re-derived against the real distances, which is the last step of
-// Part 3 and the whole point of having them.
-const FOG_NEAR = 175;
+const FOG_NEAR = 55;
 const FOG_FAR = 210;
 
 /** One shared clock uniform drives every breathing material. */

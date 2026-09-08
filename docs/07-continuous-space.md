@@ -305,7 +305,7 @@ it is a shorter drag away rather than unreachable. Its fog was measured rather
 than assumed: 25% at rest inside the graph, which is the quarter the Part 1
 band was chosen for.
 
-### Part 3 — One fixed world — **in progress**
+### Part 3 — One fixed world — **done**
 
 The constellation stops scaling and stops moving.
 
@@ -403,8 +403,42 @@ cluster. And a hop inside the graph is still a different kind of move from the
 journey to it. What actually went was the duplicated screen-space arithmetic:
 one derivation, one owner.
 
-Remaining: the fog, parked above every standing distance while the geometry was
-proven, and re-derived against the real distances as the last step. `/`, `/work/[slug]` and
+**Step 4 is done, and Part 3 with it: the fog is derived from real distances.**
+It had been describing a composition that stopped shipping long ago — measured
+correctly against an outside framing of the constellation, then left alone when
+`/nebula` moved inside the shell, after which every node on every route sat
+nearer than its near plane and it did nothing at all. There was never anything
+to tune it against, because the graph's distance was a scale factor rather than
+a distance. Now there is.
+
+At 55–210, against four bands compared: the interior stays clear (8–14 units
+from the standing point, and from inside a shell there is no recession to
+describe); the landing page grades 11% to 27% across the graph's own depth at
+71–96 units; ambient routes recede 28% to 44%; and home sits at 59% once the
+reader turns around, which is where it already was.
+
+That gradient is the point, and it is new. It is the difference between a far
+object and a near one drawn small, and it could not exist while the graph was a
+shrunken copy 23 units from the camera. This is the first deliberate change to
+a composition since Part 3 began — the gate flags it, as it should: 57–64% of
+the landing page's ink, 91% of the ambient routes', 0% of `/nebula`'s.
+
+**One coupling this creates, which is worth knowing before tuning further.**
+Narrow viewports shrink the graph, and shrinking it now means standing further
+away, which fogs it more: 32–48% at 390×844 against 11–27% on a desktop. It is
+physically coherent — the graph really is further — and it reads as softer
+rather than absent. But it is a new relationship between viewport width and
+atmosphere, and it did not exist when width only changed a scale factor.
+
+## Where "further from both" now lives
+
+`STANDING_FOV` is the whole dial, and it is one constant. Narrowing it and
+scaling `REFERENCE_DISTANCE` by the same `tan(θ/2)` ratio moves every standing
+camera further out while the graph occupies exactly the same fraction of the
+frame — the composition untouched, the perspective flattened, and the fog given
+more depth to work across. At 30° the landing camera stands about 130 units out
+instead of 84. Not turned yet: it is a taste decision about how the landing
+page should feel, and it wants eyes rather than arithmetic. `/`, `/work/[slug]` and
 `/nebula` become camera positions. The landing composition solve is
 re-expressed as camera distance and lateral offset; `use-cluster-screen`, the
 affordance, the work-page centring and the label overhang are rewired to the

@@ -285,15 +285,15 @@ Never use `Math.random()` in layout. Use a seeded PRNG.
 
 ## Scene fog
 
-> **Fog is currently inert, and has been since the camera moved inside the
-> shell.** Every node on every route now sits within 28 units, and the band
-> starts at 55. This section describes what fog is *for*, which is still true
-> and is why `07-continuous-space.md` needs it; it does not describe anything
-> visible today. Measured, with motion frozen so only the fog differs: moving
-> the band from 27–48 to 55–130 changes 0 pixels of 67,102 with ink on a work
-> page, 0 of 42,576 on the landing page, 0 of 66,315 inside the graph. Bringing
-> it in to 5–30 changes 13.8%, 17.0% and 71.4% of those — so the wiring works,
-> it simply has nothing in range.
+> **Fog does something again.** It was inert for as long as the camera had been
+> inside the shell: its band was measured against an outside framing that
+> stopped shipping, and every node on every route then sat nearer than its near
+> plane. Part 3 gave the graph real distances — it is life-size at the origin
+> and the camera stands where the composition asks — so the band is now derived
+> from them. The landing page grades 11% to 27% across the graph's own depth,
+> ambient routes 28% to 44%, and the interior stays clear, since from inside a
+> shell every node is about as far off as every other. See
+> `07-continuous-space.md`.
 
 Fog matched to `--paper` is the primary depth cue in the constellation — it's what makes distant clusters recede instead of just getting smaller. `<fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />`, wired into the fresnel shader by hand (`ShaderMaterial` doesn't pick up scene fog automatically — the fog chunks and uniforms have to be included explicitly).
 
