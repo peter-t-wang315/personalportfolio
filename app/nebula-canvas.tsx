@@ -195,6 +195,7 @@ const _turnRel = new THREE.Vector3();
 const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
 const _solvedTarget = new THREE.Vector3();
+const _tiltFallbackUp = new THREE.Vector3(1, 0, 0);
 const _parkForward = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
@@ -296,14 +297,52 @@ const INSIDE_CAMERA_FOV = 72;
  */
 const LOOK_DISTANCE = 0.1;
 
+/**
+ * How far the interior heading tilts up off the composed one, in degrees.
+ *
+ * The composed heading looks straight through the graph's centre, and a node
+ * sits on that line: measured, `solder-driver` was 2.26 degrees off the view
+ * axis at rest, which at a 72-degree field of view is dead centre. Arriving
+ * therefore looked like flying *at* that project rather than into the graph —
+ * a hard focus nobody asked for, on whichever node happened to be on the axis.
+ *
+ * A tilt is the cheapest fix that keeps the composition: azimuth is untouched,
+ * so the clusters stay arranged left-to-right exactly as they were, and only
+ * the horizon moves. Searched over headings within 12 degrees of the composed
+ * one, the graph is dense enough that no small move buys much room — 2 degrees
+ * of tilt buys a 4.2-degree gap, 5 buys 7.1, and 12 buys only 12.8. Twelve is
+ * the whole of what is available: it puts the nearest node 95px off centre at
+ * 1280x800 and 125px at 1440x900, which reads as *a* node rather than as *the*
+ * subject. Eight was tried first and left it 70px out, still close enough to
+ * look chosen.
+ *
+ * The cost is a slightly emptier lower frame, since tilting off a node
+ * necessarily leaves room on the side you tilted away from. That is the trade:
+ * a composition with a gap in it, against one that appears to have picked a
+ * favourite project.
+ */
+const INTERIOR_TILT_DEGREES = 12;
+
 const INSIDE_POSE: CameraPose = (() => {
   const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
   const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
     .sub(target)
     .normalize();
+  // The camera keeps the position the composition put it in; only where it
+  // looks changes. Building the pose from a tilted *target* instead would move
+  // the camera too, since its position is derived from that target.
+  const position = target.clone().addScaledVector(outward, -INSIDE_DISTANCE);
+  const heading = target.clone().sub(position).normalize();
+  const right = new THREE.Vector3()
+    .crossVectors(heading, Math.abs(heading.y) > 0.9 ? _tiltFallbackUp : LAYOUT_UP)
+    .normalize();
+  heading.applyAxisAngle(
+    right,
+    (INTERIOR_TILT_DEGREES * Math.PI) / 180,
+  );
   return {
-    position: target.clone().addScaledVector(outward, -INSIDE_DISTANCE),
-    target,
+    position,
+    target: position.clone().addScaledVector(heading, INSIDE_DISTANCE),
   };
 })();
 
