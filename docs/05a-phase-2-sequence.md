@@ -2,9 +2,25 @@
 
 ## Session status (update each session)
 
-Last completed: **2.6** (interior panel and routing), on top of **2.5** and the
-**Phase 1 landing page**. Committed on `nebulustest`. **05a asks for a preview
-deploy after 2.6; the owner runs `npx vercel` themselves.**
+**Where the work is: branch `continuous-space`, 72 commits past `main`.** Not
+`nebulustest`, which this block named for several sessions after it stopped
+being true.
+
+Last completed in *this* sequence: **2.6** (interior panel and routing), on top
+of **2.5** and the **Phase 1 landing page**. Since then the branch has done
+**Parts 1, 2 and 3 of `07-continuous-space.md`** — the fog, the hero as an
+object in the world, and the fixed life-size world with the camera solved per
+route. **Part 4 (the approach and the string) is next**, and it is the part
+that decides how `/work/[slug]` stands. Read 07 before 05a's remaining items:
+it changed what they sit on.
+
+Still outstanding from this document: **a preview deploy — 05a asks for one
+after 2.6, and the owner runs `npx vercel` themselves**; 2.7; 2.8; the mobile
+pass; and the background particle field, which was designed and never built.
+
+**The measurements are in `checks/`** as of Part 3, with a README. Before
+believing any number in these docs, that is where it came from and how to
+re-run it.
 
 **2.6 as built.** The URL is the source of truth for focus: node clicks push
 `/nebula/[slug]` or `/nebula/tech/[id]`, `RouteFocus` syncs the store from the

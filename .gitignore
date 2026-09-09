@@ -35,3 +35,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .playwright-mcp/
+
+# checks/ screenshots — the scripts write these into whatever directory you
+# run them from, which is normally the repo root
+/part3-*/
+/v26/
+/wtn/

@@ -438,17 +438,29 @@ camera further out while the graph occupies exactly the same fraction of the
 frame — the composition untouched, the perspective flattened, and the fog given
 more depth to work across. At 30° the landing camera stands about 130 units out
 instead of 84. Not turned yet: it is a taste decision about how the landing
-page should feel, and it wants eyes rather than arithmetic. `/`, `/work/[slug]` and
-`/nebula` become camera positions. The landing composition solve is
-re-expressed as camera distance and lateral offset; `use-cluster-screen`, the
-affordance, the work-page centring and the label overhang are rewired to the
-scene's published circle. The mechanisms listed under *What this deletes* go.
+page should feel, and it wants eyes rather than arithmetic.
 
-**Done when:** every route composes as it does today — measured, not eyeballed
-— with `placement` gone from the codebase.
+## How any of this was measured
 
-**This is the hard part.** It is the only one with heavy coupling, and the only
-one where "looks about right" is not good enough.
+Everything above that carries a number — 0.23% worst, 0.00° of heading change,
+44/70/91% — came out of a script, and those scripts are in `checks/`, with a
+README covering how to run them and the six traps that produced a wrong
+conclusion each. They were in a scratchpad until Part 3 ended, which meant none
+of the numbers in this document could be reproduced by anyone reading it.
+
+The one to know about is the **pixel gate**: `checks/baseline.mjs` captures 5
+routes × 6 viewports with motion frozen and the DOM hidden, and
+`checks/part3diff.mjs` reports what fraction of inked pixels moved between two
+captures. Two captures of one build differ by 0.00%, so a number above zero is
+a real change. That is what made Part 3 possible to do at all — the equivalence
+it rests on is exact, so "did I break the composition" has a yes-or-no answer
+rather than an opinion. Parts 4 through 6 change compositions deliberately and
+cannot be gated at zero, but the gate still says *which* routes moved and by
+how much, which is the question worth asking of a deliberate change too.
+
+Nothing here runs in CI and nothing should: it needs a production build, a
+server on :3100 and a browser, and it is slow. It is what you run before
+believing a claim, not on every save.
 
 ### Part 4 — The approach and the string
 
