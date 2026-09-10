@@ -852,14 +852,25 @@ the frame while it is still small and the run in is dead straight. The rule
 `approachLerpPose` found, do the turning while close, was for a swing *around*
 the graph; a glide across the frame spent close is a lurch.
 
-**The lens widens over the inner 45%.** 30° standing, 72° inside. Widening
-shrinks everything, so wherever it is spent it eats into the approach; spent
-here, it is where the near nodes are streaming past the edges of the frame and
-reads as the room opening up around the reader. Modelled against the far wall,
-growth never reverses: the slowest stretch is 1.03× per 100ms, at the crossing.
+**The lens widens from the launch.** 30° standing, 72° inside. Widening
+shrinks everything, so wherever it is spent it eats into the approach. It was
+first spent over the inner 45% of the distance, on the theory that the near
+nodes streaming past would carry it — and it stalled the graph's growth for a
+few hundred milliseconds right where the graph was still turning, which the
+reader saw as "flies in, pauses for the nebula to finish rotating, then goes
+in all the way". It is spent over the first 80% of the eased progress now,
+which the burst curve below puts almost entirely in the launch. That is also
+where the hero is passing, and a wide lens makes it rush. Modelled against the
+far wall, the growth never dips below 1.0 per frame with this schedule; the
+first version's dip was 0.97, and that was the pause.
 
-The curve is `diveEase`, (0.3, 0, 0.15, 1), over 2800ms — up from 2000, because
-the journey is longer by the part that was missing. The graph's own turn
+The curve is `diveEase`, (0.3, 0.35, 0.2, 1), over 2800ms — up from 2000,
+because the journey is longer by the part that was missing. It is a burst:
+80% of the way in the first 1.2 seconds, the hero gone past by 300ms, the rest
+a deceleration into the middle of the room. The first curve, (0.3, 0, 0.15, 1),
+leaned in gently and then held a steady rate, which against a geometric
+distance schedule is exactly a steady rate of growth — and read as "sooo
+linear". A launch is not steady. The graph's own turn
 (`unwindShare`) runs the whole length of the flight in step with the
 placement. It was briefly compressed into the first seven tenths so the run
 through the shell would be against a still graph, and that read as three beats
@@ -892,35 +903,24 @@ Measured in the browser (`checks/flyin.mjs`, software GL): 130.8 units to
 72°, landed at (0.00, 0.00, 0.00) — the exact centre — with the graph balanced
 across the frame rather than piled into a corner.
 
-## The way out faces the way home
+## The way out is a yank
 
-The first version of the departure was the dive reversed: backing out of the
-graph looking at it, then the glide off the axis. Asked for instead: "flying
-directly out of the nebula straight towards the hero page, and then the camera
-rotates at the end as it needs to to get us centred on the home page again."
-So the departure has its own heading schedule (`departureHeading`), against
-distance from the centre like everything else:
+The departure is the dive reversed and nothing else: the camera keeps facing
+the graph and is pulled straight back to the standing point — "a direct pull
+back out" — with the same burst at the start and the same settle at the end,
+the lens narrowing back as the hero passes.
 
-- Over the first 12% of the distance — still inside the shell — the camera
-  turns to face the hero plane, the short way round from wherever a drag left
-  it. From dead ahead, which is exactly opposite, it goes the page's way.
-- It then **tracks the page**: the page sits centred and grows, drifting to
-  one side as the camera glides off the axis, and passes close on the left.
-  A version that faced straight down +z instead flew through empty paper —
-  the page is off the axis and slid out of the side of the frame a third of
-  the way home.
-- From half way it blends out of the tracked aim toward the landing heading,
-  continuing the same way round, so the page sweeps from beside the camera to
-  its place on the left of the frame while the graph comes in on the right.
-
-Yaw and pitch rather than a slerp, because the two headings that matter are
-exactly opposite and a slerp between opposites has no plane to turn in; yaw is
-kept on one increasing branch so passing the page from ahead to beside to
-behind is one angle rather than a wrap. Measured: yaw 0° → −158° by 33 units
-out, tracking to −117° at 94, −66° at 111 as the page goes by, −7° at 138, 0°
-at the standing point. What the reader sees on the way is the *back* of the
-page, mirrored, which is what a page you left behind looks like from behind;
-the front comes round with the final turn.
+A version in between turned the camera to face the hero, tracked it as it
+grew, and swung round onto the landing heading as it arrived. It was built on
+a misreading of "the camera rotates at the end as it needs to": that was only
+ever about a reader who had turned to look elsewhere before leaving. So the
+one thing `departureHeading` does now is straighten whatever heading a drag
+left onto the landing heading, over the first 30% of the distance — while the
+graph is still all around and the turn is a glance. Straightening at the end
+instead would slide a small, distant graph across the frame right as it lands.
+Yaw and pitch rather than a slerp, because a reader who had turned round to
+look at home is facing exactly away, and a slerp between opposites has no
+plane to turn in.
 
 ## The hand-off
 

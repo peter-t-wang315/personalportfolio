@@ -59,14 +59,16 @@ export const approachEase = cubicBezier(0.25, 0.15, 0.35, 0.85);
  * The curve for the dive: the flight from the landing page to the centre of
  * the graph and back.
  *
- * Asked for in so many words — "ease in fast and ease back out as the camera
- * lands". A short lean into the launch, then sustained speed, then a long
- * settle into the middle of the room. It is applied to a distance that is
- * already spent geometrically (divePose), so "sustained speed" here means a
- * constant rate of apparent growth, which is what travel looks like, and the
- * settle is on top of that.
+ * A burst. (0.3, 0, 0.15, 1) was the first answer to "ease in fast and ease
+ * back out as the camera lands", and against a distance that is already
+ * spent geometrically it read as "sooo linear": a steady rate of growth is
+ * what travel looks like, and not what a launch looks like. This one is at
+ * speed almost at once — 80% of the way in the first 1.2 seconds, the hero
+ * gone past by 300ms — and then spends the rest of the flight decelerating
+ * into the middle of the room. Symmetric on the way out: yanked, then
+ * settling onto the standing point.
  */
-export const diveEase = cubicBezier(0.3, 0, 0.15, 1);
+export const diveEase = cubicBezier(0.3, 0.35, 0.2, 1);
 
 /**
  * The constellation's **geometric** centre, which is the origin: content/
@@ -379,13 +381,18 @@ export function approachLerpPose(
  * while close — but that was a *turn around* the graph, and a glide across
  * the frame is not one: spent early it is an aim, spent late it is a lurch.
  *
- * **The lens widens over the inner 45%.** 30 degrees standing, 72 inside.
- * Widening shrinks everything, so wherever it happens it eats into the sense
- * of approach — a dolly zoom — and the place to spend it is where the near
- * nodes are streaming past and the widening reads as the room opening up
- * around the reader rather than the wall pulling away. Measured against the
- * far wall, the growth never reverses: the slowest stretch is 1.03x per
- * 100ms, at the crossing.
+ * **The lens widens from the launch.** 30 degrees standing, 72 inside.
+ * Widening shrinks everything, so wherever it is spent it eats into the sense
+ * of approach — a dolly zoom. It was first spent over the inner 45% of the
+ * distance, and that stalled the graph's growth for a few hundred
+ * milliseconds right where the graph was still turning, which read as the
+ * flight pausing for the rotation to finish. It is spent over the first 80%
+ * of the *eased progress* now, which the burst curve puts almost entirely
+ * in the launch: a wide lens makes the hero rush as it passes, the widening
+ * is done before the shell, and modelled against the far wall the growth
+ * never dips below 1.0 per frame — the graph only ever grows. Symmetric on
+ * the way out: the lens narrows back over the last 80%, as the hero passes
+ * again.
  */
 export interface DivePose extends CameraPose {
   /** Distance from the graph's centre. */
@@ -399,8 +406,8 @@ export interface DivePose extends CameraPose {
 const DIVE_SHELL = CONSTELLATION_BOUNDING_RADIUS;
 /** The glide is finished once `r` is inside this fraction of the outer distance. */
 const DIVE_GLIDE_INNER = 0.3;
-/** The lens widens over this innermost fraction of the outer distance. */
-const DIVE_LENS_OUTER = 0.45;
+/** The lens moves over this share of the eased progress, at the outer end. */
+const DIVE_LENS_SHARE = 0.8;
 
 function smoothstep(u: number) {
   const x = THREE.MathUtils.clamp(u, 0, 1);
@@ -448,8 +455,11 @@ export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose 
     s,
   );
 
-  const insideLens = 1 - smoothstep(r / (outer * DIVE_LENS_OUTER));
-  const lens = innerIsTo ? insideLens : 1 - insideLens;
+  // Spent against progress rather than distance, unlike the rest: the point
+  // is *when* in the flight it happens, and the burst curve decides that.
+  const lens = innerIsTo
+    ? smoothstep(s / DIVE_LENS_SHARE)
+    : 1 - smoothstep((1 - s) / DIVE_LENS_SHARE);
 
   return {
     position,
@@ -461,77 +471,40 @@ export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose 
 }
 
 /**
- * **Where the camera looks on the way out: at the page it is flying to.**
+ * **Where the camera looks on the way out: at the graph, being pulled away
+ * from it.**
  *
- * The arrival holds one heading because the graph turns to meet it. The
- * departure cannot be its mirror — backing out of the graph facing the graph
- * reads as being reeled in on a string, and what was asked for is "flying
- * directly out of the nebula straight towards the hero page, and then the
- * camera rotates at the end to get us centred on the home page again". A
- * first version faced straight down +z and flew through empty paper: the page
- * is off the axis, so it slid out of the side of the frame a third of the way
- * home. So the camera *aims at the page*, and everything below is against
- * distance from the centre like the rest of the flight:
+ * The departure is a yank — "a direct pull back out" — so the camera keeps
+ * facing the graph the whole way, exactly as it came in. The only thing this
+ * decides is what happens when a drag had left the reader looking somewhere
+ * else: the view straightens onto the landing heading over the first
+ * REALIGN_BY of the distance, while the graph is still all around and the
+ * turn is a glance rather than a swing. Straightening at the end instead
+ * would slide a small distant graph across the frame right as it lands.
  *
- * - **Turn to face the page** over the first TURN_OUT_BY of the distance,
- *   which is still inside the shell: the reader turns round in the middle of
- *   the cloud and flies out through the wall looking at where they are going.
- *   The short way round from wherever a drag left the heading; from dead
- *   ahead, which is opposite the page, toward the page's own side.
- * - **Track it.** The page sits centred and grows, drifting to one side as
- *   the camera glides off the axis toward its standing point.
- * - **Settle onto the landing heading** from TURN_BACK_FROM, blending out of
- *   the tracked aim toward straight ahead, continuing the same way round —
- *   so the page sweeps from beside the camera to its place on the left of
- *   the frame as the graph comes in on the right, and the camera arrives
- *   looking past the hero at the graph it just left.
- *
- * Yaw and pitch rather than a slerp, because the headings at the two ends are
- * exactly opposite each other and a slerp between opposites has no plane to
- * turn in. Yaw is kept on [0, 2π) with the landing heading at 0 and 2π, so
- * tracking the page as it passes from ahead to beside to behind is one
- * increasing angle rather than a wrap.
+ * Yaw and pitch rather than a slerp, because a reader who turned round to
+ * look at home is facing exactly away from the landing heading, and a slerp
+ * between opposites has no plane to turn in. A dead tie turns left.
  */
-const TURN_OUT_BY = 0.12;
-const TURN_BACK_FROM = 0.5;
+const REALIGN_BY = 0.3;
 const TWO_PI = Math.PI * 2;
-
-/** Yaw about +y with −z at 0, on [0, 2π). */
-function yawOf(x: number, z: number) {
-  const yaw = Math.atan2(x, -z);
-  return yaw < 0 ? yaw + TWO_PI : yaw;
-}
 
 export function departureHeading(
   fromHeading: THREE.Vector3,
-  /** From the camera to the hero plane, world units. */
-  toPage: THREE.Vector3,
   r: number,
   outer: number,
   out: THREE.Vector3,
 ): THREE.Vector3 {
-  const yaw0 = yawOf(fromHeading.x, fromHeading.z);
+  // Yaw about +y with −z at 0, the landing heading.
+  const yaw0 = Math.atan2(fromHeading.x, -fromHeading.z);
   const pitch0 = Math.asin(THREE.MathUtils.clamp(fromHeading.y, -1, 1));
-  const pageLen = Math.max(toPage.length(), 1e-6);
-  const yawPage = yawOf(toPage.x, toPage.z);
-  const pitchPage = Math.asin(THREE.MathUtils.clamp(toPage.y / pageLen, -1, 1));
-
-  // The first turn takes the short way; a dead tie goes the page's way, which
-  // is also the way the final settle continues.
-  let delta = yawPage - yaw0;
+  let delta = -yaw0;
   if (delta > Math.PI) delta -= TWO_PI;
   if (delta < -Math.PI) delta += TWO_PI;
   if (Math.abs(Math.abs(delta) - Math.PI) < 1e-6) delta = Math.PI;
-
-  const u1 = smoothstep(r / (outer * TURN_OUT_BY));
-  const u2 = smoothstep((r / outer - TURN_BACK_FROM) / (1 - TURN_BACK_FROM));
-
-  const tracked = yaw0 + delta * u1;
-  // Continue increasing to the next multiple of 2π: the landing heading,
-  // reached the same way round the page is being passed.
-  const remaining = ((TWO_PI - (tracked % TWO_PI)) % TWO_PI);
-  const yaw = tracked + remaining * u2;
-  const pitch = pitch0 * (1 - u1) + pitchPage * u1 * (1 - u2);
+  const u = smoothstep(r / (outer * REALIGN_BY));
+  const yaw = yaw0 + delta * u;
+  const pitch = pitch0 * (1 - u);
   return out.set(
     Math.sin(yaw) * Math.cos(pitch),
     Math.sin(pitch),

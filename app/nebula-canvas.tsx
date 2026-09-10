@@ -239,7 +239,6 @@ const FORWARD = new THREE.Vector3(0, 0, -1);
 const _parkForward = new THREE.Vector3();
 const _fromHeading = new THREE.Vector3();
 const _turnHeading = new THREE.Vector3();
-const _toPage = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
@@ -514,10 +513,10 @@ interface Flight {
    */
   toHome: boolean;
   /**
-   * A departure: the camera turns to face the way it is going, flies out
-   * facing home, and turns back to the standing heading as it arrives — see
-   * departureHeading. The path decides where the camera is; this decides
-   * where it looks.
+   * A departure: the camera keeps facing the graph as it is pulled out, and
+   * any heading a drag left it with straightens onto the landing heading
+   * early in the pull — see departureHeading. The path decides where the
+   * camera is; this decides where it looks.
    */
   turnAround: boolean;
 }
@@ -1504,7 +1503,6 @@ function CameraRig({
       pose = lerpPose(active.from, active.to, eased);
     }
 
-    // The plane first: the departure aims at it.
     solveHomePlane(pose.position, active);
     if (active.turnAround) {
       const outer = Math.max(
@@ -1513,14 +1511,7 @@ function CameraRig({
         1e-3,
       );
       _fromHeading.copy(active.from.target).sub(active.from.position).normalize();
-      _toPage.copy(homePlane.position).sub(pose.position);
-      departureHeading(
-        _fromHeading,
-        _toPage,
-        pose.position.length(),
-        outer,
-        _turnHeading,
-      );
+      departureHeading(_fromHeading, pose.position.length(), outer, _turnHeading);
       const lookLen = pose.target.distanceTo(pose.position);
       pose.target.copy(pose.position).addScaledVector(_turnHeading, lookLen);
     }
