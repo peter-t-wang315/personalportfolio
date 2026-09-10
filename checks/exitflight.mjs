@@ -15,7 +15,7 @@
 import { chromium } from 'playwright';
 
 const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
-const DURATION = 1400;   // JUMP_DURATION_MS
+const DURATION = 2800;   // FLIGHT_DURATION_MS
 
 async function trace(label, from, to) {
   const p = await b.newPage({ viewport: { width: 1280, height: 800 } });

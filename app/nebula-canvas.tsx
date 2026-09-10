@@ -33,6 +33,7 @@ import {
   departureHeading,
   diveEase,
   divePose,
+  FLIGHT_DURATION_MS,
   FOCUS_FLIGHT_DURATION_MS,
   flightEase,
   focusPose,
@@ -44,8 +45,6 @@ import {
 import { NebulaHome } from "./nebula-home";
 import { HOME_HANDOFF_MS } from "./nebula-departure";
 import { getHeroFrame, homePlane } from "./nebula-home-placement";
-import { JUMP_DURATION_MS, JUMP_LENS_BUMP_DEG, jumpProfile, jumpWash } from "./nebula-jump";
-import { NebulaWash } from "./nebula-wash";
 import { getPlacement, setPlacement } from "./nebula-placement";
 import { publishCameraProbe } from "./nebula-probe";
 import {
@@ -1303,7 +1302,7 @@ function CameraRig({
       placementFrom: 0,
       placementTo: 1,
       path: "dive",
-      duration: JUMP_DURATION_MS,
+      duration: FLIGHT_DURATION_MS,
       ease: diveEase,
       delay,
       revealAt: 1,
@@ -1414,7 +1413,7 @@ function CameraRig({
       fovTo: STANDING_FOV,
       placementFrom: 1,
       placementTo: 0,
-      duration: JUMP_DURATION_MS,
+      duration: FLIGHT_DURATION_MS,
       // Only when there is a shell to close. Leaving the graph itself has no
       // second beat to wait for.
       delay: leavingNode ? SHELL_CLOSE_MS : 0,
@@ -1519,7 +1518,6 @@ function CameraRig({
 
     const active = flight;
     if (!active) {
-      jumpWash.opacity = 0;
       // Standing somewhere the page composed. Written every frame because the
       // composition is live — parallax, the ambient ease, a hover on `/work`
       // re-centring the graph — and camera-controls is disabled here, so
@@ -1542,11 +1540,7 @@ function CameraRig({
     }
 
     const t = flightProgress(active);
-    // The dive is shaped by the jump profile rather than by a curve: three
-    // beats, with the wash and the lens spike living in the middle one.
-    const jump =
-      active.path === "dive" ? jumpProfile(t, active.placementTo === 1) : null;
-    const eased = jump ? jump.s : (active.ease ?? flightEase)(t);
+    const eased = (active.ease ?? flightEase)(t);
     if (active.placementTo === 0 && t >= active.revealAt) revealDocument();
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
@@ -1578,17 +1572,7 @@ function CameraRig({
       pose.target.copy(pose.position).addScaledVector(_turnHeading, lookLen);
     }
     applyPose(controls, pose);
-    // Leaving a node for home is the approach path with the same wash and
-    // lens beats, so the two ways home feel like one.
-    const outJump =
-      !jump && active.turnAround && active.toHome ? jumpProfile(t, false) : null;
-    const beats = jump ?? outJump;
-    jumpWash.opacity = beats ? beats.wash : 0;
-    applyFov(
-      controls,
-      THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix) +
-        (beats ? beats.lens * JUMP_LENS_BUMP_DEG : 0),
-    );
+    applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix));
 
 
     if (t >= 1) {
@@ -1708,7 +1692,6 @@ export function NebulaCanvas() {
           On every route but the graph it sits behind the camera, so the gate
           is about not paying for it rather than about hiding it. */}
       <NebulaHome />
-      <NebulaWash />
       <RouteFocus id={routeFocusId} />
       <CameraRig
         isNebula={isNebula}

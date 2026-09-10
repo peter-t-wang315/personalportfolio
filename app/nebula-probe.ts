@@ -1,7 +1,6 @@
 import type * as THREE from "three";
 import { getClusterCircle } from "./nebula-drag-state";
 import { homePlane } from "./nebula-home-placement";
-import { jumpWash } from "./nebula-jump";
 import { getPlacement } from "./nebula-placement";
 
 /**
@@ -40,8 +39,6 @@ export interface CameraProbe {
   home: { position: [number, number, number]; width: number; height: number; opacity: number };
   /** The graph's on-screen circle, so a script can click it where the rig drew it. */
   cluster: { x: number; y: number; r: number; ready: boolean };
-  /** The paper wash over the scene, 0..1 (nebula-jump.ts). */
-  wash: number;
 }
 
 declare global {
@@ -65,7 +62,6 @@ const probe: CameraProbe = {
   flying: false,
   home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
   cluster: { x: 0, y: 0, r: 0, ready: false },
-  wash: 0,
 };
 
 /**
@@ -108,6 +104,5 @@ export function publishCameraProbe(
   probe.cluster.y = circle.centerY;
   probe.cluster.r = circle.radiusPx;
   probe.cluster.ready = circle.ready;
-  probe.wash = jumpWash.opacity;
   window.__nebulaProbe = probe;
 }

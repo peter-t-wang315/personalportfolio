@@ -17,7 +17,7 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 
 const BASE = process.env.BASE ?? 'http://localhost:3100';
-const DURATION = 1400;   // JUMP_DURATION_MS
+const DURATION = 2800;   // FLIGHT_DURATION_MS
 const VIEWPORT = { width: 1440, height: 900 };
 fs.mkdirSync('flyin', { recursive: true });
 
@@ -31,7 +31,7 @@ function installTracer(p) {
       const m = document.querySelector('main');
       if (q) window.__T.push({
         t: q.t, d: q.distance, x: q.position[0], y: q.position[1], z: q.position[2],
-        fov: q.fov, fly: q.flying, placement: q.placement, h: q.heading.slice(), wash: q.wash,
+        fov: q.fov, fly: q.flying, placement: q.placement, h: q.heading.slice(),
         home: { z: q.home.position[2], x: q.home.position[0], w: q.home.width, h: q.home.height, op: q.home.opacity },
         leaving: document.documentElement.dataset.leaving === '1',
         arriving: document.documentElement.dataset.arriving === '1',
@@ -63,14 +63,14 @@ function report(label, T, t0, taken) {
   if (!fly.length) { console.log('  FAIL — the camera never moved'); return; }
   const start = fly[0].t;
   console.log(`  click to first camera move: ${(start - t0).toFixed(0)}ms; ${T.length} samples`);
-  console.log('  ms    d      z      x     fov  place  home.op  home.z home.x  page   yaw  wash  flags');
+  console.log('  ms    d      z      x     fov  place  home.op  home.z home.x  page   yaw   flags');
   const rows = T.filter(r => r.t >= t0 - 50);
   let last = -1000;
   for (const r of rows) {
-    if (r.t - last < 90 && r.fly) continue;
+    if (r.t - last < 180 && r.fly) continue;
     last = r.t;
     const flags = [r.leaving ? 'leaving' : '', r.arriving ? 'held' : '', r.path].filter(Boolean).join(' ');
-    console.log(`  ${String(Math.round(r.t - start)).padStart(5)} ${r.d.toFixed(1).padStart(6)} ${r.z.toFixed(1).padStart(6)} ${r.x.toFixed(1).padStart(6)}  ${r.fov.toFixed(0).padStart(3)}  ${r.placement.toFixed(2)}   ${r.home.op.toFixed(2)}    ${r.home.z.toFixed(1).padStart(5)} ${r.home.x.toFixed(1).padStart(6)}  ${r.opacity === null ? '  -  ' : r.opacity.toFixed(2).padStart(5)}  ${String(Math.round(Math.atan2(r.h[0], -r.h[2]) * 180 / Math.PI)).padStart(4)}  ${(r.wash ?? 0).toFixed(2)}  ${flags}`);
+    console.log(`  ${String(Math.round(r.t - start)).padStart(5)} ${r.d.toFixed(1).padStart(6)} ${r.z.toFixed(1).padStart(6)} ${r.x.toFixed(1).padStart(6)}  ${r.fov.toFixed(0).padStart(3)}  ${r.placement.toFixed(2)}   ${r.home.op.toFixed(2)}    ${r.home.z.toFixed(1).padStart(5)} ${r.home.x.toFixed(1).padStart(6)}  ${r.opacity === null ? '  -  ' : r.opacity.toFixed(2).padStart(5)}  ${String(Math.round(Math.atan2(r.h[0], -r.h[2]) * 180 / Math.PI)).padStart(4)}  ${flags}`);
   }
   const end = fly.at(-1);
   console.log(`  landed at d=${end.d.toFixed(2)} (${end.x.toFixed(2)}, ${end.y.toFixed(2)}, ${end.z.toFixed(2)}) fov ${end.fov.toFixed(0)} after ${(end.t - start).toFixed(0)}ms`);
