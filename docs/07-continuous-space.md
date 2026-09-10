@@ -930,12 +930,13 @@ landing camera stands 59 units out rather than 162, so the landing graph is a
 ball with real perspective — its near face 1.7× its far face rather than 1.2×
 — rather than the distant sphere "Where 'further from both' now lives" argued
 for. Every distance in the world is a third of what it was. The hero plane
-cannot hang 50 units ahead of a camera 59 units out without sitting inside the
-shell, so `HOME_STANDOFF` is 22: the page is passed at a third of the way in,
-sits 37 units from the centre, and from the centre is about half the frame
-tall — near, because everything is near now. Measured: in, 63.5 → 0 with the
-lens at 72 throughout, landed at the centre; out, the straight line back,
-landed on the standing point with the plane on the page.
+could not hang 50 units ahead of a camera 59 units out without sitting inside
+the shell, so `HOME_STANDOFF` dropped to 22 — and went back up to 40 once the
+landing cluster was halved and the camera stood 118 out (see "Twice as far,
+and the pass"). Measured at the time: in, 63.5 → 0 with
+the lens at 72 throughout, landed at the centre; out, the straight line back,
+landed on the standing point with the plane on the page. The distances have
+since doubled; the lens has not moved.
 
 The "further from both" section above still describes the dial correctly and
 now describes a setting that is not in use.

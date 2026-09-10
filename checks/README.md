@@ -59,6 +59,8 @@ schedule is honest) and useless for judging how anything **feels**.
 | `exitcentre.mjs` | Does closing a node leave that node in the middle of the frame? |
 | `overlay.mjs` | Do the DOM overlays sit on the graph the scene actually drew? |
 | `flyin.mjs` | Does flying in land at the centre, pass the hero, and hand the page over to the plane and back? Traces the camera, the hero plane and the document on the same frames, both directions, and saves what screenshots it can into `flyin/`. |
+| `clickburst.mjs` | What is on screen in the frames right after the click, in both directions? A burst of screenshots into `burst/`, as fast as the harness can take them — a hundred milliseconds apart at best, so a one-frame glitch can still slip between them. |
+| `focusshot.mjs` | What does an open node look like, cold and warm, and what happens when the pointer sits in a corner? Screenshots into `focus/`. |
 | `interiorheading.mjs` | **Offline, no browser.** Which way should the reader face on arriving at the centre? Searches the sphere of headings against the shipping layout and prints the winner beside the rig's current `INTERIOR_HEADING`. Re-run whenever `content/layout.ts` moves. Needs the TypeScript loader: `node --experimental-strip-types --no-warnings --import ./checks/ts-register.mjs checks/interiorheading.mjs`. |
 
 ## Reading the app's own TypeScript

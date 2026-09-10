@@ -1,0 +1,20 @@
+// What does an open node look like, cold and warm? Screenshots into focus/.
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+fs.mkdirSync('focus', { recursive: true });
+const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+await p.goto('http://localhost:3100/nebula/preventive-maintenance-client', { waitUntil: 'networkidle' });
+await p.waitForTimeout(6000);
+await p.screenshot({ path: 'focus/cold.png' });
+await p.mouse.move(40, 300);
+await p.waitForTimeout(1500);
+await p.screenshot({ path: 'focus/cold-hover-topleft.png' });
+const probe = await p.evaluate(() => { const q = window.__nebulaProbe; return { pos: q.position.map(v => +v.toFixed(2)), d: +q.distance.toFixed(2), fov: q.fov, hovered: null }; });
+console.log(JSON.stringify(probe));
+await p.goto('http://localhost:3100/nebula', { waitUntil: 'networkidle' });
+await p.waitForTimeout(6000);
+await p.evaluate(() => { const a = document.querySelector('a[href="/nebula/preventive-maintenance-client"]'); if (a) a.click(); });
+await p.waitForTimeout(3000);
+await p.screenshot({ path: 'focus/warm.png' });
+await b.close();
