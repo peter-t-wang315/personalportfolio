@@ -460,6 +460,85 @@ export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose 
   };
 }
 
+/**
+ * **Where the camera looks on the way out: at the page it is flying to.**
+ *
+ * The arrival holds one heading because the graph turns to meet it. The
+ * departure cannot be its mirror — backing out of the graph facing the graph
+ * reads as being reeled in on a string, and what was asked for is "flying
+ * directly out of the nebula straight towards the hero page, and then the
+ * camera rotates at the end to get us centred on the home page again". A
+ * first version faced straight down +z and flew through empty paper: the page
+ * is off the axis, so it slid out of the side of the frame a third of the way
+ * home. So the camera *aims at the page*, and everything below is against
+ * distance from the centre like the rest of the flight:
+ *
+ * - **Turn to face the page** over the first TURN_OUT_BY of the distance,
+ *   which is still inside the shell: the reader turns round in the middle of
+ *   the cloud and flies out through the wall looking at where they are going.
+ *   The short way round from wherever a drag left the heading; from dead
+ *   ahead, which is opposite the page, toward the page's own side.
+ * - **Track it.** The page sits centred and grows, drifting to one side as
+ *   the camera glides off the axis toward its standing point.
+ * - **Settle onto the landing heading** from TURN_BACK_FROM, blending out of
+ *   the tracked aim toward straight ahead, continuing the same way round —
+ *   so the page sweeps from beside the camera to its place on the left of
+ *   the frame as the graph comes in on the right, and the camera arrives
+ *   looking past the hero at the graph it just left.
+ *
+ * Yaw and pitch rather than a slerp, because the headings at the two ends are
+ * exactly opposite each other and a slerp between opposites has no plane to
+ * turn in. Yaw is kept on [0, 2π) with the landing heading at 0 and 2π, so
+ * tracking the page as it passes from ahead to beside to behind is one
+ * increasing angle rather than a wrap.
+ */
+const TURN_OUT_BY = 0.12;
+const TURN_BACK_FROM = 0.5;
+const TWO_PI = Math.PI * 2;
+
+/** Yaw about +y with −z at 0, on [0, 2π). */
+function yawOf(x: number, z: number) {
+  const yaw = Math.atan2(x, -z);
+  return yaw < 0 ? yaw + TWO_PI : yaw;
+}
+
+export function departureHeading(
+  fromHeading: THREE.Vector3,
+  /** From the camera to the hero plane, world units. */
+  toPage: THREE.Vector3,
+  r: number,
+  outer: number,
+  out: THREE.Vector3,
+): THREE.Vector3 {
+  const yaw0 = yawOf(fromHeading.x, fromHeading.z);
+  const pitch0 = Math.asin(THREE.MathUtils.clamp(fromHeading.y, -1, 1));
+  const pageLen = Math.max(toPage.length(), 1e-6);
+  const yawPage = yawOf(toPage.x, toPage.z);
+  const pitchPage = Math.asin(THREE.MathUtils.clamp(toPage.y / pageLen, -1, 1));
+
+  // The first turn takes the short way; a dead tie goes the page's way, which
+  // is also the way the final settle continues.
+  let delta = yawPage - yaw0;
+  if (delta > Math.PI) delta -= TWO_PI;
+  if (delta < -Math.PI) delta += TWO_PI;
+  if (Math.abs(Math.abs(delta) - Math.PI) < 1e-6) delta = Math.PI;
+
+  const u1 = smoothstep(r / (outer * TURN_OUT_BY));
+  const u2 = smoothstep((r / outer - TURN_BACK_FROM) / (1 - TURN_BACK_FROM));
+
+  const tracked = yaw0 + delta * u1;
+  // Continue increasing to the next multiple of 2π: the landing heading,
+  // reached the same way round the page is being passed.
+  const remaining = ((TWO_PI - (tracked % TWO_PI)) % TWO_PI);
+  const yaw = tracked + remaining * u2;
+  const pitch = pitch0 * (1 - u1) + pitchPage * u1 * (1 - u2);
+  return out.set(
+    Math.sin(yaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    -Math.cos(yaw) * Math.cos(pitch),
+  );
+}
+
 /** Slerps between two unit vectors, falling back to a lerp when parallel. */
 function slerpDirection(a: THREE.Vector3, b: THREE.Vector3, t: number) {
   const dot = THREE.MathUtils.clamp(a.dot(b), -1, 1);

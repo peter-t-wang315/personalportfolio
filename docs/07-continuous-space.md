@@ -860,9 +860,22 @@ growth never reverses: the slowest stretch is 1.03× per 100ms, at the crossing.
 
 The curve is `diveEase`, (0.3, 0, 0.15, 1), over 2800ms — up from 2000, because
 the journey is longer by the part that was missing. The graph's own turn
-(`unwindShare`) is finished by seven tenths of the placement, just before the
-shell, so the run through the wall is against a graph that holds still; the
-same in reverse on the way out.
+(`unwindShare`) runs the whole length of the flight in step with the
+placement. It was briefly compressed into the first seven tenths so the run
+through the shell would be against a still graph, and that read as three beats
+— fly, turn, fly — where one motion was asked for.
+
+**The centre was claustrophobic at a shell of 11**, and the fix is the shell,
+not the lens. From the middle every node is the same distance off, so the only
+things that change how enclosed it feels are node size against shell size and
+the field of view; scaling both together changes nothing. `SHELL_RADIUS` in
+`content/layout.ts` is 14 now: a project node 7° across rather than 9°, and
+paper between things. The landing footprint is unchanged by construction —
+`LANDING_SCALE` normalises the whole graph to the same circle — and its nodes
+read a fifth smaller inside it, which is the one visible cost. The heading
+search re-run on the new layout gives the same heading to three decimals,
+which is angular positions being scale-invariant; the entry line's clearance
+rose from 2.02 to 2.67.
 
 **Landing at the centre changed the heading search, not just its answer.** The
 standing point is the origin, so only the heading is searched
@@ -878,6 +891,36 @@ Measured in the browser (`checks/flyin.mjs`, software GL): 130.8 units to
 0.00, x from −18.2 to 0.0 by 54 units out, lens at 30° until 55 units then to
 72°, landed at (0.00, 0.00, 0.00) — the exact centre — with the graph balanced
 across the frame rather than piled into a corner.
+
+## The way out faces the way home
+
+The first version of the departure was the dive reversed: backing out of the
+graph looking at it, then the glide off the axis. Asked for instead: "flying
+directly out of the nebula straight towards the hero page, and then the camera
+rotates at the end as it needs to to get us centred on the home page again."
+So the departure has its own heading schedule (`departureHeading`), against
+distance from the centre like everything else:
+
+- Over the first 12% of the distance — still inside the shell — the camera
+  turns to face the hero plane, the short way round from wherever a drag left
+  it. From dead ahead, which is exactly opposite, it goes the page's way.
+- It then **tracks the page**: the page sits centred and grows, drifting to
+  one side as the camera glides off the axis, and passes close on the left.
+  A version that faced straight down +z instead flew through empty paper —
+  the page is off the axis and slid out of the side of the frame a third of
+  the way home.
+- From half way it blends out of the tracked aim toward the landing heading,
+  continuing the same way round, so the page sweeps from beside the camera to
+  its place on the left of the frame while the graph comes in on the right.
+
+Yaw and pitch rather than a slerp, because the two headings that matter are
+exactly opposite and a slerp between opposites has no plane to turn in; yaw is
+kept on one increasing branch so passing the page from ahead to beside to
+behind is one angle rather than a wrap. Measured: yaw 0° → −158° by 33 units
+out, tracking to −117° at 94, −66° at 111 as the page goes by, −7° at 138, 0°
+at the standing point. What the reader sees on the way is the *back* of the
+page, mirrored, which is what a page you left behind looks like from behind;
+the front comes round with the final turn.
 
 ## The hand-off
 

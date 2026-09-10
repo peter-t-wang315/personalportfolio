@@ -32,10 +32,17 @@ export type Vec3 = [number, number, number];
  * distance from 16 to 9 takes a project node from 3.5 degrees to 6.3 without
  * changing *which* nodes are in frame at all — angular positions are
  * scale-invariant, so the population you can see is set by the field of view
- * and the camera's offset from centre, never by the radius. 11 is the
- * compromise: projects read at ~5 degrees from the inside pose while the
- * bounding radius stays large enough that the outside framing has somewhere
- * to stand.
+ * and the camera's offset from centre, never by the radius. 11 was the
+ * compromise while the reader stood two units inside the wall: projects read
+ * at ~5 degrees from that pose.
+ *
+ * **14 now, because the reader stands at the exact centre** (07-continuous-
+ * space.md, "The brief, restated") and 11 from there was claustrophobic — a
+ * project node 9 degrees across at every point of the compass, with the
+ * edges crowding the sky between them. At 14 a project is 7 degrees and
+ * there is paper between things. The landing page is unaffected in footprint
+ * (LANDING_SCALE normalises the whole graph to the same circle) and its nodes
+ * read a fifth smaller inside it, which is the one visible cost.
  *
  * It replaces a filled ball. Cluster centroids were already on a sphere at 14
  * and projects sat near them, but technology nodes were placed as
@@ -51,7 +58,7 @@ export type Vec3 = [number, number, number];
  * still decides *where on the shell* a technology sits, so it stays beside the
  * work that uses it. It just cannot pull anything off the surface.
  */
-const SHELL_RADIUS = 11;
+const SHELL_RADIUS = 14;
 /**
  * Radial slack, so the shell reads as a cloud layer rather than a decal on a
  * ball. Small relative to SHELL_RADIUS — enough to give the surface depth

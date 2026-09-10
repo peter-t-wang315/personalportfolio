@@ -30,6 +30,7 @@ import {
 } from "@/lib/world-scale";
 import {
   approachEase,
+  departureHeading,
   diveEase,
   divePose,
   FLIGHT_DURATION_MS,
@@ -211,25 +212,18 @@ function smoothDampToZero(
 }
 
 /**
- * **The graph finishes turning before the reader reaches it.**
+ * **The graph turns for the whole flight.**
  *
  * The turn between the landing face and the interior one is carried by the
- * graph, and it used to be spread across the whole flight in step with the
- * placement. With the flight now ending at the centre, the last stretch is
- * spent inside the shell with nodes a unit or two from the camera, and a
- * graph still rotating there sweeps those nodes sideways across the frame —
- * which reads as the world swinging rather than the reader travelling. So
- * the turn is spent over the first seven tenths of the placement, which on
- * the dive's schedule is done just before the shell is crossed, and the run
- * through the wall and into the middle is against a graph that holds still.
- * Symmetric on the way out: the graph waits until the camera is clear of the
- * shell, then turns back while it is far.
+ * graph, in step with the placement — which follows the dive's own curve, so
+ * it leans in, turns steadily, and settles as the camera does. It was briefly
+ * compressed into the first seven tenths so the run through the shell would
+ * be against a still graph, and that read as three beats — fly, turn, fly —
+ * where one continuous motion was asked for. Linear in the placement is the
+ * whole answer; the function exists so the choice has a name.
  */
-const UNWIND_BY = 0.7;
-
 function unwindShare(placement: number) {
-  const u = Math.min(1, placement / UNWIND_BY);
-  return u * u * (3 - 2 * u);
+  return placement;
 }
 
 /** Scratch for the roll solve, the turn and the centring; all run every frame. */
@@ -243,6 +237,9 @@ const _tiltFallbackUp = new THREE.Vector3(1, 0, 0);
 /** The direction every camera on this site looks, now that the graph turns. */
 const FORWARD = new THREE.Vector3(0, 0, -1);
 const _parkForward = new THREE.Vector3();
+const _fromHeading = new THREE.Vector3();
+const _turnHeading = new THREE.Vector3();
+const _toPage = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
@@ -516,6 +513,13 @@ interface Flight {
    * it as the document appears.
    */
   toHome: boolean;
+  /**
+   * A departure: the camera turns to face the way it is going, flies out
+   * facing home, and turns back to the standing heading as it arrives — see
+   * departureHeading. The path decides where the camera is; this decides
+   * where it looks.
+   */
+  turnAround: boolean;
 }
 let flight: Flight | null = null;
 
@@ -1248,6 +1252,7 @@ function CameraRig({
       delay,
       revealAt: 1,
       toHome: false,
+      turnAround: false,
     });
   }
 
@@ -1366,6 +1371,7 @@ function CameraRig({
       ease: leavingNode ? approachEase : diveEase,
       revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
       toHome: isHome,
+      turnAround: true,
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
@@ -1435,6 +1441,7 @@ function CameraRig({
       // arrive at inside the graph.
       revealAt: 1,
       toHome: false,
+      turnAround: false,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
       // Node to node follows the surface; anything involving the resting pose
@@ -1497,9 +1504,28 @@ function CameraRig({
       pose = lerpPose(active.from, active.to, eased);
     }
 
+    // The plane first: the departure aims at it.
+    solveHomePlane(pose.position, active);
+    if (active.turnAround) {
+      const outer = Math.max(
+        active.from.position.length(),
+        active.to.position.length(),
+        1e-3,
+      );
+      _fromHeading.copy(active.from.target).sub(active.from.position).normalize();
+      _toPage.copy(homePlane.position).sub(pose.position);
+      departureHeading(
+        _fromHeading,
+        _toPage,
+        pose.position.length(),
+        outer,
+        _turnHeading,
+      );
+      const lookLen = pose.target.distanceTo(pose.position);
+      pose.target.copy(pose.position).addScaledVector(_turnHeading, lookLen);
+    }
     applyPose(controls, pose);
     applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix));
-    solveHomePlane(pose.position, active);
 
     if (t >= 1) {
       flight = null;

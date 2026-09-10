@@ -49,7 +49,7 @@ async function trace(label, from, to) {
   // Against the far wall, `d + R`, which is what the dive spends geometrically
   // (divePose) — the reader now leaves from the exact centre, where a ratio
   // of distances from it is a ratio with zero in it.
-  const R = 12.38;   // CONSTELLATION_BOUNDING_RADIUS
+  const R = 15.38;   // CONSTELLATION_BOUNDING_RADIUS
   const start = fly[0].t, d0 = T[0].d + R, d1 = T.at(-1).d + R;
   const span = Math.abs(Math.log(d1 / d0));
   const nearest = q => T.reduce((a, r) =>
