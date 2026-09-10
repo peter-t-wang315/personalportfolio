@@ -150,6 +150,8 @@ the graph.
 
 It used to be a cut, and the reason was one line: the departure assumed it was leaving from the graph's resting pose and set `fovFrom` to `INSIDE_CAMERA_FOV`. From inside a node the camera is at `FOCUS_CAMERA_FOV`, so the flight opened by snapping 22 degrees wider — which looked worse than not flying at all. Reading the FOV off the camera fixes it. The path stays an orbit rather than a straight line, which matters more from a focused node than from the resting pose: the camera is parked against the inside of the shell there, and a straight line to the landing pose would leave through the wall.
 
+**The orbit is spent against proximity now, not time** (`07-continuous-space.md`). Distance still runs on the easing curve, but the arc around the graph runs on `d^-3`, so leaving a node turns off its surface while the camera is still against it and then travels out straight, rather than spreading the turn across a journey where most of it is invisible. Running both on one clock sent the graph on a 262px detour across the frame; it is 56px in and 58px out now.
+
 Verified by tracing the camera per frame: one flight, no interruption, position easing from (−3.3, 6.0, 3.3) at FOV 49.8 to (0, 0, 9) at FOV 45 with placement monotone 0.963 → 0 across 1464ms. Worth noting the *visual* check was misleading and the trace is what settles it — under software GL the canvas stalls for ~400ms while the route commits, so screencast frames during the exit show a fresh landing DOM composited over a stale canvas still holding the open shell. That is the harness, not the transition.
 
 ## Work-page rotate-to-top
