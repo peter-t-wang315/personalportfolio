@@ -940,6 +940,46 @@ landed on the standing point with the plane on the page.
 The "further from both" section above still describes the dial correctly and
 now describes a setting that is not in use.
 
+## The jump
+
+Every version of the flight that paced a camera toward the graph while the
+reader watched the graph read as "we barely went anywhere" — the burst, the
+lens schedules, one lens everywhere, the dust — and the reason is structural.
+With one lens and both compositions fixed the graph grows about 5× across the
+trip whatever the curve, and the eye measures the ratio. A hyperspace jump
+works because the destination is *not* watched growing: the reference is
+taken away for the middle of the trip and the reader arrives at a scale their
+eye never compared. Asked for: "feel like we've kinda hyperspace jumped a long
+distance", with no particles or streaks — nothing visibly added.
+
+So the flight is three beats against raw time (`app/nebula-jump.ts`), at
+1400ms rather than 2800:
+
+- **Wind-up**, the first 12%: the camera holds. On a click that is the page
+  dissolving into the plane; on a route-driven arrival, a breath.
+- **Jump**, to 42%: the scene washes to paper — a sheet held in front of the
+  lens, drawn in the canvas so the chrome stays above it (`nebula-wash.tsx`)
+  — the lens spikes 30° wider, and the camera covers the distance from the
+  standing point to the shell's edge behind the wash, accelerating. The wash
+  is the only effect, and it is an absence: nothing is added to the frame.
+- **Arrival**, the rest: the wash clears with the camera already at the
+  shell, the lens is back by the time it does, nodes come past from the
+  edges, and a quartic deceleration settles the reader in the middle. Being
+  inside is shown by what streams past, not by the ball having grown.
+
+The lens spike is the dolly zoom every earlier section fought, and it is
+harmless here because the reference is hidden while it happens. Going out is
+the same in reverse: the yank accelerates out through the shell, the wash
+covers the run to the standing point, and the page dissolves in once it has
+cleared. Leaving from a node keeps the approach path and takes the same wash
+and lens beats, so the two ways home feel like one.
+
+Measured (`checks/flyin.mjs`, software GL, so coarse): in, the camera holds
+to 390ms after the click, is at 57 units with the wash at 1.00 and the lens
+at 101° by 600ms, at 14 units with the wash at 0.08 and the lens at 73° by
+890ms, and lands at the centre; out, 0 to 33 units by 700ms, the wash at
+0.99 at 43 units, clear by the standing point.
+
 ## The page behind you
 
 Two things about the page seen from inside, both from the owner. It was

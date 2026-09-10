@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
-import { FLIGHT_DURATION_MS } from "./nebula-flight";
+import { JUMP_DURATION_MS } from "./nebula-jump";
 
 /**
  * `useLayoutEffect` warns when it runs during SSR, and this component has no
@@ -90,7 +90,7 @@ export function RouteCurtain() {
     // to close first, and the reveal at home is at the moment of landing.
     const failsafe = window.setTimeout(() => {
       delete document.documentElement.dataset.arriving;
-    }, FLIGHT_DURATION_MS + 400);
+    }, JUMP_DURATION_MS + 400);
     return () => window.clearTimeout(failsafe);
   }, [pathname]);
 
