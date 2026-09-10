@@ -905,6 +905,41 @@ Measured in the browser (`checks/flyin.mjs`, software GL): 130.8 units to
 72°, landed at (0.00, 0.00, 0.00) — the exact centre — with the graph balanced
 across the frame rather than piled into a corner.
 
+## One lens everywhere
+
+Every schedule for the lens change was tried and none felt right, and the
+reason is structural rather than a matter of tuning. The landing view was
+composed through a 30° lens and the interior through 72°, so every flight had
+to change focal length while it moved. A focal-length change during a dolly is
+a dolly zoom, whose whole effect is to cancel the sense of approach on the
+thing being looked at. Spent late it stalled at the shell; spent early the
+graph shrank during the launch; spread evenly it diluted everything. A wide
+lens reads as speed in a racing game because the periphery is full of road;
+here the periphery is paper.
+
+Four ways out were put to the owner: separate the beats and change the lens
+only while the camera is still; one lens everywhere; give the periphery
+something to stream (the particle field on the Phase 3 list); or keep tuning.
+**One lens everywhere was chosen.** `STANDING_FOV` is 72 — the interior's —
+and `INSIDE_CAMERA_FOV` is an alias of it, so the two cannot drift apart
+again. The dive's lens term now interpolates between equal numbers and does
+nothing.
+
+What it costs, all of it derived from the dial in `lib/world-scale.ts`: the
+landing camera stands 59 units out rather than 162, so the landing graph is a
+ball with real perspective — its near face 1.7× its far face rather than 1.2×
+— rather than the distant sphere "Where 'further from both' now lives" argued
+for. Every distance in the world is a third of what it was. The hero plane
+cannot hang 50 units ahead of a camera 59 units out without sitting inside the
+shell, so `HOME_STANDOFF` is 22: the page is passed at a third of the way in,
+sits 37 units from the centre, and from the centre is about half the frame
+tall — near, because everything is near now. Measured: in, 63.5 → 0 with the
+lens at 72 throughout, landed at the centre; out, the straight line back,
+landed on the standing point with the plane on the page.
+
+The "further from both" section above still describes the dial correctly and
+now describes a setting that is not in use.
+
 ## The way out is a yank
 
 The departure is the dive reversed and nothing else: the camera keeps facing

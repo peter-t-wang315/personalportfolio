@@ -49,9 +49,23 @@ import { CONSTELLATION_BOUNDING_RADIUS } from "./node-geometry";
  * reason the landing page's graph now stands 130 units out rather than 84.
  *
  * 45 is the reference projection and reproduces every composition Part 3
- * measured, to the pixel. 30 is the long lens.
+ * measured, to the pixel. 30 is the long lens, and was the setting from
+ * "Where 'further from both' now lives" until the flights existed.
+ *
+ * **72 now — the interior's lens — so there is one lens everywhere.** The
+ * landing view and the interior used to be composed through different focal
+ * lengths, which meant every flight between them had to change focal length
+ * while it moved, and a lens change during a dolly is a dolly zoom: it cancels
+ * the sense of approach on whatever you are looking at. No schedule hides
+ * that — spent late it stalls at the shell, spent early the graph shrinks
+ * during the launch — because the thing being cancelled is the thing being
+ * watched. With one lens the flight is pure motion. The cost is the
+ * landing page's perspective: the graph is a ball 59 units off rather than a
+ * sphere 162 off, its near face 1.7x its far face rather than 1.2x, and
+ * every distance in the world is a third of what it was. `INSIDE_CAMERA_FOV`
+ * in the rig is defined as this so the two cannot drift apart again.
  */
-export const STANDING_FOV = 30;
+export const STANDING_FOV = 72;
 
 /** Half-angle tangents; the whole conversion is the ratio between them. */
 const REFERENCE_HALF = Math.tan((HOME_CAMERA_FOV * Math.PI) / 360);
@@ -175,10 +189,13 @@ export const FOG_FAR = FOG_NEAR + FOG_BAND;
  * poster on the far wall", and was picked by looking.
  *
  * It must stay well short of the graph: `D − p` has to clear the bounding
- * radius by a margin, and at the narrowest desktop viewport the landing
- * camera stands closest. 50 leaves it 67 units from the centre at 1024x768.
+ * radius by a margin, and the landing camera stands closest at the widest
+ * viewports. It was 50 when the landing camera stood 162 out; with one lens
+ * everywhere (STANDING_FOV) it stands 59 out, and 22 leaves the page 37
+ * units from the centre, 22 clear of the shell. From the centre it is then
+ * about half the frame tall — close, because everything is close now.
  */
-export const HOME_STANDOFF = 50;
+export const HOME_STANDOFF = 22;
 
 /**
  * How present the hero plane is once the reader is inside the graph.

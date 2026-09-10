@@ -325,11 +325,12 @@ const INSIDE_DISTANCE = 9;
  * 72 is about 99 horizontal — wide enough to read as being surrounded, inside
  * the range where a sphere still looks like one.
  *
- * Unlike STANDING_FOV this is **not** a dial. The interior composition was
- * searched against it and home's apparent size from inside is held against it
- * (lib/world-scale.ts), so moving it moves two compositions at once.
+ * **The same lens as everywhere else now** (STANDING_FOV, lib/world-scale.ts),
+ * so a flight never changes focal length while it moves. The interior
+ * composition was searched against 72, so the dial lives there and this is
+ * an alias rather than a second number to go stale.
  */
-const INSIDE_CAMERA_FOV = 72;
+const INSIDE_CAMERA_FOV = STANDING_FOV;
 
 /**
  * How far in front of the camera its pivot sits while parked inside the graph,
