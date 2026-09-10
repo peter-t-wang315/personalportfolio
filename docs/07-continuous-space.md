@@ -1151,6 +1151,68 @@ Five viewports, reduced motion, mobile framerate. Fold the outcome back into
 `02-architecture.md` and `05-phase-2.md`, which will by then describe a
 placement model that no longer exists.
 
+### Mobile — the outside standing point — **in progress**
+
+Surveyed 2026-09-10 (`checks/mobile-survey.mjs`, screenshots in `mobile/`) at
+390×844, 360×800, 844×390 and 768×1024 across every route. Nothing throws,
+nothing overflows, the tap-through from the landing cluster lands on
+`/nebula`, and the prose pages need nothing. What does not work is the one
+thing the site is for:
+
+**`/nebula` on a portrait phone is not a graph.** The camera stands at the
+centre with a fixed 72° *vertical* field of view, so a tall narrow frame is a
+horizontal slice barely three nodes wide: three green project nodes and
+paper. Tech nodes are hidden on the mobile tier, which strips the frame
+further, and a tech route (`/nebula/tech/csharp`) therefore opens a panel over
+bare paper with no shell behind it. Three smaller things: the landing cluster
+overlaps the hero metric line at 360 and 390 wide, where the docs say it drops
+below the text; the open panel's shell (85vw, 29px margins) draws across the
+Home link (24px in); and the landscape hero under 500px of height stacks the
+metrics, nav and chevrons with no spacing.
+
+**The decision: on a portrait phone the interior standing point is replaced
+by an outside one.** The graph is a hollow shell. From inside, a portrait
+frame shows a slice; from outside, the same shell is a ball, and a ball fits a
+tall frame. The whole graph reads at once, the SEL clusters stay arranged
+left to right as composed, and a one-finger drag turns the globe the way the
+landing page's already does, which is a gesture phones already know. The tier
+table has always called the 3D "ambient" on mobile, and this is what ambient
+looks like.
+
+The idea arrived as "an astronaut above the earth", and the useful part of
+that is the *distance*, not the *above*. A sphere has no top, so there is no
+tilt and no elevated angle: the phone stands on the same straight line the
+flight already travels, further out, at whatever distance fits the shell to
+the frame width, aimed at the production clusters. Straight flight, graph
+turns, one axis, no new pose search. Desktop keeps the centre.
+
+What it costs, stated plainly:
+
+- **The flight is shorter on the phone.** "Stopping short" measured that
+  standing outside is what read as barely having flown. Here it is the right
+  trade: the brief said desktop first, and the interior does not work on a
+  phone at all. The wash and lens work still make it a jump.
+- **Nodes are small.** With the shell filling 390px a large node is ~15px and
+  a small one under 10. Tappable but tight, and unnamed. The outside view
+  probably wants a handful of labels on the visible face rather than the tier
+  table's bottom sheet; measure before deciding.
+- **A second standing rule to maintain**, and the tier swap on resize has to
+  move the camera between the two cleanly.
+- **Landscape phones key on orientation, not width.** At 844×390 the interior
+  is wide enough to work, so the rule is portrait, not "under 768px".
+
+**Tech nodes come back on this tier.** They were hidden for legibility, not
+performance — the tier table says "hidden by default, toggleable" and the
+constellation's own comment says the rule "is about keeping the graph legible
+on a small screen". The proof is `/`, which already draws all 51 nodes and
+every edge on phones. Small dots on a globe are legible; the same nodes around
+your head were not.
+
+**Done when:** a portrait phone arriving at `/nebula` sees the whole graph,
+can turn it with one finger, can open a project or tech node and get its
+shell, and the four smaller items above are fixed. Then the 2.8 list: 30fps on
+a mid-range phone, every route at 360, 768, 1024, 1440 and 844×390.
+
 ## Open decisions
 
 - ~~**What the stand-in contains.**~~ Settled: the wordmark, the role line, the
@@ -1165,16 +1227,34 @@ placement model that no longer exists.
   is gone — home is no longer a distance from the graph but an offset from the
   reader's own standing point, and it follows the landing camera by
   construction.
-- **Whether `/work/[slug]` is a third standing point or the home point with a
-  different aim.** Still open. Both work. The second is fewer poses to reason
-  about; the first is easier to compose independently.
+- ~~**Whether `/work/[slug]` is a third standing point or the home point with a
+  different aim.**~~ Settled (2026-09-10): **a third standing point, nearer the
+  graph than home, on the same straight line of approach.** Home is far out,
+  the work page stands closer and aims at the lit cluster, `/nebula` is the
+  centre. Every flight on the site is then a step along one line, which is
+  what "fly straight, the graph turns" was asking for. The cost is that the
+  spotlight solve that places the lit cluster beside the article has to hold
+  at the nearer distance, and the work-to-nebula flight gets shorter;
+  `checks/centres.mjs` and `checks/worktonebula.mjs` are the instruments.
+  Not built yet.
 - ~~**The interior standing point is at 9.0 units, two from the shell.**~~
   Overtaken: it is at the centre now, by decision — see "The brief, restated".
   Every claim in Part 2 about what the reader sees by turning around was
   measured from the middle and is true again.
-- **New, from Part 2:** the reader can now face empty paper. Looking away from
-  both the graph and home shows nothing at all, which is honest for a space and
-  is the first direction on this site that holds nothing. The corner Home link
-  is the way back. Whether that wants a gentler answer — a soft limit, a hint,
-  or nothing — is a decision Part 4 will have to take a view on, since it is
-  the part that gives the camera somewhere to be.
+- ~~**New, from Part 2:** the reader can now face empty paper.~~ Settled
+  (2026-09-10). The owner wants it to be impossible to face nothing, and does
+  **not** want the drag interfered with: no soft limit, no rubber band, no
+  hint that steers the hand. That felt too guided. Three things, none of which
+  touch the drag:
+  1. **On release, the nearest nodes settle slightly toward the view centre**
+     and then rest. A unit or two, never enough to leave a cluster, so the
+     layout stays a truthful diagram. The gather mechanic the work pages use
+     (`attractNeighbors`) already does this kind of pull. This is the feel,
+     not the guarantee: a slight pull cannot close a gap at a pole.
+  2. **The background particle field** — designed in Phase 2, never built —
+     is the guarantee. A sparse field around the camera gives every direction
+     something faint, so no view is ever pure paper.
+  3. **Denser poles in the layout.** The shell is thinnest top and bottom,
+     which is where most of the empty paper is. Spreading the seeded layout
+     more evenly over the sphere shrinks the gaps the pull has to cover.
+  None of the three is built yet.
