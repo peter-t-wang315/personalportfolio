@@ -70,18 +70,57 @@ interface SceneState {
    */
   previewNodeId: string | null;
   /**
-   * The constellation's current parallax offset, in world
-   * units — written every frame from nebula-canvas.tsx's
-   * ConstellationPlacement (imperative `getState().setClusterParallax(...)`,
-   * not a subscription; that component doesn't need to re-render off its own
-   * write), and only while the constellation is in its landing placement.
-   * Exists so
-   * DOM overlays (nebula-affordance.tsx's hover region, hover label, and
-   * idle pulse ring) can track the cluster's real, currently-rendered
-   * on-screen position instead of assuming it always sits at viewport
-   * center — true only when the eased parallax offset happens to be zero.
+   * **Where the graph actually is on screen**, in viewport pixels: the circle
+   * its bounding radius occupies, as currently rendered.
+   *
+   * Written every frame by the camera rig (imperatively, not through a
+   * subscription — the rig does not need to re-render off its own write) and
+   * guarded by an epsilon, so a lerp that never exactly arrives cannot
+   * re-render every subscriber at 60fps forever.
+   *
+   * DOM overlays read this rather than re-deriving it. There used to be a
+   * second implementation in lib/use-cluster-screen.ts working from the
+   * parallax offset and the viewport size, which was correct on the landing
+   * page and wrong by both the spotlight zoom and the work-page centring
+   * anywhere a project is lit. One source of truth: the thing that draws it
+   * says where it is.
+   *
+   * `ready` is false until the scene has published once, which also means the
+   * overlays stand down when there is no canvas to overlay.
    */
-  clusterParallax: { x: number; y: number };
+  clusterScreen: {
+    ready: boolean;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+  };
+  /**
+   * **The real hero, measured** — the text the landing page draws, as the
+   * canvas needs it to paint the plane that stands in for the page while the
+   * reader flies past it (nebula-home.tsx). Written by app/hero-layout.ts on
+   * mount, on resize, and at the moment the reader clicks to leave; null until
+   * the landing page has been seen this session, in which case the plane
+   * paints its own approximation of the hero and stands where a desktop hero
+   * would.
+   *
+   * Only the parts that decide what the texture *contains*. Where the column
+   * is on screen changes every frame with the pointer parallax and is kept in
+   * a per-frame record instead (nebula-home-placement.ts), so a moving column
+   * does not re-render every subscriber of this store.
+   */
+  heroLayout: HeroLayout | null;
+  /**
+   * A request to leave for the graph, made by the landing page before the
+   * route changes. Incremented, not toggled, so two clicks in a row are two
+   * requests rather than a request and its cancellation.
+   *
+   * It exists because the flight has to start while the hero is still in the
+   * document. Navigating unmounts the landing page in the same commit, and
+   * the cross-fade between the real hero and the plane needs both to exist
+   * for a fifth of a second — so the click starts the flight and fades the
+   * page, and the route follows once the page has gone (nebula-departure.ts).
+   */
+  arrivalRequest: number;
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
   setHoveredNodeId: (id: string | null) => void;
@@ -91,7 +130,37 @@ interface SceneState {
   setFlying: (flying: boolean) => void;
   setTravellingBetween: (pair: { from: string; to: string } | null) => void;
   setPreviewNodeId: (id: string | null) => void;
-  setClusterParallax: (offset: { x: number; y: number }) => void;
+  setClusterScreen: (circle: {
+    ready: boolean;
+    centerX: number;
+    centerY: number;
+    radiusPx: number;
+  }) => void;
+  setHeroLayout: (layout: HeroLayout | null) => void;
+  requestArrival: () => void;
+}
+
+/** One run of text on the hero, as the canvas repaints it. */
+export interface HeroTextItem {
+  text: string;
+  /** The element's box in CSS px, from the column's top-left corner. */
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: string;
+  letterSpacing: number;
+  lineHeight: number;
+  color: string;
+}
+
+export interface HeroLayout {
+  /** The column's box in CSS px, so the texture keeps the column's aspect. */
+  width: number;
+  height: number;
+  items: HeroTextItem[];
 }
 
 export const useSceneStore = create<SceneState>((set) => ({
@@ -103,7 +172,9 @@ export const useSceneStore = create<SceneState>((set) => ({
   flying: false,
   travellingBetween: null,
   previewNodeId: null,
-  clusterParallax: { x: 0, y: 0 },
+  clusterScreen: { ready: false, centerX: 0, centerY: 0, radiusPx: 0 },
+  heroLayout: null,
+  arrivalRequest: 0,
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
   setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
@@ -117,5 +188,8 @@ export const useSceneStore = create<SceneState>((set) => ({
   setFlying: (flying) => set({ flying }),
   setTravellingBetween: (travellingBetween) => set({ travellingBetween }),
   setPreviewNodeId: (previewNodeId) => set({ previewNodeId }),
-  setClusterParallax: (clusterParallax) => set({ clusterParallax }),
+  setClusterScreen: (clusterScreen) => set({ clusterScreen }),
+  setHeroLayout: (heroLayout) => set({ heroLayout }),
+  requestArrival: () =>
+    set((state) => ({ arrivalRequest: state.arrivalRequest + 1 })),
 }));

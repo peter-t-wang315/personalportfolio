@@ -2,9 +2,50 @@
 
 ## Session status (update each session)
 
-Last completed: **2.6** (interior panel and routing), on top of **2.5** and the
-**Phase 1 landing page**. Committed on `nebulustest`. **05a asks for a preview
-deploy after 2.6; the owner runs `npx vercel` themselves.**
+**Where the work is: branch `continuous-space`, 72 commits past `main`.** Not
+`nebulustest`, which this block named for several sessions after it stopped
+being true.
+
+Last completed in *this* sequence: **2.6** (interior panel and routing), on top
+of **2.5** and the **Phase 1 landing page**. Since then the branch has done
+**Parts 1, 2 and 3 of `07-continuous-space.md`** — the fog, the hero as an
+object in the world, and the fixed life-size world with the camera solved per
+route — and then three things that follow from Part 3 rather than from this
+sequence: the **`STANDING_FOV` dial turned to 30**, with every distance derived
+from it in `lib/world-scale.ts`; the **arrival re-measured**, because the
+interior pose put the reader 3.20 units from the centre looking at a flat wall
+of nodes with nothing inside 10 units; the **departure made visible**, which was
+never a camera problem — the flight was correct and the destination page painted
+over it 190ms in; the **flight path re-weighted**, because distance and direction
+were sharing a clock and the graph took a 262px detour across the frame on the
+way in and out; and the **arrival moved in from 9 units to 5.5**, which was two
+complaints with one cause — stopping at the shell wall left the reader
+off-centre (lopsidedness 7.2, six nodes behind them) *and* short-changed the
+flight (5.3x apparent growth instead of 8.7x).
+
+Then a content pass corrected the project write-ups against what the services
+actually do, which added six technology nodes (MQTT, Three.js, Material UI,
+MudBlazor, TanStack Query, React Router) and **re-laid out the constellation** —
+`content/layout.ts` sizes the technology shell by `tech.length` — so the
+interior pose had to be searched again against the moved graph. **Read the
+constraints in `app/nebula-canvas.tsx` before re-running that search**: four
+runs each optimised what they were told to and missed something they were not,
+the last one landing an arrival that faced the personal cluster rather than the
+production work the site exists to show. Two projects
+were renamed with 301s on the old slugs, and the downloadable resume was
+replaced.
+
+**Part 4 (the approach and the string) is next**, and it is the part that
+decides how `/work/[slug]` stands and where the home standing point is. Read 07
+before 05a's remaining items: it changed what they sit on.
+
+Still outstanding from this document: **a preview deploy — 05a asks for one
+after 2.6, and the owner runs `npx vercel` themselves**; 2.7; 2.8; the mobile
+pass; and the background particle field, which was designed and never built.
+
+**The measurements are in `checks/`** as of Part 3, with a README. Before
+believing any number in these docs, that is where it came from and how to
+re-run it.
 
 **2.6 as built.** The URL is the source of truth for focus: node clicks push
 `/nebula/[slug]` or `/nebula/tech/[id]`, `RouteFocus` syncs the store from the
@@ -247,7 +288,9 @@ Full behavioural spec is in `05-phase-2.md`. Device tier rules are in `02-archit
 
 Build `layout.ts` into the scene. The shared fresnel node material and `--paper`-matched scene fog for depth (both pulled forward from 2.2 by revision), correct radius per type. Project nodes at `major` 0.85 and `standard` 0.6, tech nodes at 0.34. Camera parked at a fixed position that frames the whole constellation at roughly 70% of viewport height.
 
-**This sentence is the authority on the `/nebula` resting camera**, and it means what it says: the camera is *outside* the graph with the whole composition in view. 02-architecture.md's routes table used to say "Inside the constellation", which contradicted it; that was a wording error and has been corrected to point here. Going inside is something the visitor does — the 2.5 node fly-in, hand-dollying to `DOLLY_MIN_DISTANCE`, 2.6's node interior — not something the arrival does. Measured on the built scene: 65% of viewport height, camera 41.2 units from its target against a bounding radius of 17.6.
+~~**This sentence is the authority on the `/nebula` resting camera**~~ — **it is not, any more.** It was written for 2.1, when the constellation was a filled ball framed from outside at 65% of viewport height, camera 41.2 units out against a bounding radius of 17.6. The layout is now a hollow shell of radius 11 and `/nebula` rests *inside* it, at half that radius. Every number in the struck sentence describes a composition that was replaced, including the `DOLLY_MIN_DISTANCE` it cites, which no longer exists on any route.
+
+Left in place rather than rewritten, because 2.1 is a record of what was built at 2.1 and the correction is the interesting part. `05-phase-2.md`'s Camera section is the authority now.
 
 Verify the seeded generator produces identical positions across reloads — reload ten times and confirm nothing moves.
 

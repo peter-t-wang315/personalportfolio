@@ -70,7 +70,7 @@ export function HeroNav({ links }: { links: NavLink[] }) {
 
       <nav
         aria-label="Primary"
-        className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-auto pt-10 [@media(max-height:500px)]:pt-0"
+        className="flex lg:hidden flex-wrap gap-x-6 gap-y-2 text-[0.875rem] mt-auto pt-10 [@media(max-height:500px)]:pt-4"
       >
         {compactLinks.map((link) => (
           <Link

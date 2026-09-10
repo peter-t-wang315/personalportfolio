@@ -38,22 +38,49 @@ appeared 64 units and 94 degrees away. The flight that followed was a short
 move from wherever that cut had landed, and the persistent canvas was
 preserving a WebGL context and nothing else.
 
-So `app/nebula-constellation.tsx` draws the same graph everywhere, inside
-`ConstellationPlacement`, whose transform is the only difference between the
-routes: shrunk to the landing footprint at `CLUSTER_DEPTH` off `/nebula`,
-identity on it. The landing scale is derived, not chosen —
-`CLUSTER_BOUNDING_RADIUS / CONSTELLATION_BOUNDING_RADIUS`, where the second is
-**measured off the real computed layout** (17.6, not the nominal 20-unit tech
-shell) — so what is drawn projects to exactly the pixels the Landing cluster
-placement section below has always described, and every DOM overlay measured
-against those constants stays correct without knowing the geometry beneath it
-changed.
+`app/nebula-home.tsx` shares that canvas: the home page as an object in the
+world, a plane carrying a drawn image of the hero column, facing
+away so the reader inside the graph sees its back. It is scenery — the real
+hero stays the thing that is read, selected, indexed and tabbed through — and
+it is the first piece of `07-continuous-space.md` to ship. It is also why the
+scene fog exists again; see Scene fog. Its distance is **derived rather than
+chosen** — `lib/world-scale.ts` holds it three fifths of the way through the fog
+band, which was 150 units when that band was written by hand and is 196 at the
+current lens. Holding the fraction rather than the number is what keeps home
+reading the same when the standing distance moves.
+
+So `app/nebula-constellation.tsx` draws the same graph everywhere. **What
+differs between the routes is where the camera stands, not what the graph is
+doing** — that changed in Part 3 of `07-continuous-space.md` and this paragraph
+described the older model until it did.
+
+The graph used to carry a per-route transform: shrunk to the landing footprint
+at `CLUSTER_DEPTH` off `/nebula`, identity on it, inside a component called
+`ConstellationPlacement`. It is life-size at the origin on every route now, and
+the wrapper — `ConstellationOrientation` — keeps only the rotation: the
+spotlight turn toward a project, the reader's drag, and the spring between them.
+
+The scale was always a distance in disguise, which is why the swap is exact. A
+group scaled by `s` at that depth and a life-size graph seen from
+`REFERENCE_DISTANCE / s` project every point identically, so the rules in
+`lib/cluster-geometry.ts` did not have to be re-derived — they still produce a
+size on screen, and the camera stands that far back. `lib/world-scale.ts` owns
+the conversion. Every DOM overlay measured against those constants stays correct
+without knowing the geometry beneath it changed, which is the property the whole
+model exists to preserve.
 
 **The arrival flight is what that decision buys.** It starts at the landing
 page's own camera pose, looking at the same cluster the visitor just clicked,
 and closes to the framing pose over 2000ms while the placement
-grows to life-size around it, widening the FOV from 45 to 50 so the two
-framings meet rather than snap. Leaving plays the same flight in reverse.
+closes on the standing point inside the shell, widening the field of view from
+`STANDING_FOV` to `INSIDE_CAMERA_FOV` — 30 to 72 — so the two framings meet
+rather than snap. Leaving plays the same flight in reverse.
+
+**Distance and direction are spent on different clocks.** Distance runs on the
+easing curve; the arc *around* the graph runs against proximity (`d^-3`), so it
+happens while the camera is close enough for it to be the move it looks like.
+Sharing one clock sent the graph on a 262px detour across the frame — see
+`07-continuous-space.md`.
 
 Two properties of that flight are load-bearing:
 
@@ -87,7 +114,7 @@ Import the canvas with `next/dynamic` and `ssr: false`, with a static placeholde
 | `/resume` | Rendered resume + Download PDF | Far, dimmed |
 | `/work` | List of all projects grouped by cluster | Far, dimmed |
 | `/work/[slug]` | Full project page | Outside the globe, turned so the project's cluster faces the reader. Full scale and lifted opacity, its connected subgraph lit and the rest receded, simulation stopped. See `05-phase-2.md`'s Work-page rotate-to-top |
-| `/nebula` | The graph | At the constellation's framing pose — outside it, whole composition in view. `05a-phase-2-sequence.md`'s 2.1 is the authority: "frames the whole constellation at roughly 70% of viewport height" (measured, 65%). Not *inside* it; that is where the node fly-in and hand-dollying go, below. |
+| `/nebula` | The graph | **Inside the shell**, half its radius out, crossing the interior obliquely rather than looking back through the middle — a heading through the centre can only ever show the far wall. The reader stands still there and drags to look around; the wheel does nothing. This row said "outside it, whole composition in view" long after that stopped being true — see the note under Going inside. |
 | `/nebula/[slug]` | Graph with node open | Depends on how it was reached — see below |
 | `/nebula/tech/[id]` | Graph with a technology node open: its blurb and every project that uses it, each linked onward | As `/nebula/[slug]`. Tech nodes have no `/work` page, so no canonical tag; without WebGL it falls back to `/work` |
 
@@ -100,6 +127,16 @@ specify a camera distance. Read literally it contradicts 2.1, which is the line
 carrying an actual number, and which the build has always followed — the camera
 rests 41.2 units from its target against a constellation bounding radius of
 17.6, so it sits ~23.6 units clear of the outermost node.
+
+> **This section describes the constellation as a filled ball framed from
+> outside, and it has not been that since the layout became a hollow shell and
+> `/nebula` moved inside it.** The arrival lands the camera *within* the shell;
+> there is no hand-dolly any more, on any route; `DOLLY_MIN_DISTANCE` and the
+> 14-unit cluster-centroid radius belong to a layout that was replaced. The
+> same rot left the scene fog inert for as long — see Scene fog. Kept here
+> because the reasoning about what going inside is *for* still holds, and
+> because a doc that quietly describes a dead composition is worse than one
+> that says so.
 
 Going **inside** the constellation is a thing the visitor does, not a thing the
 arrival does. Three routes in: the node fly-in stops ~1.9 units off a node's
@@ -114,17 +151,34 @@ The static `tech` segment wins over the dynamic `[slug]` beside it, so `/nebula/
 move inside the graph, against 2000ms for the journey between the landing page
 and it (`app/nebula-flight.ts`). If WebGL is unavailable or `prefers-reduced-motion` is set, `/nebula/[slug]` redirects to `/work/[slug]` instead — a graph the visitor can't move through has no advantage over the document. Full spec in `05-phase-2.md`'s Deep linking section.
 
+**Inside the graph the reader stands still and looks around.** `CameraControls`
+orbits a target, so with the target at the graph's centre the camera could
+circle the graph and never turn its back on it — measured, the angle to
+anything outside the shell never fell below 83.8° against a 36° half-field. The
+pivot now sits a tenth of a unit in front of the camera instead, which turns
+the same drag into looking around: the camera sweeps a sphere too small to
+notice and the heading goes wherever it is pointed. There is one place to stand
+and it is not left; closing a node returns to it and turns to face what was
+left. The wheel does nothing there — a dolly would push the reader through the
+shell or shrink the room. See `07-continuous-space.md`.
+
 Graph state resets on each visit. No persistence.
 
 ### Landing cluster placement
 
-> **Scheduled for replacement.** `07-continuous-space.md` replaces this whole
-> model: the constellation stops scaling and stops moving, and the landing view
-> becomes a camera standing ~74 units away in a fixed world. The solve below
-> does not disappear — it is re-expressed as camera distance and lateral offset,
-> and every behaviour named here has to survive that. It is documented as it
-> stands because it is what ships today, and because Part 3 needs something to
-> be checked against.
+> **Replaced, and it survived.** Part 3 of `07-continuous-space.md` did what
+> this banner said was coming: the constellation stopped scaling and stopped
+> moving, and the landing view is a camera standing in a fixed world — 129.5
+> units out at the current lens, not the ~74 predicted here, because
+> `STANDING_FOV` was later narrowed to 30 and every standing distance scaled
+> with it.
+>
+> **The solve below did not disappear and is still the thing that runs.** It is
+> re-expressed rather than rewritten: the rules still produce a size on screen,
+> and the camera's distance is `REFERENCE_DISTANCE` divided by that size. Every
+> behaviour named here — the short-viewport rules, the narrow-viewport shrink,
+> the parallax in pixels, the solved centre — survived unchanged, which the
+> pixel gate checked at 5 routes x 6 viewports. Read it as current.
 
 The cluster's on-screen size derives from viewport **height** (the camera's
 vertical FOV), while the hero's text column is a fixed ~764px wide. Those two
@@ -133,11 +187,12 @@ not, and a centred cluster lands inside the column. Measured before the fix,
 with hero text covering 43% of the cluster at 1024x768 and 22% at 1100x768 —
 the opposite of what 04-phase-1.md asks for.
 
-The cluster in question is the constellation itself under
-`ConstellationPlacement`'s landing transform, so these are the numbers that
-transform is built from — but the arithmetic below predates that and is
-unchanged by it, which is the point: the landing scale is chosen so the
-projection matches.
+The cluster in question is the constellation itself, seen from the landing
+standing point, so these are the numbers that placement is built from — but the
+arithmetic below predates both the scaling model and the camera one, and is
+unchanged by either. That is the point: whatever mechanism puts the graph on
+screen is chosen so the projection matches these figures, first a scale and now
+a distance.
 
 So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
 
@@ -155,8 +210,12 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
 - **Off `/`, below the desktop tier, the cluster is not drawn at all.** It is
   ambient on those routes, and at those widths the content column is nearly the
   whole viewport, so it would sit behind body prose. See 04-phase-1.md.
-- **Vertically**, narrow viewports drop it below the hero text rather than
-  centring it behind them, for the same reason.
+- **Vertically**, stacked layouts — anything that is not beside a text
+  column — drop it to 62% of the height, below the hero text, rather than
+  centring it behind them. This used to key off the width cap ("narrow enough
+  to have shrunk"), which no real phone triggers: at 390x844 the cluster is
+  150px against a 214px cap, so it never shrank, never dropped, and sat on
+  the metrics line.
 - **Where the spotlight labels are drawn (`/work` and `/work/[slug]`), the
   horizontal solve centres in the space left over instead.** Clearing the text
   column is a floor, not a destination: stopping there parked the graph against
@@ -180,6 +239,11 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
   the pointer feel like it is dragging the graph through treacle. The first
   frame of a route snaps, since a cold load of `/work/[slug]` is already
   spotlit and easing in would animate a change the reader never made.
+
+> These rules are still the authority, and they are now read as a **camera
+> distance**: they produce a size on screen, and the camera stands the
+> reference distance divided by that size away. `07-continuous-space.md` has
+> the equivalence. Nothing below changes; only what consumes it.
 
 `lib/use-cluster-screen.ts` and `app/nebula-canvas.tsx` apply these from the
 same functions, so the rendered cluster and every DOM overlay measured against
@@ -252,9 +316,29 @@ Never use `Math.random()` in layout. Use a seeded PRNG.
 
 ## Scene fog
 
+> **Fog does something again.** It was inert for as long as the camera had been
+> inside the shell: its band was measured against an outside framing that
+> stopped shipping, and every node on every route then sat nearer than its near
+> plane. Part 3 gave the graph real distances — it is life-size at the origin
+> and the camera stands where the composition asks — so the band is now derived
+> from them, in `lib/world-scale.ts`, rather than written down beside them. The
+> landing page grades 10% to 26% across the graph's own depth, ambient routes
+> 46% to 62%, and the interior stays clear, since from inside a shell every node
+> is about as far off as every other. Those first two figures move with
+> `STANDING_FOV`; the gradient across the graph does not, which is the one the
+> band is held against. See `07-continuous-space.md`.
+
 Fog matched to `--paper` is the primary depth cue in the constellation — it's what makes distant clusters recede instead of just getting smaller. `<fog attach="fog" args={[palette.paper, FOG_NEAR, FOG_FAR]} />`, wired into the fresnel shader by hand (`ShaderMaterial` doesn't pick up scene fog automatically — the fog chunks and uniforms have to be included explicitly).
 
 **`FOG_FAR` must track real measured scene depth, not an estimate.** Depth varies with the camera heading and the actual computed layout, not some assumed constellation radius — measure per-node camera-space depth from the real camera position against the real `layout.ts` output, then set `FOG_FAR` just past the true max. Guessing too far means the falloff curve never gets close to completing and the farthest cluster barely fades; guessing too near erases nodes that should still read. `FOG_NEAR` can stay conservative — it only has to sit in front of the nearest node.
+
+**It is derived now, not measured by hand.** Both ends come off the standing
+distances in `lib/world-scale.ts`, so turning `STANDING_FOV` moves the band with
+the camera. The paragraph above is why that matters rather than being tidiness:
+a hand-set band is a second copy of the camera's numbers, and the copy goes
+stale the first time the camera moves.
+
+**And it must track the framing that actually ships.** The band this replaced was measured correctly against an *outside* view of the constellation, nodes spanning depth 20.1 to 42.5 — and then `/nebula` moved inside the shell and nobody re-measured. Inert fog and absent fog look identical, so it went unnoticed until the distances were recomputed for `07-continuous-space.md`. A depth cue tuned against a composition that has been replaced is not a depth cue.
 
 ## Performance budget
 
@@ -272,11 +356,11 @@ Fog matched to `--paper` is the primary depth cue in the constellation — it's 
 
 | | Desktop — 1024px+ | Tablet — 768–1024px | Mobile — under 768px |
 |---|---|---|---|
-| Tech nodes | Always visible | Visible, reduced opacity, toggleable | Hidden by default, toggleable |
+| Tech nodes | Always visible | Visible, reduced opacity, toggleable | Visible, as dots on the outside globe (were hidden for legibility while the phone stood inside; see `07-continuous-space.md`) |
 | Transmission | **None, on any tier — see below.** The focused node's shell is a `--mask` `MeshPhysicalMaterial` with transmission off | None | None |
 | Particle count | ~600 | 350 | 200 |
-| Interaction | `CameraControls`: drag to rotate, scroll to dolly. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | Persistent bottom sheet is the primary navigation; the 3D is ambient. Tap to select, tap again to open. |
-| Interior panel size | 70% of viewport | 85% of viewport | 85% of viewport — no separate mobile value has been specified; inherits the tablet override |
+| Interaction | `CameraControls`: drag to look around from a fixed standing point; the wheel does nothing. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | **Portrait phones stand outside the graph** and turn the whole globe with one finger, the camera never leaving the axis — see `07-continuous-space.md`, "Mobile — the outside standing point". Tap to open. The bottom sheet is deferred until the outside view has been measured; labels on the visible face are the likelier answer. |
+| Interior panel size | 70% of viewport | 80% of viewport | 80% of viewport. Was 85 on both: the opened shell overshoots the panel by ~23px, and at 85% of a phone's height its top edge crossed the corner links |
 
 **Real transmission was removed from every tier**, having been desktop-only before. It cannot work in this scene: the canvas is `alpha: true` over the page's `--paper` background, so the paper is CSS *behind* a transparent canvas and is not in the WebGL scene — transmission had nothing to transmit. It looked correct on the focused sphere only because a thick, short attenuation distance tinted the result `--mask` whatever lay behind it. The moment the shell flattened into a panel and cleared for legibility that tint went, the empty backdrop came through, and the opened node rendered as a bright white plate over the paper — the one colour not in the palette. Moving the camera inside the shell made it worse, since a focused node's backdrop is now mostly nothing.
 

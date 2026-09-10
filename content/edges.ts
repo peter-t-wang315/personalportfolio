@@ -29,7 +29,7 @@ export const runtimeEdges: Edge[] = [
     kind: 'runtime',
     protocol: 'RabbitMQ / IPC-CFX',
     detail:
-      'Resolved board identity arrives normalised to IPC-CFX. The driver never learns how the data was fetched, only what came back, which keeps external API changes out of protocol code.',
+      'Resolved board identity arrives normalised to IPC-CFX, carrying the revision as well as the recipe — which is the whole of the 18%. The driver never learns how the data was fetched, only what came back, so every REST call stays on this side of the boundary and out of protocol code.',
   },
   {
     id: 'e-solder-console',
@@ -58,7 +58,7 @@ export const runtimeEdges: Edge[] = [
     kind: 'runtime',
     protocol: 'In-process (library)',
     detail:
-      'The client is consumed as a library inside the worker and is the only component that knows the machine\'s native protocol. TCP reconnect, exponential backoff, and heartbeat live here, so a dropped socket recovers without operator intervention.',
+      'The client is consumed as a library inside the worker and is the only component that knows the machine\'s native protocol. The worker subscribes to its events directly rather than going through the bus, which is why this is the one path in the platform carrying no IPC-CFX. TCP reconnect, exponential backoff, and heartbeat live here, so a dropped socket recovers without operator intervention.',
   },
 
   // --- Preventive maintenance -------------------------------------

@@ -7,6 +7,7 @@ import { Html } from "@react-three/drei";
 import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
+import { FOG_FAR, FOG_NEAR } from "@/lib/world-scale";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import {
   DESKTOP_MIN_WIDTH_PX,
@@ -28,6 +29,7 @@ import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
+import { getPlacement } from "./nebula-placement";
 import {
   GATHER_RADIUS,
   stepSimulation,
@@ -139,23 +141,38 @@ const HOVER_OPACITY = 1;
 const HOVER_EASE = 0.2;
 
 /**
- * Fog band, re-measured against actual per-node camera-space depth (not
- * guessed) after the shell shrank to 11: from the outside framing the nodes
- * span depth 20.1–42.5, so far sits just past the true maximum and the
- * farthest cluster reaches ~90% fade — visibly receded, not erased.
+ * Fog band, in world units — **derived from the distances the camera actually
+ * stands at, and now derived in code rather than by hand.**
  *
- * Near is set by the *landing page* rather than by that framing. The landing
- * cluster sits 19.6–26.4 from the home camera, and anything below 27 would
- * start fogging its far edge, which has never had fog and is composed without
- * it. So near clears that, and the outside framing gets its gradient over
- * 27–42.5 instead of the whole range.
+ * It spent a long time describing a composition that did not ship. The 27-48
+ * it started at was measured correctly against an *outside* framing of the
+ * constellation, and then `/nebula` moved inside the shell and nothing
+ * re-measured; every node on every route sat nearer than 28 units, so the fog
+ * was simply inert, and inert fog and absent fog look the same. Part 3 made
+ * the distances real. Part 3 step 4 re-measured the band against them, by
+ * hand, and wrote down 55-210 — which was correct, and was also a second copy
+ * of numbers that belong to the camera, waiting to go stale the next time the
+ * camera moved.
  *
- * Inside the globe fog does nothing at all, and shouldn't: from the inside
- * pose every visible node lies between 13 and 17 units away — a depth ratio of
- * 1.26 — so there is no recession for it to describe.
+ * It moved immediately: narrowing STANDING_FOV to 30 put the landing camera
+ * 130 units out instead of 84, and 55-210 would have had the graph's own
+ * subject two-thirds faded. So the band is computed from the standing
+ * distances now (lib/world-scale.ts) and this file only draws it. What the
+ * ends are for is unchanged, and the fractions are the ones step 4 chose:
+ *
+ * - **Near clears the graph seen from inside**, which spans 5 to 20 units from
+ *   the standing point against a near plane past 100. From within a shell there
+ *   is no recession to describe: fog there would only flatten the one view that
+ *   has real depth cues of its own.
+ * - **The landing page grades 10% to 26%** across the graph's own depth. That
+ *   gradient is the difference between a far-off object and a near one drawn
+ *   small, and it could not exist while the graph was a shrunken copy 23 units
+ *   from the camera. It is held fixed as the lens narrows.
+ * - **Ambient routes recede further**, which is what they are for.
+ * - **Far is set against home**, three fifths of the way through the band once
+ *   the reader turns around inside the graph: present and hazed rather than
+ *   erased, and not the "slightly grey card" a quarter of a band gave.
  */
-const FOG_NEAR = 27;
-const FOG_FAR = 48;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };
@@ -216,7 +233,7 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
  * swapped, so there is nothing for the eye to notice being swapped.
  *
  * Panel size is the tier table's (02-architecture.md): 70% of the viewport on
- * desktop, 85% below, taken as a fraction of the frustum at the node's own
+ * desktop, 80% below, taken as a fraction of the frustum at the node's own
  * depth — the same numbers nebula-panel.tsx uses in CSS, so the mesh and the
  * DOM agree without either measuring the other. Under 500px of viewport height
  * there is no morph at all: the panel is a full-height sheet and the node stays
@@ -225,7 +242,7 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
 
 const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
 const PANEL_FRACTION_DESKTOP = 0.7;
-const PANEL_FRACTION_COMPACT = 0.85;
+const PANEL_FRACTION_COMPACT = 0.8;
 /** Depth of the opened node relative to its own radius — flattened, not gone,
  * so the rim still turns away from the viewer and catches the fresnel term. */
 const OPEN_DEPTH_FACTOR = 0.35;
@@ -271,13 +288,26 @@ export function snapFocusShellOpen() {
  * crossing a neighbour re-targeted every spring in the graph and the whole
  * scene lurched around the thing being read.
  */
+/**
+ * And not from inside the graph at all. The attraction was built for the
+ * view from outside, where the cluster is a small object and drawing a
+ * node's connections in toward it reads as the graph responding. From the
+ * centre of the shell every node is at arm's length in some direction, and
+ * a stray pointer crossing one pulls its neighbours across the sky — "as you
+ * move over the screen you might accidentally hover over the node and it
+ * affects the screen". Hover still lights the node, its edges and its label.
+ */
 function attractionIsWelcome() {
   const { focusedNodeId, flying } = useSceneStore.getState();
-  return !focusedNodeId && !flying;
+  return !focusedNodeId && !flying && getPlacement() < 0.5;
 }
 
 function handlePointerOver(e: ThreeEvent<PointerEvent>, nodeId: string) {
   e.stopPropagation();
+  // The open node is the panel's backdrop and covers most of the frame;
+  // hovering it is not a preview of anything, and its label at arm's length
+  // is the size of the screen.
+  if (useSceneStore.getState().focusedNodeId === nodeId) return;
   useSceneStore.getState().setHoveredNodeId(nodeId);
   if (attractionIsWelcome()) attractNeighbors(nodeId);
 }
@@ -311,6 +341,8 @@ function hoverLabelTitle(nodeId: string): string | null {
 // the core became translucent, and it's no longer needed.
 const LABEL_Y_OFFSET_FACTOR = -0.5;
 /** Scratch for the spotlight labels' facing test, which runs every frame. */
+const _openWorld = new THREE.Vector3();
+const _openParentQuat = new THREE.Quaternion();
 const _labelCentre = new THREE.Vector3();
 const _labelWorld = new THREE.Vector3();
 const _labelEdge = new THREE.Vector3();
@@ -881,17 +913,15 @@ export function Constellation({
     return () => releaseAttraction();
   }, [gatherNodeId]);
 
-  // Tech node visibility is tier-dependent — see 02-architecture.md's
-  // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
-  // default it will toggle from. Tech opacity's tier-dimming is folded into
-  // the per-frame hover loop below (baseOpacity reads `tier` directly), so
-  // it doesn't need its own effect.
-  // Off /nebula this is a texture rather than a graph, and the tier rule is
-  // about keeping the graph legible on a small screen — so the whole
-  // population is drawn there. A phone's landing cluster would otherwise be
-  // 20 nodes where every other device sees 45, which reads as sparse rather
-  // than as restrained.
-  const showTech = !isNebula || tier !== "mobile";
+  // Tech nodes are drawn on every tier now. They were hidden on the mobile
+  // tier for legibility — 02-architecture.md's tier table, back when a phone
+  // stood at the centre of the graph and the tech shell was clutter at arm's
+  // length — never for performance: `/` has always drawn all 51 on phones.
+  // A portrait phone stands outside the graph since 07-continuous-space.md's
+  // mobile section, and from there they are dots on a globe, which is the
+  // graph rather than clutter. Tech opacity's tier-dimming is folded into
+  // the per-frame hover loop below (baseOpacity reads `tier` directly).
+  const showTech = true;
 
   useFrame((state, delta) => {
     const { reducedMotion, hoveredNodeId, focusedNodeId: focused } =
@@ -1038,8 +1068,22 @@ export function Constellation({
       if (open > 0) {
         // Face the camera, so "flattened along Z" means flattened toward the
         // viewer, and scale to the panel's rectangle at this node's depth.
-        mesh.quaternion.copy(state.camera.quaternion);
-        const distance = state.camera.position.distanceTo(mesh.position);
+        // **In world space.** The mesh lives inside the constellation's
+        // group, which is turned by the base rotation whenever the reader is
+        // inside — so its local position is not where it is, and a local
+        // quaternion equal to the camera's does not face the camera. Measured
+        // against the local position, the "distance" was up to a shell's
+        // diameter instead of a couple of units, and the rectangle drew as a
+        // sphere-sized curve across the whole frame that every pointer
+        // position then hovered.
+        if (mesh.parent) {
+          mesh.parent.getWorldQuaternion(_openParentQuat);
+          mesh.quaternion.copy(_openParentQuat).invert().multiply(state.camera.quaternion);
+        } else {
+          mesh.quaternion.copy(state.camera.quaternion);
+        }
+        mesh.getWorldPosition(_openWorld);
+        const distance = state.camera.position.distanceTo(_openWorld);
         const halfHeight =
           distance *
           Math.tan(

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { usePathname, useRouter } from "next/navigation";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
@@ -12,30 +12,54 @@ import {
   routeForNode,
 } from "@/lib/nebula-routes";
 import { nodeGeometry } from "@/lib/node-geometry";
+import { standsOutside } from "@/lib/device-tier";
+import {
+  addOutsideDragDelta,
+  canDragFrom,
+  getOutsideTurn,
+  resetOutsideTurn,
+  setOutsideDragging,
+  setOutsideTurn,
+  stepOutsideTurn,
+} from "./nebula-drag-state";
 import { getLivePosition, neighborsOf } from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
-  CLUSTER_BOUNDING_RADIUS,
-  CLUSTER_DEPTH,
   CLUSTER_PARALLAX_MAX_PX,
-  HOME_CAMERA_FOV,
-  HOME_CAMERA_POSITION,
   clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
-  pxPerWorldUnitFor,
 } from "@/lib/cluster-geometry";
 import {
+  HOME_REST_OPACITY,
+  HOME_STANDOFF,
+  LANDING_SCALE,
+  LANDING_STANDING_DISTANCE,
+  REFERENCE_DISTANCE,
+  STANDING_FOV,
+} from "@/lib/world-scale";
+import {
+  approachEase,
+  departureHeading,
+  divePose,
+  diveProgressAt,
+  PASS_CLEARANCE,
+  passEase,
+  type DivePass,
   FLIGHT_DURATION_MS,
   FOCUS_FLIGHT_DURATION_MS,
   flightEase,
   focusPose,
   lerpPose,
-  orbitLerpPose,
+  approachLerpPose,
   shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
+import { NebulaHome } from "./nebula-home";
+import { HOME_HANDOFF_MS } from "./nebula-departure";
+import { getHeroFrame, homePlane } from "./nebula-home-placement";
 import { getPlacement, setPlacement } from "./nebula-placement";
+import { noteRigEvent, publishCameraProbe } from "./nebula-probe";
 import {
   getDragAngles,
   isDragging,
@@ -64,23 +88,6 @@ import {
  * was preserving a WebGL context and nothing else.
  */
 
-/**
- * Shrinks the constellation to exactly the footprint the landing page's
- * cluster has always occupied — `CLUSTER_BOUNDING_RADIUS` at `CLUSTER_DEPTH`.
- *
- * Matching that footprint rather than picking a pleasing size is what keeps
- * `lib/cluster-geometry.ts` true. Every DOM overlay on the landing page (the
- * affordance's hover circle, the idle pulse ring, the phrase label's
- * placement solve) is measured in pixels from those constants, so as long as
- * what's drawn projects to the same pixels, none of that arithmetic has to
- * know the geometry underneath it changed at all.
- *
- * The node sizes fall out of it and confirm the fit: a major project node
- * lands at 0.16 world units here, a standard at 0.12, against the 0.12-0.22
- * range the decorative spheres this replaces were drawn at.
- */
-const LANDING_SCALE = CLUSTER_BOUNDING_RADIUS / CONSTELLATION_BOUNDING_RADIUS;
-
 /** Dimming applied off `/`, where the constellation is ambient rather than
  * the subject — see 04-phase-1.md. Opacity's half of this lives in
  * nebula-constellation.tsx; this is the scale half. */
@@ -95,7 +102,8 @@ const PARALLAX_EASE = 0.09;
 // World units — far below anything visible (radiusPx conversion is roughly
 // 40-70px per world unit depending on viewport height), just enough to
 // collapse the tail of the lerp's asymptotic approach into a single write.
-const PARALLAX_WRITE_EPSILON = 0.0005;
+/** Half a pixel: below this the overlays would not move anyway. */
+const CIRCLE_WRITE_EPSILON_PX = 0.5;
 /** Route-change easing for the ambient scale, matching the opacity fade. */
 const AMBIENT_EASE = 0.06;
 
@@ -127,14 +135,43 @@ const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
  * solve is told about it (clusterScaleForViewport), so it still clears the
  * text column by a real margin rather than growing across it.
  */
-const SPOTLIGHT_ZOOM = 1.32;
+const SPOTLIGHT_ZOOM = 2.6;
 
 /**
- * Distance from the landing camera to the plane the cluster placement is
- * solved on. The solve works in pixels at that plane; anything drawn nearer
- * has to have its target scaled down to project to the same place.
+ * The orientation that turns a project's cluster to face the reader.
+ *
+ * setFromUnitVectors gives the shortest rotation carrying the node onto the
+ * facing direction — which fixes where the node lands and says nothing about
+ * the twist around it, so the surrounding cluster arrived somewhere different
+ * on every project and the graph read as re-shuffling rather than turning.
+ * Rolling about the facing axis until the layout's own up is as near screen-up
+ * as it can be makes the orientation a function of which node was chosen and
+ * nothing else, so the geography holds still between pages.
+ *
+ * A function because two things need the same answer: the group, which turns
+ * to it, and the camera, which centres the lit cluster against it.
  */
-const CAMERA_TO_CLUSTER = HOME_CAMERA_POSITION[2] - CLUSTER_DEPTH;
+function spotlightQuaternion(nodeId: string | null, out: THREE.Quaternion) {
+  if (!nodeId || !nodeGeometry[nodeId]) return out.identity();
+  _spotDirection.fromArray(nodeGeometry[nodeId].position).normalize();
+  out.setFromUnitVectors(_spotDirection, SPOTLIGHT_FACING);
+  const facing = SPOTLIGHT_FACING;
+  const up = _rollUp.copy(LAYOUT_UP).applyQuaternion(out);
+  up.addScaledVector(facing, -up.dot(facing));
+  const wanted = _rollWanted
+    .copy(LAYOUT_UP)
+    .addScaledVector(facing, -LAYOUT_UP.dot(facing));
+  if (up.lengthSq() > 1e-6 && wanted.lengthSq() > 1e-6) {
+    up.normalize();
+    wanted.normalize();
+    const angle = Math.acos(THREE.MathUtils.clamp(up.dot(wanted), -1, 1));
+    const sign = Math.sign(_rollAxis.crossVectors(up, wanted).dot(facing));
+    out.premultiply(_rollQuat.setFromAxisAngle(facing, angle * (sign || 1)));
+  }
+  return out;
+}
+
+
 /**
  * Roughly how long the globe takes to turn to a new project, in seconds.
  *
@@ -187,6 +224,21 @@ function smoothDampToZero(
   current.add(_dampTemp).multiplyScalar(decay);
 }
 
+/**
+ * **The graph turns for the whole flight.**
+ *
+ * The turn between the landing face and the interior one is carried by the
+ * graph, in step with the placement — which follows the dive's own curve, so
+ * it leans in, turns steadily, and settles as the camera does. It was briefly
+ * compressed into the first seven tenths so the run through the shell would
+ * be against a still graph, and that read as three beats — fly, turn, fly —
+ * where one continuous motion was asked for. Linear in the placement is the
+ * whole answer; the function exists so the choice has a name.
+ */
+function unwindShare(placement: number) {
+  return placement;
+}
+
 /** Scratch for the roll solve, the turn and the centring; all run every frame. */
 const _dampTemp = new THREE.Vector3();
 const _turnDelta = new THREE.Quaternion();
@@ -194,73 +246,88 @@ const _turnRel = new THREE.Vector3();
 const _turnAxis = new THREE.Vector3();
 const _turnStep = new THREE.Quaternion();
 const _solvedTarget = new THREE.Vector3();
+const _tiltFallbackUp = new THREE.Vector3(1, 0, 0);
+/** The direction every camera on this site looks, now that the graph turns. */
+const FORWARD = new THREE.Vector3(0, 0, -1);
+const _parkForward = new THREE.Vector3();
+const _fromHeading = new THREE.Vector3();
+const _turnHeading = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
+const _outsideDrag = new THREE.Quaternion();
+const _insideTarget = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
 const SCREEN_UP = new THREE.Vector3(0, 1, 0);
 const SCREEN_RIGHT = new THREE.Vector3(1, 0, 0);
 const _spotCentre = new THREE.Vector3();
+const _spotDirection = new THREE.Vector3();
+const _spotQuat = new THREE.Quaternion();
 const _spotNode = new THREE.Vector3();
 const _rollUp = new THREE.Vector3();
 const _rollWanted = new THREE.Vector3();
 const _rollAxis = new THREE.Vector3();
 const _rollQuat = new THREE.Quaternion();
 /** The layout's own orientation, which is what `/nebula` is composed against. */
-const UNROTATED = new THREE.Quaternion();
+
 
 /**
- * Elevated, near-top-down heading, tilted slightly off pure vertical.
- * Cluster.order maps monotonically onto Y in layout.ts's Fibonacci sphere,
- * so "front hemisphere" for the low-order SEL clusters means looking down
- * from above, not straight ahead along Z. A pure top-down heading was tried
- * first and rejected: solder and personal sit at opposite Y poles but
- * nearly identical X/Z, so they collided in screen space (~3.6 units apart
- * vs. ~8 achievable elsewhere). This heading was chosen by searching
- * viewing directions for one that keeps all four SEL centroids comfortably
- * front-facing while maximizing the closest pairwise screen-space distance
- * between all seven cluster centroids — verified against the actual
- * computed layout, not eyeballed.
+ * **Where the reader stands inside the graph: the centre of it.**
  *
- * Scaled with the shell when it shrank from 16 to 11 (content/layout.ts), so
- * the framing it was tuned for is preserved: same heading, same fraction of
- * the viewport, 28.9 units from its target instead of 41.2.
+ * This is a decision, not a measurement, and the measurements argued the
+ * other way. `07-continuous-space.md` records four searches over standing
+ * points inside the shell, and every one of them avoided the middle for the
+ * same reason: on a hollow shell every node is the same distance from the
+ * centre, so from there nothing is near and nothing is far — "a flat wall,
+ * approached from the other side". The searched poses stood 5.5 to 9 units
+ * out to buy depth, and the price was that the reader arrived off-centre,
+ * with two nodes filling one edge of the frame and the mass of the graph
+ * piled in the opposite corner, and the flight in felt like it stopped at a
+ * doorway.
  *
- * No route stands here any more — `/nebula` is entered from the inside. It
- * survives because the inside pose is defined by reversing it, and because
- * `/work/[slug]` is going to want the globe from outside with the relevant
- * cluster turned to face the reader. Its field of view was 50, which is what
- * FOCUS_CAMERA_FOV is set to below.
+ * The brief, restated by the person whose site it is: land in the centre, so
+ * that looking around is looking around from the middle of a cloud of nodes,
+ * and fly *straight* there — the camera holds its heading, and it is the
+ * graph that turns to put something worth seeing in front of the reader on
+ * arrival. Uniform depth is the thing being asked for. So the standing point
+ * is the origin, and what is searched now is only the heading.
  */
-const CONSTELLATION_CAMERA_POSITION: [number, number, number] = [8.4, 30.1, -2.2];
-
+const INTERIOR_STANDING_POINT = new THREE.Vector3(0, 0, 0);
 
 /**
- * Aimed slightly above the origin: the oblique heading projects the nearest
- * (solder) cluster high in the frame, and the sticky header eats the top
- * ~62px, so aiming at y=0 left the constellation riding up under the header
- * and off-center. Raising the target pushes the whole composition down into
- * the usable area.
+ * Which way the reader faces on arrival, in the graph's own space — and
+ * therefore which face of the constellation the graph turns toward the
+ * approaching camera.
+ *
+ * Searched from the centre (`checks/interiorheading.mjs`), over the whole
+ * sphere of headings, scored on nodes in frame across six desktop viewports,
+ * production projects in frame, and total apparent area, with the frame's
+ * centroid held near the middle and no node within 6 degrees of the axis, so
+ * the arrival is not pointed at one project. Two more constraints exist only
+ * because the flight is now a straight line *through* the shell: the camera
+ * enters along the reverse of this heading, so no node may sit within 1.5
+ * units of that line — the reader passes nodes, not through them.
+ *
+ * At 1440x900 this puts 18 nodes in frame, six of them projects and all six
+ * production work, with the sparsest of the six viewports at 17. Re-run the
+ * search when `content/layout.ts` moves; a heading measured against a layout
+ * that has since changed is indistinguishable from one that was never right.
  */
-const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
+const INTERIOR_HEADING = new THREE.Vector3(-0.083, 0.908, 0.411).normalize();
 
 /**
- * `/nebula`'s resting pose: **inside the globe**, looking across the middle.
+ * How far the pose's target sits ahead of the camera on the interior poses.
  *
- * Three numbers, each measured rather than chosen.
- *
- * **Not at the centre.** From dead centre every node is the same distance
- * away, so nothing varies in size and fog has nothing to grade; worse, a 50
- * degree frame there covers 8.1% of the sphere's solid angle, and sampling 400
- * headings against the real layout put the tenth percentile at *zero nodes in
- * frame*. Half the shell radius out, looking back through the centre at the
- * far side, the same sampling never drops below eleven and averages sixteen.
- *
- * **Opposite the front hemisphere.** The heading is the outside pose's,
- * reversed: the composition puts the SEL clusters on the side the outside
- * camera faces, so to look at them from within you have to stand on the other
- * side of the middle. camera-controls orbits about the target, so dragging
- * sweeps the far surface past you and the near shell swings in behind.
- *
+ * Not a distance from anything, and named carefully because its predecessor
+ * was not: the reader stands still inside the graph and the pivot ends up
+ * `LOOK_DISTANCE` ahead of them anyway (parkForLookingAround). This is only
+ * the radius a flight interpolates its heading against, and it wants to be
+ * about the size of the room rather than a tenth of a unit — see
+ * approachLerpPose on what happens when a pose's target is mistaken for the
+ * graph.
+ */
+const INSIDE_DISTANCE = 9;
+
+/**
  * **Wide, but not a fisheye.** Field of view is the only lever that changes
  * *how many* nodes are in frame — shrinking the shell makes each one bigger
  * but moves none of them into view, since angular position does not care about
@@ -272,18 +339,86 @@ const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
  * at that width the spheres near the frame edge stretch into obvious ellipses.
  * 72 is about 99 horizontal — wide enough to read as being surrounded, inside
  * the range where a sphere still looks like one.
+ *
+ * **The same lens as everywhere else now** (STANDING_FOV, lib/world-scale.ts),
+ * so a flight never changes focal length while it moves. The interior
+ * composition was searched against 72, so the dial lives there and this is
+ * an alias rather than a second number to go stale.
  */
-const INSIDE_DISTANCE = 5.5;
-const INSIDE_CAMERA_FOV = 72;
+const INSIDE_CAMERA_FOV = STANDING_FOV;
+
+/**
+ * How far in front of the camera its pivot sits while parked inside the graph,
+ * in world units.
+ *
+ * camera-controls has no first-person mode: it orbits the camera around a
+ * target, so the view always points at that target. With the target at the
+ * graph's centre the reader could circle the graph and never turn their back
+ * on it — measured, the angle to anything outside the shell never fell below
+ * 83.8 degrees against a 36-degree half-field. Putting the pivot a hand's
+ * breadth ahead of the camera instead turns the same drag into looking around:
+ * the camera sweeps a sphere this small, which is standing still, and the view
+ * goes wherever it is pointed.
+ *
+ * Not zero, because a zero-length offset has no direction to rotate and the
+ * controls lose the heading entirely.
+ */
+const LOOK_DISTANCE = 0.1;
+
+/**
+ * **The orientation the graph turns to as the reader arrives, and the reason
+ * the arrival is a straight line.**
+ *
+ * `/` and `/nebula` want different faces of the constellation toward the
+ * camera, so between them *something* has to rotate. It used to be the camera:
+ * the interior heading is an oblique direction chosen against the layout, so
+ * flying in swung the view about 111 degrees and the reader ended up looking
+ * somewhere quite different from where they had started. That reads as being
+ * carried around a corner, and it makes flying *past* anything impossible,
+ * which Part 4 needs.
+ *
+ * So the graph turns instead. This is the rotation that carries
+ * INTERIOR_HEADING onto straight down −z, which is where the standing camera
+ * already looks — so the camera keeps one heading for the whole journey and
+ * only travels. The picture at either end is identical; a rigid rotation of
+ * the world and the camera together cannot change what is rendered, which is
+ * what the pixel gate checks.
+ *
+ * The unwind in ConstellationOrientation interpolates toward this value, so
+ * whatever a work page had turned the globe to is exactly undone by the time
+ * the reader is inside. That is what makes arriving through a turned work page
+ * identical to arriving directly, and it holds for any orientation this is.
+ */
+const NEBULA_BASE_ROTATION = (() => {
+  // A camera, not a plain Object3D. `lookAt` points an object's +z at its
+  // target but a camera's −z, and three special-cases that on `isCamera` — so
+  // deriving this from an Object3D gives an orientation flipped 180 degrees
+  // and the interior composition comes out inside-out. Measured that way, all
+  // of /nebula changed at every viewport.
+  const look = new THREE.PerspectiveCamera();
+  look.position.copy(INTERIOR_STANDING_POINT);
+  look.lookAt(
+    INTERIOR_STANDING_POINT.clone().addScaledVector(
+      INTERIOR_HEADING,
+      INSIDE_DISTANCE,
+    ),
+  );
+  return look.quaternion.clone().invert();
+})();
+
+const UNROTATED = NEBULA_BASE_ROTATION;
 
 const INSIDE_POSE: CameraPose = (() => {
-  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
-  const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
-    .sub(target)
-    .normalize();
+  // The composed standing point, carried into the rotated world. Rotating the
+  // graph and the camera by the same amount leaves the view untouched, so this
+  // is the same place in the shell as before — it simply now has the reader
+  // facing −z, like every other route.
+  const position = INTERIOR_STANDING_POINT.clone().applyQuaternion(
+    NEBULA_BASE_ROTATION,
+  );
   return {
-    position: target.clone().addScaledVector(outward, -INSIDE_DISTANCE),
-    target,
+    position,
+    target: position.clone().addScaledVector(FORWARD, INSIDE_DISTANCE),
   };
 })();
 
@@ -306,36 +441,116 @@ const INSIDE_POSE: CameraPose = (() => {
 function restingPoseFacing(nodeId: string | null): CameraPose {
   const node = nodeId ? nodeGeometry[nodeId] : null;
   if (!node) return INSIDE_POSE;
-  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
-  const direction = new THREE.Vector3().fromArray(node.position).sub(target);
+  // The camera does not move: there is one place to stand inside the graph and
+  // this is it. Only the heading changes, which is the whole difference
+  // between looking around a room and being carried around it.
+  const position = INSIDE_POSE.position.clone();
+  // Node positions are in the graph's own space, and the graph is turned by
+  // NEBULA_BASE_ROTATION once the reader is inside — so where a node actually
+  // is, is its local position carried through that turn.
+  const direction = new THREE.Vector3()
+    .fromArray(node.position)
+    .applyQuaternion(NEBULA_BASE_ROTATION)
+    .sub(position);
   if (direction.lengthSq() < 1e-6) return INSIDE_POSE;
   direction.normalize();
   return {
-    position: target.clone().addScaledVector(direction, -INSIDE_DISTANCE),
-    target,
+    position,
+    target: position.clone().addScaledVector(direction, INSIDE_DISTANCE),
   };
 }
 
 /**
- * The landing page's pose. Fixed and parallax-only per 01-design-system.md —
- * the cluster moves on the landing page, the camera does not.
+ * **Where a portrait phone stands: outside the graph, on the flight line.**
  *
- * It is also, now, literally where the arrival flight starts. That is the
- * point: there is no synthesised departure pose any more, so there is nothing
- * for a cut to happen across.
+ * 07-continuous-space.md, "Mobile — the outside standing point". From the
+ * centre a tall frame sees a slice; from outside it sees a ball. The camera
+ * stays on the same straight line the flight travels, looking down −z at the
+ * origin like every other route, so there is no new heading to search and
+ * the graph's turn (NEBULA_BASE_ROTATION) puts the same composed face toward
+ * it as the interior would have seen.
+ *
+ * The distance is set by *height*, not by fitting the frame's width. The
+ * lens is vertical, so a given distance puts the ball at a fixed fraction of
+ * the viewport's height whatever the width — which is what makes this one
+ * number rather than a solve, and what keeps it still when a phone browser
+ * shows or hides its address bar and the height changes under the page.
+ * 0.42 of the height is 91% of the width at 390x844 and 93% at 360x800,
+ * the two narrowest phones the checks run; a wider phone has more room,
+ * never less. The bounding radius is set by the single furthest node, so the
+ * ink itself sits well inside that: measured at 0.4 the ball read as about
+ * 0.37 of the height.
  */
-const HOME_POSE: CameraPose = {
-  position: new THREE.Vector3(...HOME_CAMERA_POSITION),
+const OUTSIDE_HEIGHT_FRACTION = 0.42;
+const OUTSIDE_DISTANCE =
+  CONSTELLATION_BOUNDING_RADIUS /
+  (OUTSIDE_HEIGHT_FRACTION * Math.tan((STANDING_FOV * Math.PI) / 360));
+
+const OUTSIDE_POSE: CameraPose = {
+  position: new THREE.Vector3(0, 0, OUTSIDE_DISTANCE),
   target: new THREE.Vector3(0, 0, 0),
 };
 
-// Distance-from-target clamp for the nebula dolly. Both ends now keep the
-// camera *inside* the shell, whose nearest node sits at 10.08
-// (content/layout.ts): pulling back past it would leave the globe, which on
-// this route is the one thing hand-dollying may not do. Min stops short of the
-// exact centre, where the view flattens to nothing.
-const DOLLY_MIN_DISTANCE = 1.5;
-const DOLLY_MAX_DISTANCE = 9.5;
+/**
+ * **The outside turn as a rotation**: the reader's yaw about the screen's
+ * vertical and pitch about its horizontal, premultiplied onto the graph's
+ * own orientation exactly as the landing drag is. The camera stays on the
+ * axis; this is what moves. Read from the spring's *current* value, so a
+ * pose composed against it is composed against what is drawn this frame.
+ */
+const _outsideYaw = new THREE.Quaternion();
+const _outsidePitch = new THREE.Quaternion();
+function outsideQuaternion(out: THREE.Quaternion) {
+  const turn = getOutsideTurn();
+  return out
+    .copy(_outsideYaw.setFromAxisAngle(SCREEN_UP, turn.yaw))
+    .multiply(_outsidePitch.setFromAxisAngle(SCREEN_RIGHT, turn.pitch));
+}
+
+/** The graph's orientation while the reader stands outside it. */
+const _outsideTurnQuat = new THREE.Quaternion();
+function outsideBaseRotation(out: THREE.Quaternion) {
+  return out.copy(NEBULA_BASE_ROTATION).premultiply(outsideQuaternion(_outsideTurnQuat));
+}
+
+/**
+ * Turn the globe so a node faces the camera — the outside answer to
+ * restingPoseFacing. Closing a node from outside puts the camera back on the
+ * axis and turns the *graph* so the node the reader was just inside is in
+ * the middle of the frame, rather than moving the camera round to it: that
+ * keeps every departure a straight pull along the axis.
+ *
+ * Solved in closed form. The turn is yaw(a) about screen-up applied after
+ * pitch(b) about screen-right, so a direction `d` in the graph's composed
+ * frame lands on +z when d = (−sin a, cos a·sin b, cos a·cos b). Two
+ * branches, one per hemisphere, so that pitch stays within ±90° and it is
+ * yaw that carries a node round from the far side.
+ */
+function faceNodeFromOutside(nodeId: string | null) {
+  const node = nodeId ? nodeGeometry[nodeId] : null;
+  if (!node) return;
+  const d = new THREE.Vector3()
+    .fromArray(node.position)
+    .applyQuaternion(NEBULA_BASE_ROTATION);
+  if (d.lengthSq() < 1e-6) return;
+  d.normalize();
+  const x = THREE.MathUtils.clamp(d.x, -1, 1);
+  if (d.z >= 0) {
+    setOutsideTurn(-Math.asin(x), Math.atan2(d.y, d.z));
+  } else {
+    setOutsideTurn(Math.PI + Math.asin(x), Math.atan2(-d.y, -d.z));
+  }
+}
+
+/** The bare graph's pose for this viewport, facing a node if one is named. */
+function restingPose(outside: boolean, nodeId: string | null): CameraPose {
+  if (!outside) return restingPoseFacing(nodeId);
+  // The camera does not move outside either: it is the globe that turns.
+  faceNodeFromOutside(nodeId);
+  return OUTSIDE_POSE;
+}
+
+
 
 /**
  * The one flight in progress, if any — **module scope on purpose**.
@@ -357,20 +572,28 @@ interface Flight {
   /** Constellation placement at each end: 0 = landing footprint, 1 = life-size. */
   placementFrom: number;
   placementTo: number;
-  /** Orbit-interpolate the path (see orbitLerpPose) rather than lerp it straight. */
+  /** Orbit-interpolate the path (see approachLerpPose) rather than lerp it straight. */
   /**
    * How to get there. `line` is a straight lerp, right for a short hop that
-   * barely turns. `orbit` swings around the target, for the arrival and the
-   * departure. `shell` sweeps across the surface between two nodes, for a
-   * sideways move — see shellLerpPose.
+   * barely turns. `approach` is the journey between the landing page and the
+   * graph, measured from the graph's centre — see approachLerpPose. `shell`
+   * sweeps across the surface between two nodes, for a sideways move.
    */
-  path: "line" | "orbit" | "shell";
+  path: "line" | "approach" | "shell" | "dive";
+  /** For the dive: where the camera passes the page. */
+  pass?: DivePass;
   /**
    * How long it takes. Carried per flight rather than read from a constant,
    * because the two kinds of move want different times — see
    * FOCUS_FLIGHT_DURATION_MS.
    */
   duration: number;
+  /**
+   * The curve, when the standard one is not right. The journey between the
+   * landing page and the graph uses `approachEase`; everything else is a UI
+   * transition and keeps `flightEase`.
+   */
+  ease?: (t: number) => number;
   /**
    * How long the camera holds still before it starts, in ms.
    *
@@ -386,6 +609,24 @@ interface Flight {
    * flight exists from the moment it is asked for, it simply has not started.
    */
   delay: number;
+  /**
+   * Where the destination document is allowed to appear, as a fraction of
+   * raw progress — see ARRIVAL_REVEAL_AT. Only meaningful for a departure.
+   */
+  revealAt: number;
+  /**
+   * Does this flight end at the home standing point? Then the hero plane
+   * has to be exactly where the real hero is by the end, and dissolve into
+   * it as the document appears.
+   */
+  toHome: boolean;
+  /**
+   * A departure: the camera keeps facing the graph as it is pulled out, and
+   * any heading a drag left it with straightens onto the landing heading
+   * early in the pull — see departureHeading. The path decides where the
+   * camera is; this decides where it looks.
+   */
+  turnAround: boolean;
 }
 let flight: Flight | null = null;
 
@@ -415,19 +656,86 @@ function applyPose(controls: CameraControlsImpl, pose: CameraPose) {
 }
 
 /**
- * Hand-dolly clamps, applied whenever the camera settles.
+ * Pivot clamps, applied whenever the camera settles.
  *
- * They have to be lifted for every flight and while focused, and they have to
- * be *off* on the landing page too: the home pose sits 9 units from its target,
- * inside DOLLY_MIN_DISTANCE, so a live clamp would quietly drag the camera
- * back out of the framing the whole landing page is composed against.
+ * They pin the orbit radius rather than bounding it. Inside the graph the
+ * reader stands still and looks around, so the only distance the controls may
+ * hold is the small one that makes rotation happen in place; there is no
+ * hand-dolly left to bound. Everywhere else they come off entirely — the
+ * landing pose sits 9 units from its target and a live clamp would quietly
+ * drag the camera out of the framing the landing page is composed against.
  */
 function applyDollyClamps(
   controls: CameraControlsImpl,
   { free }: { free: boolean },
 ) {
-  controls.minDistance = free ? 0 : DOLLY_MIN_DISTANCE;
-  controls.maxDistance = free ? Infinity : DOLLY_MAX_DISTANCE;
+  controls.minDistance = free ? 0 : LOOK_DISTANCE;
+  controls.maxDistance = free ? Infinity : LOOK_DISTANCE;
+}
+
+/**
+ * Park the camera for looking around: same position, same heading, pivot moved
+ * to `LOOK_DISTANCE` ahead of it.
+ *
+ * Called on landing rather than baked into `INSIDE_POSE`, so the flights keep
+ * interpolating between poses a comfortable distance from their targets. A
+ * pose whose target sits 0.1 units from its own camera would drag the orbit
+ * path's interpolated radius down to nothing on the way in.
+ *
+ * Position and direction are read off the camera and written straight back, so
+ * this cannot move the picture — it only changes what a subsequent drag
+ * rotates about.
+ */
+function parkForLookingAround(
+  controls: CameraControlsImpl,
+  pose: CameraPose,
+) {
+  // Derived from the pose just applied, **not** read back off the camera.
+  // camera-controls writes `camera.position` during its own update, so
+  // immediately after a `setLookAt` the camera object still holds wherever it
+  // was before — and aiming the pivot from there put the reader at the centre
+  // of the graph instead of at the standing point. Measured, that changed
+  // 99.7% of the interior's pixels.
+  _parkForward.copy(pose.target).sub(pose.position);
+  if (_parkForward.lengthSq() < 1e-9) return;
+  _parkForward.normalize();
+  // Clamps first: `setLookAt` would otherwise be pulled back to the old
+  // minimum distance the moment it is applied.
+  controls.minDistance = LOOK_DISTANCE;
+  controls.maxDistance = LOOK_DISTANCE;
+  controls.setLookAt(
+    pose.position.x,
+    pose.position.y,
+    pose.position.z,
+    pose.position.x + _parkForward.x * LOOK_DISTANCE,
+    pose.position.y + _parkForward.y * LOOK_DISTANCE,
+    pose.position.z + _parkForward.z * LOOK_DISTANCE,
+    false,
+  );
+}
+
+/**
+ * Park the camera for turning the globe: pivot at the graph's centre, orbit
+ * radius pinned at the outside standing distance. The opposite of
+ * parkForLookingAround — there the reader stands still and the view turns;
+ * here the view is always the centre and the reader goes round it, which is
+ * what one finger on a phone expects a ball to do. The pin is what stops a
+ * drag from doubling as a dolly.
+ */
+function parkForOrbiting(controls: CameraControlsImpl, pose: CameraPose) {
+  const r = pose.position.length();
+  if (r < 1e-6) return;
+  controls.minDistance = r;
+  controls.maxDistance = r;
+  controls.setLookAt(
+    pose.position.x,
+    pose.position.y,
+    pose.position.z,
+    0,
+    0,
+    0,
+    false,
+  );
 }
 
 function currentPose(controls: CameraControlsImpl): CameraPose {
@@ -438,27 +746,22 @@ function currentPose(controls: CameraControlsImpl): CameraPose {
 }
 
 /**
- * Draws the constellation, and places it.
+ * Draws the constellation, and turns it.
  *
- * Off `/nebula` this applies everything 04-phase-1.md asks of the landing
- * cluster — the solved centre, the viewport-width shrink, the pointer
- * parallax, the ambient scale-down off `/` — as a transform on the real
- * graph rather than as properties of a stand-in for it. On `/nebula` the
- * transform is identity. In between, a flight interpolates it.
+ * Turns it and nothing else. The graph sits at the origin at life size on
+ * every route; what used to be a per-route transform — shrunk to the landing
+ * footprint and pushed back off `/nebula`, identity on it — is now where the
+ * *camera* stands, solved in the rig. 07-continuous-space.md, Part 3: the
+ * scale was always a distance in disguise, and moving the camera to that
+ * distance projects every point identically.
  *
- * All three landing-page quantities are converted from pixels here because
- * that is how 01-design-system.md and 02-architecture.md specify them, and
- * lib/use-cluster-screen.ts converts the identical numbers back for the DOM
- * overlays, so the two can't drift.
+ * What is left here is orientation: the spotlight turn toward a project, the
+ * reader's own drag, and the spring that carries the group between them.
  */
-function ConstellationPlacement({
-  isNebula,
-  isHome,
+function ConstellationOrientation({
   spotlightNodeId,
   children,
 }: {
-  isNebula: boolean;
-  isHome: boolean;
   /** On `/work/[slug]`, the node whose cluster is turned to face the reader. */
   spotlightNodeId: string | null;
   children: ReactNode;
@@ -467,17 +770,8 @@ function ConstellationPlacement({
   const spotlightTarget = useRef(new THREE.Quaternion());
   /** spotlightTarget with the reader's drag applied — what the globe aims at. */
   const orientationTarget = useRef(new THREE.Quaternion());
-  const spotlightDirection = useRef(new THREE.Vector3());
-  /** The subject and everything gathered around it — what "centred" means. */
-  const spotlightGroup = useMemo(
-    () =>
-      spotlightNodeId
-        ? [spotlightNodeId, ...neighborsOf(spotlightNodeId)].filter(
-            (id) => nodeGeometry[id],
-          )
-        : [],
-    [spotlightNodeId],
-  );
+  /** Angular velocity of the turn, as a rotation vector in radians/second. */
+  const turnVelocity = useRef(new THREE.Vector3());
   // Aiming at a different project is a request for a particular view of it,
   // so it starts from the orientation that view specifies rather than from
   // wherever the reader last left the sphere. The route half of this lives in
@@ -486,163 +780,14 @@ function ConstellationPlacement({
     resetDrag();
   }, [spotlightNodeId]);
 
-  /** The solved landing composition — (x, y, scale) — damped as one thing. */
-  const solved = useRef(new THREE.Vector3());
-  const solvedVelocity = useRef(new THREE.Vector3());
-  const solvedReady = useRef(false);
-  const parallax = useRef(new THREE.Vector2());
-  /** Damped distance from the landing solve's centre to the lit cluster's. */
-  const centreOffset = useRef(new THREE.Vector3());
-  const centreVelocity = useRef(new THREE.Vector3());
-  /** Angular velocity of the turn, as a rotation vector in radians/second. */
-  const turnVelocity = useRef(new THREE.Vector3());
-  const ambientScale = useRef(1);
-  const lastWrittenParallax = useRef({ x: 0, y: 0 });
-
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     const group = groupRef.current;
     if (!group) return;
     // Clamped so a dropped frame or a backgrounded tab cannot fire the spring
     // through its target in one step.
     const dt = Math.min(delta, 1 / 20);
-    const { pointer, reducedMotion } = useSceneStore.getState();
-    // Written by the rig at frame priority -2, ahead of this callback's
-    // default 0, so a flight's camera and its placement are always the same
-    // frame's values.
+    const { reducedMotion } = useSceneStore.getState();
     const placement = getPlacement();
-
-    // Ambient dimming off `/` is eased rather than switched, so moving between
-    // the Phase 1 routes doesn't snap the graph's size.
-    //
-    // `/nebula` counts as undimmed even though it isn't `/`. It scales only
-    // the landing placement, which is invisible while the flight has
-    // interpolated it away — but it is the placement a *departure* flies back
-    // to, and letting it drift to the ambient value while parked in the
-    // constellation made the graph land 30% too small and then grow back over
-    // the following second. Measured as a spread still shrinking 1.1s after
-    // the flight had ended.
-    // A spotlit work page keeps full size, like `/`. The graph is doing a job
-    // there — showing where the project being read sits — and the turn that
-    // brings its cluster forward has to be big enough to read as a turn.
-    // Everywhere else off `/` it is decoration and shrinks.
-    ambientScale.current = THREE.MathUtils.lerp(
-      ambientScale.current,
-      isNebula || isHome || spotlightNodeId ? 1 : AMBIENT_SCALE,
-      reducedMotion ? 1 : AMBIENT_EASE,
-    );
-
-    // Parallax is a landing-page behaviour and is only computed there. Holding
-    // it still for the duration of a flight is deliberate: it is folded into
-    // the landing placement below, which the flight then interpolates away, so
-    // it leaves continuously instead of being separately animated out. It also
-    // keeps a drag on /nebula from writing to the store 60 times a second for
-    // overlays that aren't mounted.
-    if (placement <= 0) {
-      if (reducedMotion) {
-        parallax.current.set(0, 0);
-      } else {
-        // The design system specifies this swing in pixels, so it is converted
-        // here rather than stored as world units — see CLUSTER_PARALLAX_MAX_PX.
-        const maxWorld =
-          CLUSTER_PARALLAX_MAX_PX / pxPerWorldUnitFor(state.size.height);
-        parallax.current.x = THREE.MathUtils.lerp(
-          parallax.current.x,
-          -pointer.x * maxWorld,
-          PARALLAX_EASE,
-        );
-        parallax.current.y = THREE.MathUtils.lerp(
-          parallax.current.y,
-          pointer.y * maxWorld,
-          PARALLAX_EASE,
-        );
-      }
-
-      // Written when it's moved meaningfully, not every frame — a plain
-      // per-frame write, even after the lerp has visually settled, still
-      // produces a new object each time (floating-point lerp toward a fixed
-      // target never exactly reaches it), which would re-render every
-      // subscribed DOM component in nebula-affordance.tsx at 60fps forever,
-      // even at rest.
-      if (
-        Math.abs(parallax.current.x - lastWrittenParallax.current.x) >
-          PARALLAX_WRITE_EPSILON ||
-        Math.abs(parallax.current.y - lastWrittenParallax.current.y) >
-          PARALLAX_WRITE_EPSILON
-      ) {
-        lastWrittenParallax.current.x = parallax.current.x;
-        lastWrittenParallax.current.y = parallax.current.y;
-        useSceneStore
-          .getState()
-          .setClusterParallax({ x: parallax.current.x, y: parallax.current.y });
-      }
-    }
-
-    // The landing placement, in full. Narrow viewports shrink the whole thing
-    // so it doesn't fill the width edge to edge (clusterScaleForViewport), and
-    // the centre is solved rather than fixed — it slides right of the hero's
-    // text column on wide short viewports and drops below the text on narrow
-    // ones. 02-architecture.md's Landing cluster placement is the authority.
-    //
-    // The offsets divide by the *unscaled* px-per-world-unit on purpose: they
-    // set the group's parent-space position, and scaling a group about its own
-    // origin leaves that untouched. Y is negated because world +Y is up while
-    // CSS +Y is down; X needs no flip, since this camera has no roll.
-    const pxPerWorldUnit = pxPerWorldUnitFor(state.size.height);
-    // **The solved composition is sprung, because it changes under the reader.**
-    // Spotlighting a project moves all three of these at once: the zoom goes
-    // to SPOTLIGHT_ZOOM, and with labels to make room for, the centre moves
-    // from hugging the text column to the middle of the space beside it. On
-    // `/work` that transition happens on the *first hover*, where it landed as
-    // a 191px jump of the graph in a single frame — the old solve jumped 51px
-    // there and centring tripled it.
-    //
-    // Damped on the same clock as the turn, so hovering a row starts one
-    // movement: the globe glides across and grows while it rotates to face the
-    // project, and the three finish together. Only the solved part; the
-    // parallax offset is added afterwards and keeps its own easing, since
-    // damping it twice makes the pointer feel like it is dragging the graph
-    // through treacle.
-    const zoom = spotlightNodeId ? SPOTLIGHT_ZOOM : 1;
-    _solvedTarget.set(
-      (state.size.width *
-        (clusterCenterXFraction(
-          state.size.width,
-          state.size.height,
-          zoom,
-          spotlightNodeId !== null,
-        ) -
-          0.5)) /
-        pxPerWorldUnit,
-      -(
-        state.size.height *
-        (clusterCenterYFraction(state.size.width, state.size.height, zoom) - 0.5)
-      ) / pxPerWorldUnit,
-      LANDING_SCALE *
-        zoom *
-        ambientScale.current *
-        clusterScaleForViewport(state.size.width, state.size.height, zoom),
-    );
-    if (!solvedReady.current || reducedMotion) {
-      // The first frame of a route is not a transition. A cold load of
-      // `/work/[slug]` is already spotlit, and easing in from the unspotlit
-      // composition would animate a change the reader never made.
-      solved.current.copy(_solvedTarget);
-      solvedVelocity.current.set(0, 0, 0);
-      solvedReady.current = true;
-    } else {
-      solved.current.sub(_solvedTarget);
-      smoothDampToZero(
-        solved.current,
-        solvedVelocity.current,
-        SPOTLIGHT_TURN_SECONDS,
-        dt,
-      );
-      solved.current.add(_solvedTarget);
-    }
-
-    const landingScale = solved.current.z;
-    const landingX = parallax.current.x + solved.current.x;
-    const landingY = parallax.current.y + solved.current.y;
 
     // `/work/[slug]` turns the globe so its project's cluster faces the
     // reader. The layout is preserved rather than deformed — 05-phase-2.md
@@ -653,55 +798,12 @@ function ConstellationPlacement({
     //
     // Aimed at the seeded layout position, not the live wandering one, so the
     // target does not drift while the turn is converging on it.
-    if (spotlightNodeId && nodeGeometry[spotlightNodeId]) {
-      spotlightDirection.current
-        .fromArray(nodeGeometry[spotlightNodeId].position)
-        .normalize();
-      spotlightTarget.current.setFromUnitVectors(
-        spotlightDirection.current,
-        SPOTLIGHT_FACING,
-      );
-
-      // ...and then settle the roll, which the step above leaves undecided.
-      //
-      // setFromUnitVectors returns the *shortest* rotation carrying one
-      // direction onto another. That fixes where the node lands and says
-      // nothing about the twist around it, so the surrounding cluster arrived
-      // somewhere different on every project — sometimes below the node,
-      // sometimes behind it — and the graph read as re-shuffling rather than
-      // turning. Rolling about the facing axis until the layout's own up axis
-      // is as near screen-up as it can be makes the orientation a function of
-      // which node was chosen and nothing else, so the geography holds still
-      // between pages.
-      const facing = SPOTLIGHT_FACING;
-      const up = _rollUp.copy(LAYOUT_UP).applyQuaternion(spotlightTarget.current);
-      up.addScaledVector(facing, -up.dot(facing));
-      const wanted = _rollWanted
-        .copy(LAYOUT_UP)
-        .addScaledVector(facing, -LAYOUT_UP.dot(facing));
-      if (up.lengthSq() > 1e-6 && wanted.lengthSq() > 1e-6) {
-        up.normalize();
-        wanted.normalize();
-        const angle = Math.acos(THREE.MathUtils.clamp(up.dot(wanted), -1, 1));
-        const sign = Math.sign(_rollAxis.crossVectors(up, wanted).dot(facing));
-        spotlightTarget.current.premultiply(
-          _rollQuat.setFromAxisAngle(facing, angle * (sign || 1)),
-        );
-      }
-    } else {
-      spotlightTarget.current.identity();
-    }
+    spotlightQuaternion(spotlightNodeId, spotlightTarget.current);
 
     // **The reader's own spin, applied on top.** Composed in screen axes and
     // premultiplied, so a horizontal drag turns the globe about the vertical
     // axis of the *viewport* rather than of the layout — the sphere follows
     // the pointer whatever orientation a project has already put it in.
-    //
-    // Held apart from spotlightTarget rather than folded into it, because the
-    // centring solve below reads that one and must not see the spin: centring
-    // the lit cluster against a dragged orientation slides the whole globe
-    // sideways as you turn it, when what the gesture asks for is a sphere
-    // rotating in place inside the composition the page already solved.
     const drag = getDragAngles();
     orientationTarget.current.copy(spotlightTarget.current);
     if (drag.yaw !== 0 || drag.pitch !== 0) {
@@ -712,21 +814,22 @@ function ConstellationPlacement({
     }
     // **The turn unwinds as the flight goes in, and is exactly undone by the
     // time it lands.** `/nebula`'s heading was chosen against the layout's own
-    // orientation — it is the one that keeps all four SEL centroids
-    // front-facing and the seven cluster centroids furthest apart in screen
-    // space — so arriving with the globe still turned for some work page puts
-    // every cluster somewhere that composition does not expect. Tying the
-    // rotation to the placement rather than easing it separately means the two
-    // cannot disagree: at placement 1 the orientation is exactly the layout's,
-    // whatever the reader was looking at before, and a departure winds it back
-    // up in step.
+    // orientation, so arriving with the globe still turned for some work page
+    // puts every cluster somewhere that composition does not expect. Tying
+    // the rotation to the placement means the two cannot disagree: at
+    // placement 1 the orientation is exactly the layout's, whatever the reader
+    // was looking at before.
     if (placement > 0) {
-      // `orientationTarget`, not `spotlightTarget`: the reader's own spin is
-      // part of where the globe is, so a flight unwinds it along with the
-      // route's turn instead of dropping it on the first frame. It still lands
-      // exactly at UNROTATED, which is what keeps arriving at `/nebula` the
-      // same composition however you got there.
-      group.quaternion.copy(orientationTarget.current).slerp(UNROTATED, placement);
+      // What the graph shows at placement 1: its composed orientation, with
+      // the outside turn on top where a portrait phone has spun it. The turn
+      // springs toward its target here, on the same tempo as the spotlight
+      // turn, so a node closing from outside settles into the frame rather
+      // than snapping. Inside, the turn is identity and this is UNROTATED.
+      stepOutsideTurn(dt, reducedMotion);
+      _insideTarget.copy(UNROTATED).premultiply(outsideQuaternion(_outsideDrag));
+      group.quaternion
+        .copy(orientationTarget.current)
+        .slerp(_insideTarget, unwindShare(placement));
       turnVelocity.current.set(0, 0, 0);
     } else if (reducedMotion || isDragging()) {
       // A drag is direct manipulation: the sphere is under the pointer and has
@@ -778,130 +881,6 @@ function ConstellationPlacement({
         group.quaternion.copy(orientationTarget.current);
       }
     }
-
-    const scale = THREE.MathUtils.lerp(landingScale, 1, placement);
-    group.scale.setScalar(scale);
-
-    // **Centre the project, not the globe.** Turning the sphere puts the node
-    // in the right place *on* it, but the sphere itself stays where the
-    // landing solve puts it — so the gathered cluster ended up parked off to
-    // one side of the space beside the article rather than sitting in it.
-    // Placing the group so that its lit cluster lands on the solved centre
-    // puts the project in the middle of that space and lets the globe hang
-    // around it. Faded out by placement, so a departure toward `/nebula`
-    // unwinds it in step with everything else.
-    // Where the lit group should sit is a **screen-space** question, so it is
-    // solved in screen space. A node's contribution to the on-screen middle of
-    // the group is its offset divided by its own distance from the camera, and
-    // those distances differ by a third of the globe's diameter across a
-    // cluster turned to face the reader. Averaging the group's positions in
-    // world space and matching that to the landing solve's world point — the
-    // obvious thing, and what this did first — therefore missed twice over:
-    // 48px right, because the cluster sits nearer the camera than the plane
-    // the solve is written for, and 44px high, because the near half of the
-    // cluster projects further from the view axis than the far half.
-    //
-    // Weights are projected area, r²/d²: what reads as the middle of a group
-    // is its centre of visual mass, and a project node covers several times
-    // the pixels of a technology node beside it.
-    //
-    // Only x and y. Shifting z would move the globe toward or away from the
-    // camera and change its apparent size, which is not what centring means.
-    //
-    // Solved against the orientation the globe is turning *to*, not the one it
-    // currently holds. Against the current one the target moves for as long as
-    // the turn does, and a spring chasing a moving target never catches it —
-    // measured, the offset was still 0.6 world units short a second after the
-    // rotation had finished, so the composition kept creeping. Aiming at the
-    // settled orientation makes it a fixed target the moment the hover
-    // changes, so the slide across and the turn are one movement that ends at
-    // one moment. The two agree once the turn lands, which is when it matters.
-    let placedX = landingX;
-    let placedY = landingY;
-    if (spotlightGroup.length > 0) {
-      let sumW = 0;
-      let sumWoverD = 0;
-      let sumXoverD = 0;
-      let sumYoverD = 0;
-      for (const id of spotlightGroup) {
-        const live = getLivePosition(id);
-        _spotCentre
-          .copy(live ?? _spotNode.fromArray(nodeGeometry[id].position))
-          .applyQuaternion(spotlightTarget.current)
-          .multiplyScalar(scale);
-        const d = Math.max(CAMERA_TO_CLUSTER - _spotCentre.z, 1);
-        const r = nodeGeometry[id].radius;
-        const w = (r * r) / (d * d);
-        sumW += w;
-        sumWoverD += w / d;
-        sumXoverD += (w * _spotCentre.x) / d;
-        sumYoverD += (w * _spotCentre.y) / d;
-      }
-      // Solve mean(w·(P + o)/d) = mean(w)·landing/CAMERA_TO_CLUSTER for P:
-      // the group offset that lands the group's visual centre on exactly the
-      // screen point the landing solve asked for.
-      placedX =
-        ((landingX / CAMERA_TO_CLUSTER) * sumW - sumXoverD) / sumWoverD;
-      placedY =
-        ((landingY / CAMERA_TO_CLUSTER) * sumW - sumYoverD) / sumWoverD;
-    }
-
-    // **The centring is eased, not applied.** Solved directly it is a
-    // single-frame jump, and that jump is what made moving between projects
-    // read as a teleport: the moment the hover changed, the offset that
-    // centres the new cluster was applied whole, so the new project arrived
-    // already lit and already in the middle of the frame and the only thing
-    // left to watch was the globe turning behind it. Nothing travelled.
-    //
-    // Easing the offset toward its solved value at the same rate the turn
-    // eases means the cluster is carried across the frame as the sphere brings
-    // it around — the two converge together, so the project swings in and
-    // settles instead of appearing. Only the centring is smoothed; the landing
-    // solve underneath keeps its own parallax easing, which must not be
-    // double-damped.
-    const targetOffsetX = placedX - landingX;
-    const targetOffsetY = placedY - landingY;
-    if (reducedMotion) {
-      centreOffset.current.set(targetOffsetX, targetOffsetY, 0);
-      centreVelocity.current.set(0, 0, 0);
-    } else {
-      // Damped on the same clock as the turn, so the globe stops sliding at
-      // the moment it stops rotating. Under the old per-frame fraction the
-      // offset was still 0.5 world units short of its target eight seconds
-      // after the turn had visually finished, and the composition crept.
-      centreOffset.current.x -= targetOffsetX;
-      centreOffset.current.y -= targetOffsetY;
-      smoothDampToZero(
-        centreOffset.current,
-        centreVelocity.current,
-        SPOTLIGHT_TURN_SECONDS,
-        dt,
-      );
-      centreOffset.current.x += targetOffsetX;
-      centreOffset.current.y += targetOffsetY;
-    }
-
-    group.position.set(
-      THREE.MathUtils.lerp(landingX + centreOffset.current.x, 0, placement),
-      THREE.MathUtils.lerp(landingY + centreOffset.current.y, 0, placement),
-      THREE.MathUtils.lerp(CLUSTER_DEPTH, 0, placement),
-    );
-
-    // Hand the pointer half the circle the globe actually occupies. Derived
-    // here because this is the only place that knows all three terms — the
-    // solved centre, the parallax and centring offsets on top of it, and the
-    // scale after the spotlight zoom. Inside the graph there is no circle to
-    // speak of: the camera is within the shell and camera-controls owns the
-    // pointer, so the drag surface stands down rather than guessing.
-    if (placement < 1) {
-      setClusterCircle(
-        state.size.width / 2 + group.position.x * pxPerWorldUnit,
-        state.size.height / 2 - group.position.y * pxPerWorldUnit,
-        CONSTELLATION_BOUNDING_RADIUS * scale * pxPerWorldUnit,
-      );
-    } else {
-      setClusterCircle(0, 0, 0);
-    }
   });
 
   return <group ref={groupRef}>{children}</group>;
@@ -926,9 +905,14 @@ function ConstellationPlacement({
  */
 function CameraRig({
   isNebula,
+  isHome,
+  spotlightNodeId,
   routeFocusId,
 }: {
   isNebula: boolean;
+  isHome: boolean;
+  /** On `/work/[slug]`, the node whose cluster the standing camera centres. */
+  spotlightNodeId: string | null;
   /**
    * The node the URL names, or null for the bare graph. **Flights key on the
    * route, not on the store's focusedNodeId**, because the URL is the source
@@ -941,9 +925,556 @@ function CameraRig({
   const controlsRef = useRef<CameraControlsImpl>(null);
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const flying = useSceneStore((s) => s.flying);
+  const size = useThree((s) => s.size);
+  const scene = useThree((s) => s.scene);
+  /** Portrait phone: the graph is stood outside of, not inside (standsOutside). */
+  const outside = standsOutside(size.width, size.height);
+  const focusSide = outside ? "outer" : "inner";
+  /** The graph's orientation a focus pose is composed against, this frame. */
+  const focusBase = () =>
+    outside ? outsideBaseRotation(new THREE.Quaternion()) : NEBULA_BASE_ROTATION;
+
+  /**
+   * **The outside drag.** One finger (or a mouse) anywhere on the graph
+   * route turns the globe; the camera stays put. Installed on the window,
+   * like the landing page's drag, and for the same reason: there is no
+   * element to hang it on that would not also swallow the taps meant for
+   * nodes. Nothing while a node is open or a flight is running — the panel
+   * has its own scroll, and a flight owns the frame.
+   */
+  useEffect(() => {
+    if (!isNebula || !outside) return;
+    let pointerId: number | null = null;
+    let lastX = 0;
+    let lastY = 0;
+    let travelled = 0;
+    let live = false;
+    const SLOP = 4;
+
+    function onPointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
+      if (!canDragFrom(event.target)) return;
+      const state = useSceneStore.getState();
+      if (state.flying || state.focusedNodeId !== null) return;
+      pointerId = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled = 0;
+    }
+    function onPointerMove(event: PointerEvent) {
+      if (pointerId === null || event.pointerId !== pointerId) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled += Math.hypot(dx, dy);
+      if (travelled <= SLOP) return;
+      if (!live) {
+        live = true;
+        setOutsideDragging(true);
+      }
+      addOutsideDragDelta(dx, dy);
+    }
+    function end() {
+      pointerId = null;
+      travelled = 0;
+      live = false;
+      setOutsideDragging(false);
+    }
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setOutsideDragging(false);
+    };
+  }, [isNebula, outside]);
+
+  // The turn belongs to a visit to the graph. Off it, with no flight left to
+  // unwind it, it is forgotten — a reduced-motion cut, or a first mount.
+  useEffect(() => {
+    if (!isNebula && flight === null) resetOutsideTurn();
+  }, [isNebula]);
+
+  /**
+   * **The standing pose: where the camera is on every route but the graph.**
+   *
+   * Off `/nebula` the camera does not move on its own; it stands somewhere
+   * the page composed, and this is the solve for where. Everything
+   * 04-phase-1.md asks of the landing cluster — the solved centre, the
+   * viewport-width shrink, the pointer parallax, the ambient scale-down off
+   * `/` — used to be a transform on the graph. It is the same arithmetic
+   * here, producing a distance and a lateral offset for the camera instead,
+   * and it projects identically (see REFERENCE_DISTANCE).
+   *
+   * Solved every frame, whether or not it is being applied, so that when a
+   * departure lands the springs and the parallax are already where they would
+   * have been rather than catching up from wherever the flight began.
+   */
+  const standing = useRef<CameraPose>({
+    position: new THREE.Vector3(),
+    target: new THREE.Vector3(),
+  });
+  /** The solved composition — centre x, centre y in px, distance — damped as one thing. */
+  const solved = useRef(new THREE.Vector3());
+  const solvedVelocity = useRef(new THREE.Vector3());
+  const solvedReady = useRef(false);
+  const ambientSize = useRef(1);
+  /** Pointer parallax in screen px, with world-like signs: +x right, +y up. */
+  const parallaxPx = useRef(new THREE.Vector2());
+  const lastPublished = useRef({ ready: false, centerX: 0, centerY: 0, radiusPx: 0 });
+
+  /**
+   * Tell the DOM overlays where the graph is, when it has moved enough to
+   * matter. Guarded because the solve springs and a spring never exactly
+   * arrives: an unguarded per-frame write would re-render every subscriber at
+   * 60fps forever, even at rest.
+   */
+  function publishCircle(
+    ready: boolean,
+    centerX: number,
+    centerY: number,
+    radiusPx: number,
+  ) {
+    const last = lastPublished.current;
+    if (
+      last.ready === ready &&
+      Math.abs(last.centerX - centerX) < CIRCLE_WRITE_EPSILON_PX &&
+      Math.abs(last.centerY - centerY) < CIRCLE_WRITE_EPSILON_PX &&
+      Math.abs(last.radiusPx - radiusPx) < CIRCLE_WRITE_EPSILON_PX
+    ) {
+      return;
+    }
+    lastPublished.current = { ready, centerX, centerY, radiusPx };
+    useSceneStore.getState().setClusterScreen({ ready, centerX, centerY, radiusPx });
+  }
+  /** Damped camera offset that centres the lit cluster rather than the globe. */
+  const centreOffset = useRef(new THREE.Vector3());
+  const centreVelocity = useRef(new THREE.Vector3());
+  /** The subject and everything gathered around it — what "centred" means. */
+  const spotlightGroup = useMemo(
+    () =>
+      spotlightNodeId
+        ? [spotlightNodeId, ...neighborsOf(spotlightNodeId)].filter(
+            (id) => nodeGeometry[id],
+          )
+        : [],
+    [spotlightNodeId],
+  );
+
+  const solveStanding = useCallback(
+    (dt: number, reducedMotion: boolean) => {
+    const { width: W, height: H } = size;
+    if (W <= 0 || H <= 0) return;
+    const { pointer } = useSceneStore.getState();
+    const spotlit = spotlightNodeId !== null;
+
+    // Ambient dimming off `/` is eased rather than switched, so moving between
+    // the Phase 1 routes doesn't snap the graph's size. `/nebula` counts as
+    // undimmed: it is the size a departure flies back to, and letting it drift
+    // to the ambient value while parked in the graph made the landing 30% too
+    // small and then grow back over the following second. A spotlit work page
+    // keeps full size too — the graph is doing a job there.
+    ambientSize.current = THREE.MathUtils.lerp(
+      ambientSize.current,
+      isNebula || isHome || spotlit ? 1 : AMBIENT_SCALE,
+      reducedMotion ? 1 : AMBIENT_EASE,
+    );
+
+    // Parallax is a landing-page behaviour and only advances while standing
+    // there. Holding it still for the duration of a flight is deliberate: the
+    // departure's destination is sampled once, so it leaves continuously
+    // instead of being separately animated out.
+    if (!isNebula && !flight) {
+      if (reducedMotion) {
+        parallaxPx.current.set(0, 0);
+      } else {
+        // The design system specifies this swing in pixels — see
+        // CLUSTER_PARALLAX_MAX_PX — so it is kept in pixels.
+        parallaxPx.current.x = THREE.MathUtils.lerp(
+          parallaxPx.current.x,
+          -pointer.x * CLUSTER_PARALLAX_MAX_PX,
+          PARALLAX_EASE,
+        );
+        parallaxPx.current.y = THREE.MathUtils.lerp(
+          parallaxPx.current.y,
+          pointer.y * CLUSTER_PARALLAX_MAX_PX,
+          PARALLAX_EASE,
+        );
+      }
+    }
+
+    // The composition, in full. The size rules yield a factor on the
+    // reference projection; the camera stands REFERENCE_DISTANCE divided by
+    // that factor away, which projects the same picture. Centre and distance
+    // are sprung together (SPOTLIGHT_TURN_SECONDS), because spotlighting a
+    // project moves all three at once and on `/work` that happens on the
+    // first hover — measured as a 191px jump of the graph in one frame when it
+    // was switched rather than damped. Parallax is added afterwards and keeps
+    // its own easing; damping it twice makes the pointer feel like it is
+    // dragging the graph through treacle.
+    const zoom = spotlit ? SPOTLIGHT_ZOOM : 1;
+    const sizeFactor =
+      LANDING_SCALE *
+      zoom *
+      ambientSize.current *
+      clusterScaleForViewport(W, H, zoom);
+    _solvedTarget.set(
+      W * clusterCenterXFraction(W, H, zoom, spotlit),
+      H * clusterCenterYFraction(W, H, zoom),
+      REFERENCE_DISTANCE / sizeFactor,
+    );
+    if (!solvedReady.current || reducedMotion) {
+      // The first frame of a route is not a transition. A cold load of
+      // `/work/[slug]` is already spotlit, and easing in from the unspotlit
+      // composition would animate a change the reader never made.
+      solved.current.copy(_solvedTarget);
+      solvedVelocity.current.set(0, 0, 0);
+      solvedReady.current = true;
+    } else {
+      solved.current.sub(_solvedTarget);
+      smoothDampToZero(
+        solved.current,
+        solvedVelocity.current,
+        SPOTLIGHT_TURN_SECONDS,
+        dt,
+      );
+      solved.current.add(_solvedTarget);
+    }
+
+    const D = solved.current.z;
+    // Pixels per world unit at unit distance, and at the graph's distance.
+    const K = H / 2 / Math.tan((STANDING_FOV * Math.PI) / 360);
+    const k = K / D;
+    const centreXPx = solved.current.x + parallaxPx.current.x;
+    const centreYPx = solved.current.y - parallaxPx.current.y;
+    // Where the camera stands to put the graph's *origin* on that point.
+    // Looking straight down -z, so a lateral offset of the camera is a
+    // lateral offset of the picture and nothing else — a rotation would have
+    // introduced perspective the composition was never solved for.
+    const plainX = -(centreXPx - W / 2) / k;
+    const plainY = (centreYPx - H / 2) / k;
+
+    // **Centre the project, not the globe.** Turning the sphere puts the node
+    // in the right place *on* it, but the sphere itself stays where the solve
+    // puts it, so the gathered cluster used to sit off to one side of the
+    // space beside the article. This is a screen-space question and is solved
+    // in screen space: each lit node's share of the group's on-screen middle
+    // is its offset divided by its own distance from the camera, weighted by
+    // projected area (r²/d²), since a project node covers several times the
+    // pixels of a technology node beside it. Solved against the orientation
+    // the globe is turning *to*, so the target is fixed the moment the hover
+    // changes and the spring can actually catch it.
+    let targetOffsetX = 0;
+    let targetOffsetY = 0;
+    if (spotlightGroup.length > 0) {
+      spotlightQuaternion(spotlightNodeId, _spotQuat);
+      let sumW = 0;
+      let sumWoverD = 0;
+      let sumXoverD = 0;
+      let sumYoverD = 0;
+      for (const id of spotlightGroup) {
+        const live = getLivePosition(id);
+        _spotCentre
+          .copy(live ?? _spotNode.fromArray(nodeGeometry[id].position))
+          .applyQuaternion(_spotQuat);
+        const d = Math.max(D - _spotCentre.z, 1);
+        const r = nodeGeometry[id].radius;
+        const w = (r * r) / (d * d);
+        sumW += w;
+        sumWoverD += w / d;
+        sumXoverD += (w * _spotCentre.x) / d;
+        sumYoverD += (w * _spotCentre.y) / d;
+      }
+      // Solve mean(w·(o - c)/d)·K = target - centre for the camera offset c.
+      const camX =
+        (sumXoverD - ((centreXPx - W / 2) / K) * sumW) / sumWoverD;
+      const camY =
+        (sumYoverD - ((H / 2 - centreYPx) / K) * sumW) / sumWoverD;
+      targetOffsetX = camX - plainX;
+      targetOffsetY = camY - plainY;
+    }
+    // Damped on the same clock as the turn, so the globe stops sliding at the
+    // moment it stops rotating.
+    if (reducedMotion) {
+      centreOffset.current.set(targetOffsetX, targetOffsetY, 0);
+      centreVelocity.current.set(0, 0, 0);
+    } else {
+      centreOffset.current.x -= targetOffsetX;
+      centreOffset.current.y -= targetOffsetY;
+      smoothDampToZero(
+        centreOffset.current,
+        centreVelocity.current,
+        SPOTLIGHT_TURN_SECONDS,
+        dt,
+      );
+      centreOffset.current.x += targetOffsetX;
+      centreOffset.current.y += targetOffsetY;
+    }
+
+    const camX = plainX + centreOffset.current.x;
+    const camY = plainY + centreOffset.current.y;
+    standing.current.position.set(camX, camY, D);
+    standing.current.target.set(camX, camY, 0);
+
+    // Hand the pointer half the circle the globe actually occupies: the
+    // origin projected through the standing camera, and the bounding radius
+    // at its distance. Inside the graph there is no circle to speak of.
+    if (isNebula) {
+      setClusterCircle(0, 0, 0);
+      publishCircle(false, 0, 0, 0);
+    } else {
+      const cx = W / 2 - camX * k;
+      const cy = H / 2 + camY * k;
+      const r = CONSTELLATION_BOUNDING_RADIUS * k;
+      setClusterCircle(cx, cy, r);
+      publishCircle(true, cx, cy, r);
+    }
+    },
+    [isNebula, isHome, spotlightNodeId, spotlightGroup, size],
+  );
+
+  /** Scratch for the home solve; runs every frame. */
+  const homeCamera = useRef(new THREE.Vector3());
+  /**
+   * The band of distance from the centre over which the page slides between
+   * its at-home place and the flight line. Inside the shell's bounding
+   * radius at one end, short of the page itself at the other — the page is
+   * HOME_STANDOFF short of the landing camera, ~37 units out — so the slide
+   * is always behind the reader.
+   */
+  const HOME_BEHIND_FROM = CONSTELLATION_BOUNDING_RADIUS + 4;
+  const HOME_BEHIND_TO = HOME_BEHIND_FROM + 12;
+
+  /**
+   * **Where the hero plane is this frame**, and how present it is.
+   *
+   * The plane hangs HOME_STANDOFF ahead of the home standing point, sized and
+   * placed so that from that point it covers the hero column's measured
+   * pixels exactly — so the swap between page and plane has nowhere to show.
+   * On `/` the standing pose *is* the home point, parallax and all, and the
+   * column's live rect carries the same parallax on the DOM side. Anywhere
+   * else, home is solved from the landing composition for this viewport with
+   * nothing moving, which is where the page will be when the reader gets
+   * back to it.
+   *
+   * Presence follows the flight, by distance from the centre so one rule
+   * serves both directions: full at the standing point, down to
+   * HOME_REST_OPACITY by half way in. Arriving home, it fades out over the
+   * same window the document fades in. Off `/nebula` at rest it is not drawn
+   * at all — it would sit on top of the real page.
+   */
+  function solveHomePlane(
+    cameraPosition: THREE.Vector3,
+    active: Flight | null,
+  ) {
+    const { width: W, height: H } = size;
+    if (W <= 0 || H <= 0) return;
+    const K = H / 2 / Math.tan((STANDING_FOV * Math.PI) / 360);
+
+    if (isHome) {
+      homeCamera.current.copy(standing.current.position);
+    } else {
+      const sizeFactor = LANDING_SCALE * clusterScaleForViewport(W, H, 1);
+      const D = REFERENCE_DISTANCE / sizeFactor;
+      const k = K / D;
+      homeCamera.current.set(
+        -(W * clusterCenterXFraction(W, H, 1, false) - W / 2) / k,
+        (H * clusterCenterYFraction(W, H, 1) - H / 2) / k,
+        D,
+      );
+    }
+
+    const frame = getHeroFrame() ?? {
+      left: 0.048 * W,
+      top: 0.045 * H,
+      width: Math.min(0.44 * W, 700),
+      height: 0.72 * H,
+    };
+    const p = HOME_STANDOFF;
+    // **Where the page sits depends on which side of it the reader is.**
+    // Ahead of it — at home, and until it has gone past — it hangs where the
+    // real hero is on screen, off to the side of the flight line, because
+    // that is the only place the hand-off can be invisible. Behind it, it
+    // slides onto the flight line, so that turning round from the centre
+    // finds it dead behind and square on: "mirrored straight across from
+    // us", the way a thing you flew past and left would be, rather than 37°
+    // round and seen obliquely. The slide happens over a band of distance
+    // that is past the page and outside the shell, where the reader is
+    // facing the other way on both journeys and no drag is possible, so it
+    // is never seen moving.
+    const r = cameraPosition.length();
+    const behind =
+      1 -
+      THREE.MathUtils.smoothstep(r, HOME_BEHIND_FROM, HOME_BEHIND_TO);
+    const aside = 1 - behind;
+    homePlane.aside.set(
+      homeCamera.current.x + ((frame.left + frame.width / 2 - W / 2) / K) * p,
+      homeCamera.current.y - ((frame.top + frame.height / 2 - H / 2) / K) * p,
+      homeCamera.current.z - p,
+    );
+    homePlane.position.set(
+      homePlane.aside.x * aside,
+      homePlane.aside.y * aside,
+      homePlane.aside.z,
+    );
+    homePlane.width = (frame.width / K) * p;
+    homePlane.height = (frame.height / K) * p;
+
+    // Not while a node is open, or being opened: the reader is parked
+    // against the shell looking outward, and on the home side of the graph
+    // that puts the page — half the frame tall from here — straight behind
+    // the panel as a mirrored backdrop. It fades over a few frames rather
+    // than cutting, and comes back the same way when the node closes.
+    const focused =
+      useSceneStore.getState().focusedNodeId !== null ||
+      (active !== null && active.placementFrom === 1 && active.placementTo === 1);
+    if (focused) {
+      homePlane.opacity = THREE.MathUtils.lerp(homePlane.opacity, 0, 0.25);
+      return;
+    }
+    if (!active) {
+      // Between a route commit and the flight it starts, hold whatever the
+      // plane was: a reader who had turned to face home would otherwise see
+      // it blink out for a frame or two as the route flips to `/`.
+      if (lastRoute.current !== isNebula) return;
+      if (isNebula) {
+        homePlane.opacity = THREE.MathUtils.lerp(
+          homePlane.opacity,
+          HOME_REST_OPACITY,
+          0.15,
+        );
+      } else if (handoffOut.current > 0) {
+        const u = (performance.now() - handoffOut.current) / HOME_HANDOFF_OUT_MS;
+        homePlane.opacity = THREE.MathUtils.clamp(1 - u, 0, 1);
+        if (u >= 1) handoffOut.current = 0;
+      } else {
+        homePlane.opacity = 0;
+      }
+      return;
+    }
+    const outer = Math.max(
+      active.from.position.length(),
+      active.to.position.length(),
+      1e-3,
+    );
+    const inward = THREE.MathUtils.clamp((1 - r / outer) / 0.5, 0, 1);
+    homePlane.opacity = THREE.MathUtils.lerp(
+      1,
+      HOME_REST_OPACITY,
+      inward * inward * (3 - 2 * inward),
+    );
+  }
+
+  /**
+   * Where a departure starts from.
+   *
+   * From a node, the camera is where it is. From the centre, the camera is
+   * *not* quite where it is: looking around orbits it about a pivot
+   * LOOK_DISTANCE ahead (parkForLookingAround), so after a drag it sits up to
+   * a fifth of a unit off the origin in some direction that has nothing to do
+   * with anything. Read literally, the dive took that offset as the direction
+   * the camera was in and flew out along it for fifty units before swinging
+   * round to the standing point — "flying around the world and then circling
+   * back". The reader stands at the centre by definition; only the heading
+   * they turned to is theirs.
+   */
+  function departurePose(
+    controls: CameraControlsImpl,
+    fromNode: boolean,
+  ): CameraPose {
+    const current = currentPose(controls);
+    if (fromNode) return current;
+    // Outside, the camera never left the axis — the drag turned the globe —
+    // so the way out is the way in, exactly.
+    if (outside) return clonePose(OUTSIDE_POSE);
+    const heading = current.target.sub(current.position);
+    if (heading.lengthSq() < 1e-9) heading.copy(FORWARD);
+    heading.normalize();
+    const position = INSIDE_POSE.position.clone();
+    return {
+      position,
+      target: position.clone().addScaledVector(heading, INSIDE_DISTANCE),
+    };
+  }
+
+  function clonePose(pose: CameraPose): CameraPose {
+    return { position: pose.position.clone(), target: pose.target.clone() };
+  }
+
+  /**
+   * **How much of the departure passes before the page you are arriving at
+   * shows up.**
+   *
+   * Leaving the graph is the one flight whose destination is a document, and
+   * the document used to win: measured, the landing page painted at full
+   * opacity 190ms after the click, and the remaining 1.9 seconds of retreat
+   * played out behind a page that had already finished arriving. The flight
+   * was there the whole time — 44%, 70% and 91% of the way out at each
+   * quarter, exactly as specified — and nothing was ever looking at it.
+   *
+   * At 0.55 the reveal starts at 1100ms and its 620ms fade completes at
+   * 1720ms, comfortably before the camera settles at 2000ms. So the retreat
+   * has the frame to itself while it is worth watching, and the page is
+   * finished and readable by the time the camera stops rather than beginning
+   * to appear then. The alternative — waiting for the landing and fading
+   * afterwards — makes the journey 2620ms and puts a pause in the middle of
+   * it.
+   *
+   * Driven off the flight's own progress rather than a `setTimeout`, for the
+   * reason the flight's `delay` is a hold rather than a timer: it cannot race
+   * a route change, and it cannot desync from a flight that was interrupted.
+   */
+  const ARRIVAL_REVEAL_AT = 0.55;
+
+  /**
+   * When the destination is home there is no early reveal at all. The page
+   * is *already visible* for the whole retreat, as the plane the camera is
+   * backing away toward, and the document only has to take over from it —
+   * a swap that is invisible only while the plane sits on the page pixel for
+   * pixel, which is once the camera has stopped. So the document is revealed
+   * at the moment of landing and the plane dissolves out over the document's
+   * own 620ms fade (globals.css), the arrival's hand-off in reverse.
+   */
+  const HOME_REVEAL_AT = 1;
+  /** Matches the document's fade-in in globals.css. */
+  const HOME_HANDOFF_OUT_MS = 620;
+  /** When the plane began dissolving into the document, or 0. */
+  const handoffOut = useRef(0);
+
+  /**
+   * Let the page the reader is flying to appear.
+   *
+   * `route-curtain.tsx` raises `data-arriving` on `<html>` when a navigation
+   * leaves the graph, before the browser can paint the destination; this is the
+   * other edge of it. Written to the document rather than the store because it
+   * is read by CSS and changes in the middle of a frame loop — a `set` here
+   * would re-render every subscriber of the store to schedule a transition.
+   * The cursor layer writes to the same element for the same reason.
+   */
+  function revealDocument() {
+    if (typeof document === "undefined") return;
+    // Guarded because the frame loop asks every frame once a departure is past
+    // its reveal point, and `delete` on <html> is a real DOM write that would
+    // otherwise happen sixty times a second for the rest of the flight.
+    if (document.documentElement.dataset.leaving !== undefined) {
+      delete document.documentElement.dataset.leaving;
+    }
+    if (document.documentElement.dataset.arriving === undefined) return;
+    delete document.documentElement.dataset.arriving;
+  }
 
   function begin(controls: CameraControlsImpl, next: Flight) {
+    noteRigEvent(
+      "begin",
+      `${next.path} ${next.from.position.length().toFixed(1)}->${next.to.position.length().toFixed(1)} place ${next.placementFrom}->${next.placementTo} delay ${next.delay}`,
+    );
     flight = next;
+    handoffOut.current = 0;
     applyPose(controls, next.from);
     applyFov(controls, next.fovFrom);
     // Every flight ends closer in or further out than hand-dollying is allowed
@@ -961,11 +1492,21 @@ function CameraRig({
     fov: number,
     { free, at }: { free: boolean; at: number },
   ) {
+    noteRigEvent("settle", `${pose.position.length().toFixed(1)} at ${at}`);
     flight = null;
+    // Any settle is an end to travelling, however it was reached — a cold
+    // mount, a reduced-motion cut, or a route change that overtook a flight.
+    // Clearing it here rather than only on completion is what stops an
+    // interrupted departure leaving the document permanently invisible.
+    revealDocument();
     setPlacement(at);
     applyPose(controls, pose);
     applyFov(controls, fov);
     applyDollyClamps(controls, { free });
+    if (!free) {
+      if (outside) parkForOrbiting(controls, pose);
+      else parkForLookingAround(controls, pose);
+    }
     useSceneStore.getState().setFlying(false);
     useSceneStore.getState().setFocusSettled(true);
   }
@@ -988,14 +1529,113 @@ function CameraRig({
    */
   const lastRoute = useRef<boolean | undefined>(undefined);
   const lastFocus = useRef<string | null | undefined>(undefined);
+
+  /**
+   * The flight in. One place, because it can start from two triggers: the
+   * landing page's click, before the route has changed (the hero has to still
+   * be in the document for the hand-off), and the route itself, for every
+   * other way of arriving — a work page, the browser's forward button.
+   */
+  /**
+   * The point beside the page the dive passes through: PASS_CLEARANCE off
+   * its near edge, at the camera's own height, at the page's depth. From the
+   * page's *at-home* placement, since at the centre it has slid onto the
+   * axis (solveHomePlane).
+   */
+  function passPoint(): DivePass {
+    const aside = homePlane.aside;
+    return {
+      point: new THREE.Vector3(
+        aside.x + homePlane.width / 2 + PASS_CLEARANCE,
+        standing.current.position.y,
+        aside.z,
+      ),
+    };
+  }
+
+  function beginArrival(controls: CameraControlsImpl, delay: number) {
+    const from = clonePose(standing.current);
+    const pass = passPoint();
+    const sPass = diveProgressAt(pass.point.length(), from.position.length(), 0);
+    begin(controls, {
+      from,
+      to: restingPose(outside, null),
+      start: performance.now(),
+      fovFrom: STANDING_FOV,
+      fovTo: INSIDE_CAMERA_FOV,
+      placementFrom: 0,
+      placementTo: 1,
+      path: "dive",
+      pass,
+      duration: FLIGHT_DURATION_MS,
+      ease: passEase(sPass, true),
+      delay,
+      revealAt: 1,
+      toHome: false,
+      turnAround: false,
+    });
+  }
+
+  /**
+   * **The landing page asked to leave.** Start the flight now, while the
+   * hero is still mounted and dissolving into the plane; when the route
+   * follows a fifth of a second later, the route effect below sees a flight
+   * already bound for the graph and leaves it alone.
+   */
+  const arrivalRequest = useSceneStore((s) => s.arrivalRequest);
+  /**
+   * An arrival is in the air and the route has not caught up with it yet.
+   *
+   * The route effect below re-runs whenever its inputs change, and one of
+   * them is the standing solve, which changes identity with the viewport —
+   * and the viewport changes at the route commit, because the landing page
+   * had a scrollbar and the graph does not. Recording the arrival as "the
+   * route is the graph now" and letting that re-run see `isNebula` still
+   * false read as leaving the graph: a departure from the centre, then a
+   * fresh arrival with no hold, two milliseconds apart. That was the
+   * one-frame flash of the interior a third of a second into the flight.
+   * While this is set the route effect stands down until the route really
+   * is the graph, and then only records it.
+   */
+  const pendingArrival = useRef(false);
+  useEffect(() => {
+    if (arrivalRequest === 0) return;
+    const controls = controlsRef.current;
+    if (!controls || isNebula || pendingArrival.current) return;
+    const { reducedMotion } = useSceneStore.getState();
+    if (reducedMotion) return;
+    solveStanding(0, reducedMotion);
+    pendingArrival.current = true;
+    // Held for the hand-off. The page dissolves into the plane over
+    // HOME_HANDOFF_MS, and the two only match while the camera is at the
+    // standing point: measured with the flight starting on the click, the
+    // camera had covered seven units by the end of the dissolve and the plane
+    // was 14% larger than the page fading out over it — a double image at
+    // the one moment the swap is supposed to be invisible. So the picture
+    // holds still while the page becomes the plane, then the flight goes.
+    beginArrival(controls, HOME_HANDOFF_MS);
+    // `isNebula` and `solveStanding` are read, not reacted to: this fires on
+    // a request and nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivalRequest]);
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
+    if (pendingArrival.current) {
+      if (!isNebula) return;
+      pendingArrival.current = false;
+      lastRoute.current = true;
+      return;
+    }
     const wasNebula = lastRoute.current;
     if (wasNebula === isNebula) return;
     lastRoute.current = isNebula;
 
     const { reducedMotion } = useSceneStore.getState();
+    // Effects run before the next frame, so on a cold mount the standing pose
+    // has not been solved yet. Solve it now; with nothing to spring from it
+    // snaps straight to the composition.
+    solveStanding(0, reducedMotion);
     // **Not the store's focusedNodeId.** RouteFocus is rendered ahead of this
     // rig precisely so its effect runs first, which means by the time this
     // reads the store the focus has already been cleared and every exit looks
@@ -1012,7 +1652,7 @@ function CameraRig({
       // from reading the same route as a change and flying to where it is.
       const coldFocus = wasNebula === undefined ? routeFocusId : null;
       if (coldFocus) {
-        const pose = focusPose(coldFocus);
+        const pose = focusPose(coldFocus, focusBase(), focusSide);
         if (pose) {
           lastFocus.current = coldFocus;
           // 05-phase-2.md: a cold entry lands "shell expanded, panel open,
@@ -1025,21 +1665,13 @@ function CameraRig({
       }
       // Reduced motion makes flights instant cuts, per 01-design-system.md.
       if (reducedMotion) {
-        settle(controls, INSIDE_POSE, INSIDE_CAMERA_FOV, { free: false, at: 1 });
+        settle(controls, restingPose(outside, null), INSIDE_CAMERA_FOV, {
+          free: false,
+          at: 1,
+        });
         return;
       }
-      begin(controls, {
-        from: HOME_POSE,
-        to: INSIDE_POSE,
-        start: performance.now(),
-        fovFrom: HOME_CAMERA_FOV,
-        fovTo: INSIDE_CAMERA_FOV,
-        placementFrom: 0,
-        placementTo: 1,
-        path: "orbit",
-        duration: FLIGHT_DURATION_MS,
-        delay: 0,
-      });
+      beginArrival(controls, 0);
       return;
     }
 
@@ -1051,12 +1683,25 @@ function CameraRig({
     useSceneStore.getState().clearFocus();
     // A first mount off /nebula has nowhere to depart from.
     if (wasNebula === undefined || reducedMotion) {
-      settle(controls, HOME_POSE, HOME_CAMERA_FOV, { free: true, at: 0 });
+      settle(controls, clonePose(standing.current), STANDING_FOV, {
+        free: true,
+        at: 0,
+      });
       return;
     }
+    const departFrom = departurePose(controls, leavingNode);
+    const departTo = clonePose(standing.current);
+    const departPass = leavingNode ? undefined : passPoint();
+    const departEase = departPass
+      ? passEase(
+          diveProgressAt(departPass.point.length(), departTo.position.length(), 0),
+          false,
+        )
+      : approachEase;
     begin(controls, {
-      from: currentPose(controls),
-      to: HOME_POSE,
+      from: departFrom,
+      to: departTo,
+      pass: departPass,
       start: performance.now(),
       // Read off the camera rather than assumed to be the graph's. Leaving
       // from inside a node starts at FOCUS_CAMERA_FOV, not INSIDE_CAMERA_FOV,
@@ -1064,22 +1709,30 @@ function CameraRig({
       // wider — which is what made this exit worth cutting rather than flying
       // in the first place.
       fovFrom: (controls.camera as THREE.PerspectiveCamera).fov,
-      fovTo: HOME_CAMERA_FOV,
+      fovTo: STANDING_FOV,
       placementFrom: 1,
       placementTo: 0,
       duration: FLIGHT_DURATION_MS,
       // Only when there is a shell to close. Leaving the graph itself has no
       // second beat to wait for.
       delay: leavingNode ? SHELL_CLOSE_MS : 0,
-      // Orbits out around the shell rather than cutting across its middle,
-      // which matters more from a focused node than from the graph's resting
-      // pose: the camera is parked against the inside of the surface there, so
-      // a straight line to the landing pose would leave through the wall.
-      path: "orbit",
+      // From the centre, the dive in reverse: the same straight line the
+      // reader came in on. From a node, the approach path — it measures from
+      // the graph's centre too, so the retreat is monotonic, and it turns the
+      // camera off the node's surface early, which a line from the middle has
+      // no need to do.
+      path: leavingNode ? "approach" : "dive",
+      ease: departEase,
+      revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
+      toHome: isHome,
+      turnAround: true,
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
-  }, [isNebula, routeFocusId]);
+    // `solveStanding` is listed because the effect calls it. Re-running when it
+    // changes identity is harmless: the guard above returns immediately unless
+    // the route actually crossed into or out of the graph.
+  }, [isNebula, routeFocusId, solveStanding]);
 
   // Starting a focus flight is an effect on the focus edge, not something the
   // frame loop polls: the departure pose has to be sampled at the instant
@@ -1107,8 +1760,8 @@ function CameraRig({
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
     const to = routeFocusId
-      ? focusPose(routeFocusId)
-      : restingPoseFacing(previousFocus);
+      ? focusPose(routeFocusId, focusBase(), focusSide)
+      : restingPose(outside, previousFocus);
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
     // Moving straight from one open node to another — following a link inside
@@ -1138,6 +1791,11 @@ function CameraRig({
       // Closing one waits for the shell; opening one has nothing to wait for,
       // and a sideways move carries its shell with it.
       delay: routeFocusId === null ? SHELL_CLOSE_MS : 0,
+      // Never a departure: there is no document to reveal and no home to
+      // arrive at inside the graph.
+      revealAt: 1,
+      toHome: false,
+      turnAround: false,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
       // Node to node follows the surface; anything involving the resting pose
@@ -1145,34 +1803,110 @@ function CameraRig({
       // is what 2.5 was tuned against.
       path: sideways ? "shell" : "line",
     });
-  }, [routeFocusId, reducedMotion, isNebula]);
+  }, [routeFocusId, reducedMotion, isNebula, outside, focusSide]);
+
+  /**
+   * **The viewport crossed the outside/inside line while on the graph** — a
+   * phone rotated, a desktop window dragged narrow. The two standing rules
+   * put the camera in different places, and nothing above re-runs for a
+   * resize (the route effect guards on the route), so this is the one place
+   * the camera moves for it. A cut rather than a flight: it is a layout
+   * change, not a journey, and it happens under the reader's hand.
+   */
+  const lastOutside = useRef(outside);
+  useEffect(() => {
+    if (lastOutside.current === outside) return;
+    lastOutside.current = outside;
+    const controls = controlsRef.current;
+    if (!controls || !isNebula || flight !== null) return;
+    if (lastRoute.current !== true) return;
+    if (routeFocusId) {
+      const pose = focusPose(routeFocusId, focusBase(), focusSide);
+      if (pose) settle(controls, pose, FOCUS_CAMERA_FOV, { free: true, at: 1 });
+      return;
+    }
+    settle(controls, restingPose(outside, null), INSIDE_CAMERA_FOV, {
+      free: false,
+      at: 1,
+    });
+  }, [outside, focusSide, isNebula, routeFocusId]);
 
   // Priority -2, ahead of camera-controls' own -1 update: a pose pushed in
   // after that update is not on the camera until the *next* frame's update,
   // which would leave the camera a frame behind the placement group below it
   // for the whole flight. Writing first puts both on the same frame.
-  useFrame(() => {
+  useFrame((_state, delta) => {
     const controls = controlsRef.current;
+    if (!controls) return;
+    const dt = Math.min(delta, 1 / 20);
+    solveStanding(dt, useSceneStore.getState().reducedMotion);
+
     const active = flight;
-    if (!controls || !active) return;
+    if (!active) {
+      // Standing somewhere the page composed. Written every frame because the
+      // composition is live — parallax, the ambient ease, a hover on `/work`
+      // re-centring the graph — and camera-controls is disabled here, so
+      // nothing else will.
+      // **Only once the route effect has caught up.** Between the commit
+      // that changes the route and the effect that starts the departure
+      // there is at least one frame, and under software GL several. Writing
+      // the standing pose in that gap moved the camera to its destination
+      // before the flight began, so the flight then started from where it
+      // was meant to end and did nothing — the departure trace showed the
+      // camera at 130 units on its first flying frame. The rig's own record
+      // of the last route it handled is the gate: until it matches, the
+      // camera stays wherever the graph left it.
+      if (!isNebula && lastRoute.current === isNebula) {
+        applyPose(controls, standing.current);
+        applyFov(controls, STANDING_FOV);
+      }
+      solveHomePlane(controls.camera.position, null);
+      return;
+    }
 
     const t = flightProgress(active);
-    const eased = flightEase(t);
+    const eased = (active.ease ?? flightEase)(t);
+    if (active.placementTo === 0 && t >= active.revealAt) revealDocument();
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );
-    const pose =
-      active.path === "orbit"
-        ? orbitLerpPose(active.from, active.to, eased)
-        : active.path === "shell"
-          ? shellLerpPose(active.from, active.to, eased)
-          : lerpPose(active.from, active.to, eased);
+    let pose: CameraPose;
+    let fovMix = eased;
+    if (active.path === "dive") {
+      const dive = divePose(active.from, active.to, eased, active.pass);
+      pose = dive;
+      fovMix = dive.lens;
+    } else if (active.path === "approach") {
+      pose = approachLerpPose(active.from, active.to, eased);
+    } else if (active.path === "shell") {
+      pose = shellLerpPose(active.from, active.to, eased);
+    } else {
+      pose = lerpPose(active.from, active.to, eased);
+    }
 
+    solveHomePlane(pose.position, active);
+    if (active.turnAround) {
+      const outer = Math.max(
+        active.from.position.length(),
+        active.to.position.length(),
+        1e-3,
+      );
+      _fromHeading.copy(active.from.target).sub(active.from.position).normalize();
+      departureHeading(_fromHeading, pose.position.length(), outer, _turnHeading);
+      const lookLen = pose.target.distanceTo(pose.position);
+      pose.target.copy(pose.position).addScaledVector(_turnHeading, lookLen);
+    }
     applyPose(controls, pose);
-    applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, eased));
+    applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix));
+
 
     if (t >= 1) {
       flight = null;
+      // The outside turn has been unwound by the placement by now, and the
+      // next visit starts from the composed face.
+      if (active.placementTo === 0) resetOutsideTurn();
+      if (active.toHome) handoffOut.current = performance.now();
+      revealDocument();
       setPlacement(active.placementTo);
       useSceneStore.getState().setFlying(false);
       useSceneStore.getState().setTravellingBetween(null);
@@ -1180,13 +1914,31 @@ function CameraRig({
       // Hand-dollying is only arbitrated inside the constellation, and only
       // when the camera is parked at the framing distance — not on the landing
       // page, and not while focused, where it is legitimately much closer in.
-      applyDollyClamps(controls, {
-        free:
-          active.placementTo < 1 ||
-          useSceneStore.getState().focusedNodeId !== null,
-      });
+      const free =
+        active.placementTo < 1 ||
+        useSceneStore.getState().focusedNodeId !== null;
+      applyDollyClamps(controls, { free });
+      // Landed with nothing open: hand the drag over to looking around, or
+      // to turning the globe if this viewport stands outside it.
+      if (!free) {
+        if (outside) parkForOrbiting(controls, active.to);
+        else parkForLookingAround(controls, active.to);
+      }
     }
   }, -2);
+
+  // Default priority, so it runs *after* camera-controls' own -1 update and
+  // reports the pose that was actually rendered rather than the one the rig
+  // asked for. Positive priority would disable r3f's automatic render.
+  useFrame(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    publishCameraProbe(
+      controls.camera as THREE.PerspectiveCamera,
+      flight !== null,
+      scene,
+    );
+  });
 
   return (
     // The dolly clamps are deliberately **not** props. They are state a flight
@@ -1194,11 +1946,19 @@ function CameraRig({
     // that happened to diff them would quietly put them back.
     <CameraControls
       ref={controlsRef}
-      enabled={isNebula && !flying}
+      // Outside the graph the drag turns the globe (nebula-drag-state.ts,
+      // the outside turn) and the camera stays on the axis, so the controls
+      // have nothing to do there.
+      enabled={isNebula && !flying && !outside}
       mouseButtons-left={CameraControlsImpl.ACTION.ROTATE}
       mouseButtons-right={CameraControlsImpl.ACTION.NONE}
       mouseButtons-middle={CameraControlsImpl.ACTION.NONE}
-      mouseButtons-wheel={CameraControlsImpl.ACTION.DOLLY}
+      // Nothing. Inside the graph there is one place to stand, and the reader
+      // looks around from it — a dolly would either push them through the
+      // shell or shrink the room, and neither is a thing the space offers.
+      mouseButtons-wheel={CameraControlsImpl.ACTION.NONE}
+      touches-two={CameraControlsImpl.ACTION.NONE}
+      touches-three={CameraControlsImpl.ACTION.NONE}
     />
   );
 }
@@ -1249,22 +2009,37 @@ export function NebulaCanvas() {
   return (
     <Canvas
       className="!fixed inset-0 z-0"
+      // On the graph route a touch is a drag of the globe (or, inside, of
+      // the view) and nothing else, so the browser must not claim it as a
+      // pan and cancel the pointer a few pixels in. Everywhere else the
+      // canvas sits behind a scrolling document and the swipe is the scroll.
+      style={{ touchAction: isNebula ? "none" : "auto" }}
       gl={{ alpha: true }}
       dpr={[1, 2]}
-      camera={{ position: HOME_CAMERA_POSITION, fov: HOME_CAMERA_FOV }}
+      // The rig writes the real pose before the first render, so this is only
+      // ever the value one frame could be composed against — but it was still
+      // `HOME_CAMERA_POSITION`, nine units from a graph that has been life-size
+      // at the origin since Part 3, which is *inside the shell*. The standing
+      // lens and the landing distance, so the fallback is the composition
+      // rather than a leftover of the projection it is written against.
+      camera={{ position: [0, 0, LANDING_STANDING_DISTANCE], fov: STANDING_FOV }}
     >
-      {/* Scene-level, and outside the placement group on purpose: `attach="fog"`
-          writes to its parent's `fog` property, which on a group is a field
-          nothing reads, and the lights' positions are in their parent's space,
-          so inside the group they would shrink with the landing placement. */}
+      {/* Scene-level, and outside the constellation's group on purpose:
+          `attach="fog"` writes to its parent's `fog` property, which on a
+          group is a field nothing reads. */}
       <SceneEnvironment />
+      {/* Home, as a thing in the world rather than a route you came from.
+          On every route but the graph it sits behind the camera, so the gate
+          is about not paying for it rather than about hiding it. */}
+      <NebulaHome />
       <RouteFocus id={routeFocusId} />
-      <CameraRig isNebula={isNebula} routeFocusId={routeFocusId} />
-      <ConstellationPlacement
+      <CameraRig
         isNebula={isNebula}
         isHome={isHome}
         spotlightNodeId={spotlightNodeId}
-      >
+        routeFocusId={routeFocusId}
+      />
+      <ConstellationOrientation spotlightNodeId={spotlightNodeId}>
         <Constellation
           isNebula={isNebula}
           isHome={isHome}
@@ -1272,7 +2047,7 @@ export function NebulaCanvas() {
           gatherNodeId={routeSpotlight}
           onOpenNode={openNode}
         />
-      </ConstellationPlacement>
+      </ConstellationOrientation>
     </Canvas>
   );
 }

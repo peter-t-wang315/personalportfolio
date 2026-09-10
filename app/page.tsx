@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { site, projectById } from "@/content";
+import { HeroMeasure } from "./hero-measure";
 import { HeroNav } from "./hero-nav";
 import { HeroStats } from "./hero-stats";
 import { PointerParallax } from "./pointer-parallax";
@@ -39,7 +40,13 @@ export default function Home() {
         plain block flow here, which left the links stranded mid-page on a tall
         screen while empty hero ran on below them.
       */}
-      <div className="max-w-[66ch] flex flex-col grow">
+      {/*
+        `id="hero-column"` marks this as the thing the canvas measures and
+        repaints as the plane the reader flies past (hero-layout.ts). The id is
+        the contract; HeroMeasure keeps the measurement current.
+      */}
+      <div id="hero-column" className="max-w-[66ch] flex flex-col grow">
+        <HeroMeasure />
         <p className="text-[1.25rem] font-medium">{site.name}</p>
         <p className="text-[0.875rem] text-ink-muted mt-1">{site.role}</p>
 

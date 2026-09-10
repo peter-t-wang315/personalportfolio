@@ -7,6 +7,7 @@ import { NebulaCanvasLoader } from "./nebula-canvas-loader";
 import { NebulaCursor } from "./nebula-cursor";
 import { NebulaDrag } from "./nebula-drag";
 import { PointerTracker } from "./pointer-tracker";
+import { RouteCurtain } from "./route-curtain";
 import { SiteHeader } from "./site-header";
 import { SITE_URL } from "@/lib/site-url";
 import "./globals.css";
@@ -48,6 +49,7 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <PointerTracker />
+        <RouteCurtain />
         <NebulaDrag />
         <NebulaCursor />
         <NebulaCanvasLoader />

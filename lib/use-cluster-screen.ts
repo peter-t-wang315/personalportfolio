@@ -1,71 +1,37 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  CLUSTER_BOUNDING_RADIUS,
-  clusterCenterXFraction,
-  clusterCenterYFraction,
-  clusterScaleForViewport,
-  pxPerWorldUnitFor,
-} from "@/lib/cluster-geometry";
+import { CLUSTER_BOUNDING_RADIUS } from "@/lib/cluster-geometry";
 import { useSceneStore } from "@/lib/scene-store";
 
 /**
- * Where the cluster actually is on screen right now, in absolute viewport
- * pixels, and how big it is — everything a DOM overlay needs to sit on top
- * of it. Returns absolute coordinates rather than an offset-from-center so
- * callers can hand them straight to motion's `animate` as x/y targets
- * without re-deriving the centre themselves.
+ * Where the graph is on screen right now, in viewport pixels, and how big —
+ * everything a DOM overlay needs to sit on top of it.
  *
- * Two separate conversions are involved and they are not interchangeable:
+ * A read of what the scene published, not a second derivation of it. This used
+ * to recompute the circle from the parallax offset and the viewport size,
+ * which matched on the landing page and was wrong by two terms anywhere a
+ * project is spotlit: the zoom that enlarges the graph on a work page, and the
+ * offset that centres its lit cluster in the space beside the article. The
+ * camera rig knows all of it because it solves it, so it says so and this
+ * repeats it.
  *
- * - The **radius** scales with the cluster group's own scale
- *   (clusterScaleForViewport), because that scale shrinks the geometry.
- * - The **parallax offset** does not. Parallax is applied to the group's
- *   *position*, and scaling a group about its own origin leaves its parent-
- *   space position untouched — so the offset converts at the unscaled rate.
- *
- * The parallax value itself is read from the store, written every frame by
- * the component that actually renders the cluster (nebula-canvas.tsx), so
- * this can never drift out of sync with what's really drawn. The Y sign flip
- * is real, not a typo: world +Y is up, CSS +Y is down. X needs no flip —
- * this camera has no roll, so +world X is screen-right.
+ * Returns absolute coordinates rather than an offset from centre so callers
+ * can hand them straight to motion's `animate` as x/y targets.
  */
 export function useClusterScreen(
+  /**
+   * The world radius to report, for overlays measured against something other
+   * than the bounding radius — the idle pulse ring sits on the node cloud
+   * itself rather than its outer edge. Scaled from the published circle, so it
+   * still tracks whatever the scene is actually drawing.
+   */
   worldRadius: number = CLUSTER_BOUNDING_RADIUS,
 ) {
-  const parallax = useSceneStore((s) => s.clusterParallax);
-  const [viewport, setViewport] = useState({ width: 0, height: 0 });
-
-  useEffect(() => {
-    function recompute() {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
-    }
-    recompute();
-    window.addEventListener("resize", recompute);
-    return () => window.removeEventListener("resize", recompute);
-  }, []);
-
-  if (viewport.height <= 0) {
-    return { ready: false, centerX: 0, centerY: 0, radiusPx: 0 };
-  }
-
-  const pxPerWorldUnit = pxPerWorldUnitFor(viewport.height);
-  const scale = clusterScaleForViewport(viewport.width, viewport.height);
-
-  const centerXFraction = clusterCenterXFraction(
-    viewport.width,
-    viewport.height,
-  );
-  const centerYFraction = clusterCenterYFraction(
-    viewport.width,
-    viewport.height,
-  );
-
+  const circle = useSceneStore((s) => s.clusterScreen);
   return {
-    ready: true,
-    centerX: viewport.width * centerXFraction + parallax.x * pxPerWorldUnit,
-    centerY: viewport.height * centerYFraction - parallax.y * pxPerWorldUnit,
-    radiusPx: worldRadius * pxPerWorldUnit * scale,
+    ready: circle.ready,
+    centerX: circle.centerX,
+    centerY: circle.centerY,
+    radiusPx: (circle.radiusPx * worldRadius) / CLUSTER_BOUNDING_RADIUS,
   };
 }

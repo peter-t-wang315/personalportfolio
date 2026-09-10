@@ -74,13 +74,13 @@ Only runtime edges get motion. This is what makes the SEL region visibly the den
 | `client` | Client work | Freelance, unpaid |
 | `personal` | Personal projects | — |
 
-## Technology nodes (24)
+## Technology nodes (31)
 
-**Languages and runtimes:** C# / .NET · TypeScript · Python · SQL
+**Languages and runtimes:** C# / .NET · TypeScript · Python · Rust · SQL
 
-**Frontend:** React · Next.js · Redux · Jotai · Blazor · Tailwind CSS
+**Frontend:** React · Next.js · Redux · Jotai · Blazor · Tailwind CSS · Material UI · MudBlazor · TanStack Query · React Router · Three.js
 
-**Messaging and protocols:** RabbitMQ · IPC-CFX · SMEMA · TCP sockets · REST APIs
+**Messaging and protocols:** RabbitMQ · MQTT · IPC-CFX · SMEMA · TCP sockets · REST APIs
 
 **Infrastructure:** Docker · Kubernetes · Helm · Jenkins
 
@@ -91,7 +91,36 @@ Only runtime edges get motion. This is what makes the SEL region visibly the den
 - **Assumed:** HTML, CSS, Git, Agile, code review. Listing them is a negative signal.
 - **Too thin to advertise as a node:** Java, C/C++ (coursework only), SQL Server, stored procedures, xUnit, unit testing. A node implies proficiency and invites a question the current depth won't survive. These stay off the graph.
 - **Concepts, not technologies:** microservices, event-driven architecture, distributed systems, message queues, data modeling, API design, machine integration, industrial protocol integration, manufacturing automation, caching, relational schema design. These become edge `protocol`/`detail` text and body prose.
-- **Not graph material:** Claude Code, AI-assisted development, mentoring, on-call support, LaTeX, Material UI, Radix UI, WPF. These belong on `/about` and the resume. Claude Code in particular should be prominent on `/about` — it was named in eight of sixteen job postings reviewed.
+- **Not graph material:** Claude Code, AI-assisted development, mentoring, on-call support, LaTeX, Radix UI, WPF, Serverless Framework. These belong on `/about`, the resume, or a project's body prose. Claude Code in particular should be prominent on `/about` — it was named in eight of sixteen job postings reviewed.
+
+### Six added after the write-ups were corrected
+
+The list above was curated before anyone checked it against what the services
+actually do. Correcting the project write-ups turned up six technologies that
+were load-bearing and missing, and the reasons divide cleanly:
+
+- **MQTT** was never considered and should always have been here. It is how the
+  selective solder driver reaches its machine, over a TCP connection it holds
+  open — a protocol in exactly the sense SMEMA and IPC-CFX are, and now on a
+  runtime path.
+- **Three.js** likewise: it is what the portfolio node is built out of, and its
+  absence was an oversight rather than a decision.
+- **Material UI** was on the excluded list, as a UI library on one project. It
+  is on three — the maintenance client (which uses it with plain CSS, not
+  Tailwind, as this document previously implied), the flying probe dashboard,
+  and ZENTRA. Three projects is load-bearing. **MudBlazor**, **TanStack Query**
+  and **React Router** came in on the same reasoning.
+
+**Serverless Framework stayed out**, on one project and already named in that
+project's prose, which is what the exclusion rule is for.
+
+**Adding to this list is not free.** `content/layout.ts` places technologies on
+a Fibonacci sphere sized by `tech.length`, then biases each toward the projects
+using it — so a new node moves every node, and correcting one project's
+`techIds` moves nodes belonging to projects nobody touched. Going from 25 to 31
+re-laid out the constellation and made `/nebula`'s measured interior
+composition stale; it had to be re-searched (`07-continuous-space.md`). Budget
+for that, or batch the additions.
 
 ## Naming — resolved
 
@@ -102,56 +131,49 @@ Internal tool names are cleared for public use. The constraint is narrower than 
 | Beholder | Operator monitoring console |
 | RabbitCFXTalker | RabbitMQ / CFX developer client |
 | Batch Service | Board data service |
-| PMLog | Preventive maintenance platform |
+| PM Log | Preventive maintenance platform |
 
 Descriptive names also read better to an outsider who has no idea what a Beholder is.
 
-## Project nodes — content status
+## Project nodes — where the content lives
 
-### Written (drafts below, need Peter's correction)
+**`content/projects.ts`. Not here.**
 
-**`solder-driver` — Selective solder driver** · cluster `solder` · `contributor` · major
-Terminal service in the solder line. Receives resolved board data and gates machine entry on the returned program and revision, enabling per-revision program targeting. Publishes structured error events to a dedicated exchange so a floor operator sees the specific failure reason and can self-resolve without escalating to engineering. Holds the machine in a safe wait state rather than failing open. Running 24/7 in production since launch.
-Metrics: 18% cycle time reduction (+60 boards/day).
-Tech: C#/.NET, RabbitMQ, IPC-CFX, TCP sockets, REST APIs.
+This section used to carry a draft of every project — prose, metrics and a tech
+list each — under the heading "written, needs Peter's correction". The
+correction happened, in the content file, and the drafts sat here for months
+afterwards saying something different. They are deleted rather than banner-ed,
+because a per-project tech list in a document is a second copy of the content
+file and second copies go stale silently: nothing fails, the doc just lies. This
+document describes the *model* — the fields, the rules, what a node means — and
+the content file holds the content.
 
-**`board-data-service` — Board data service** · cluster `solder` · `contributor` · standard
-Resolves board identity against internal REST APIs — board scan data, route completion, route creation. Sits between the scanner and the solder driver, turning a barcode into the program and revision the machine needs.
-Tech: C#/.NET, RabbitMQ, REST APIs.
+What the drafts had wrong is worth keeping, because most of it was not a typo
+but an assumption nobody had checked with the person who built the thing:
 
-**`scanner-driver` — Scanner driver** · cluster `solder` · `contributor` · standard
-Talks to the barcode scanner over TCP, publishes scans to RabbitMQ. Entry point of the solder line.
-Tech: C#/.NET, RabbitMQ, TCP sockets.
-
-**`th-supervisor` — Through-hole automation platform** · cluster `throughhole` · `sole` · major
-Three-tier system driving automation for through-hole placement machines, running across 7 machines. A client library speaks the machine's protocol directly and is consumed by a worker; the worker and supervisor communicate over RabbitMQ. The supervisor receives messages, decides what logic is required, and instructs the worker; the worker tells the client what to send, and the client translates down to the machine. Messages from the machine bubble back up the same path. Containerized and deployed on Kubernetes via the sister team's monorepo, which this became the first consumer of.
-Ownership: sole developer.
-Tech: C#/.NET, RabbitMQ, Docker, Kubernetes, Helm, Jenkins, SMEMA, IPC-CFX, TCP sockets.
-*Consider splitting into three nodes — client, worker, supervisor — with runtime edges between them. It is the second real topology on the site and currently the only one Peter built alone.*
-
-**`cfx-dev-client` — RabbitMQ / CFX developer client** · cluster `tools` · `sole` · standard
-Before this existed the team had no practical way to talk to RabbitMQ during development. Connects to any number of hosts, exchanges, and topics simultaneously, listens and publishes. Composes complete IPC-CFX messages from minimal input — supply two unit identifiers and it packages the remaining fields, so a developer can send a valid message without hand-writing the envelope. Built independently; now used by the entire four-person team.
-Ownership: sole developer.
-Tech: RabbitMQ, IPC-CFX, C#/.NET.
-
-**`operator-console` — Operator monitoring console** · cluster `tools` · `contributor` · standard
-Blazor application listening to RabbitMQ with live filtering over 5k+ events. Operators can enter board scans manually and restart a driver, but the drivers do not depend on it to run. Built while mentoring a junior developer through their first production service.
-Metrics: escalations to engineering cut to near zero.
-Tech: Blazor, RabbitMQ, C#/.NET.
-
-**`maintenance-frontend` — Preventive maintenance platform (client)** · cluster `maintenance` · `sole` · major
-React/MUI client caching 10k+ ID-linked records in Jotai for instant local editing with revert. Separate administrator and operator views.
-Metrics: used by 30%+ of manufacturing.
-Tech: React, TypeScript, Jotai.
-
-**`maintenance-backend` — Preventive maintenance platform (services)** · cluster `maintenance` · `lead` · standard
-Schema and REST API contract design for a platform reducing unplanned machine downtime: a four-level many-to-many hierarchy, frequency scheduling, and immutable execution records. Coordinated across frontend, backend, and DBA teams.
-Ownership: schema and API design lead.
-Tech: SQL, REST APIs, C#/.NET.
-
-### Needs content from Peter (see `content-intake.md`)
-
-`flying-probe` · `meter-zentra` · `meter-pipeline` · `vgclite` · `pokemon-team-builder` · `timesense` · `sonder-barber` · `thai-ginger` · `hackathon-2023` · `this-site`
+- The solder driver was listed with **REST APIs** and no MQTT. It makes no
+  REST calls at all — the board data service owns every external call — and it
+  reaches its machine over **MQTT**, on a TCP connection it holds open.
+- It was also listed with SMEMA, and the prose said it "holds the machine in a
+  safe wait state". There is no SMEMA in it. It gates entry by *not answering*
+  when the machine asks for the scan, so the machine waits. Nothing is
+  withheld and no stop is asserted.
+- The 18% was recorded as a number without a mechanism. It is program
+  selection: a recipe alone covers every variant of a board, so the machine
+  runs the union of solder points; sending recipe *and* revision runs only the
+  joints that board actually has.
+- `th-supervisor` was one node covering all three tiers, with a note suggesting
+  it be split. It has been: `th-supervisor`, `th-worker` and `th-client`. And
+  one supervisor coordinates one *line*, not one machine — six of them drive
+  seven machines.
+- `maintenance-frontend` and `maintenance-backend` were never node ids. They are
+  `maintenance-client` and `maintenance-services`, the client uses plain CSS
+  and **Material UI** rather than Tailwind, and it replaced a weaker existing
+  PM tool rather than paper.
+- Everything that crosses RabbitMQ carries **IPC-CFX**, so the board data
+  service, scanner driver, station worker and operator console all have it.
+  The machine client does not: the worker consumes it in-process through event
+  subscriptions, which is the one path in the platform with no bus on it.
 
 ## Project decisions
 
@@ -163,7 +185,7 @@ Tech: SQL, REST APIs, C#/.NET.
 2. **30+** — machines and devices across 6 vendors · *machines, conveyors, cameras, SMEMA controllers*
 3. **2 sites** — 6 production lines, running 24/7
 
-The preventive maintenance adoption figure (30%+ of manufacturing) lives on the `maintenance-frontend` node where it has context, not in the hero.
+The preventive maintenance adoption figure (30%+ of manufacturing) lives on the `maintenance-client` node where it has context, not in the hero.
 
 **The compact row on phones and tablets is not these three truncated.** Collapsing each metric to its value gave "18% · 30+ · 2 sites", which is three numbers with the sentence that made them mean something stripped off. The compact row is its own phrasing instead, in `heroMetricsCompact`:
 
