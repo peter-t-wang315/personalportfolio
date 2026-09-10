@@ -940,26 +940,30 @@ landed on the standing point with the plane on the page.
 The "further from both" section above still describes the dial correctly and
 now describes a setting that is not in use.
 
-## Dust, and the page's other side
+## The page behind you
 
-"It still feels like we've travelled basically nowhere." With one lens the
-graph's growth across the flight is fixed by the two compositions — nothing
-about the curve or the duration can add distance — and what sells travel is
-things going past. Only the hero did. So `app/nebula-dust.tsx` puts 420 motes
-in the corridor between the shell and the landing camera, kept off the axis
-near the camera, each drawn as a streak stretched along the direction of
-travel in proportion to the camera's speed (the rig publishes it every frame
-in `flightMotion`). At rest they have no length and no opacity, so neither
-the landing page nor the interior changes, which is how the Phase 3 warning
-about dust on cream is honoured: it is never seen still. Desktop only. The
-dials are `COUNT`, `MAX_OPACITY` and `STREAK_PER_SPEED`.
+Two things about the page seen from inside, both from the owner. It was
+mirrored: the plane faces the home standing point so it can match the real
+hero for the hand-off, so from inside you saw its back. The back is drawn
+un-mirrored now — a second back-facing plane with the texture flipped — so it
+reads the right way round. And it was sideways: the page hangs where the real
+hero is on screen, off to the side of the flight line, because that is the
+only place the hand-off can be invisible, and from the centre that is 37°
+round and seen obliquely. What was asked for is "mirrored straight across
+from us, like if we flew past it and left it".
 
-The page's back is drawn un-mirrored now — a second plane, back-facing, with
-the texture flipped — so it reads the right way round from inside. Mirrored
-was defensible as what a page looks like once you have gone past it, and it
-read as a glitch. The remaining oddness in that view is real geometry: the
-page is off the axis, so from the centre it is seen about 40° obliquely, and
-near the frame edge a 72° lens stretches it further.
+So the page's place depends on which side of it the reader is. Ahead of it —
+at home, and until it has gone past — it sits where the hero is. Behind it, it
+slides onto the flight line, so turning round from the centre finds it dead
+behind and square on. The slide is spent over a band of distance from the
+centre that is past the page and outside the shell (`HOME_BEHIND_FROM` to
+`HOME_BEHIND_TO` in the rig), where the reader is facing the other way on both
+journeys and cannot drag, so it is never seen moving. At rest inside, the page
+is on the axis, 37 units back.
+
+A field of dust streaking past during flights was tried for the sense of
+distance and removed at the owner's request; the commit that added it has the
+implementation if it is ever wanted again.
 
 ## The way out is a yank
 

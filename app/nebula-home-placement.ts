@@ -57,13 +57,3 @@ export function getHeroFrame() {
   return heroFrame;
 }
 
-/**
- * **How fast the camera is moving, and which way**, in world units per
- * second, written by the rig every frame. Zero when parked. The dust layer
- * (nebula-dust.tsx) reads it to decide how long its streaks are and whether
- * it is drawn at all.
- */
-export const flightMotion = {
-  speed: 0,
-  direction: new THREE.Vector3(0, 0, -1),
-};

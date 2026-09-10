@@ -44,8 +44,7 @@ import {
 } from "./nebula-flight";
 import { NebulaHome } from "./nebula-home";
 import { HOME_HANDOFF_MS } from "./nebula-departure";
-import { flightMotion, getHeroFrame, homePlane } from "./nebula-home-placement";
-import { NebulaDust } from "./nebula-dust";
+import { getHeroFrame, homePlane } from "./nebula-home-placement";
 import { getPlacement, setPlacement } from "./nebula-placement";
 import { publishCameraProbe } from "./nebula-probe";
 import {
@@ -240,7 +239,6 @@ const FORWARD = new THREE.Vector3(0, 0, -1);
 const _parkForward = new THREE.Vector3();
 const _fromHeading = new THREE.Vector3();
 const _turnHeading = new THREE.Vector3();
-const _motionStep = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
@@ -1032,8 +1030,15 @@ function CameraRig({
 
   /** Scratch for the home solve; runs every frame. */
   const homeCamera = useRef(new THREE.Vector3());
-  /** Where the previous flight frame put the camera, for the dust's speed. */
-  const lastFlightPosition = useRef({ position: new THREE.Vector3(), ready: false });
+  /**
+   * The band of distance from the centre over which the page slides between
+   * its at-home place and the flight line. Inside the shell's bounding
+   * radius at one end, short of the page itself at the other — the page is
+   * HOME_STANDOFF short of the landing camera, ~37 units out — so the slide
+   * is always behind the reader.
+   */
+  const HOME_BEHIND_FROM = CONSTELLATION_BOUNDING_RADIUS + 4;
+  const HOME_BEHIND_TO = HOME_BEHIND_FROM + 12;
 
   /**
    * **Where the hero plane is this frame**, and how present it is.
@@ -1081,9 +1086,27 @@ function CameraRig({
       height: 0.72 * H,
     };
     const p = HOME_STANDOFF;
+    // **Where the page sits depends on which side of it the reader is.**
+    // Ahead of it — at home, and until it has gone past — it hangs where the
+    // real hero is on screen, off to the side of the flight line, because
+    // that is the only place the hand-off can be invisible. Behind it, it
+    // slides onto the flight line, so that turning round from the centre
+    // finds it dead behind and square on: "mirrored straight across from
+    // us", the way a thing you flew past and left would be, rather than 37°
+    // round and seen obliquely. The slide happens over a band of distance
+    // that is past the page and outside the shell, where the reader is
+    // facing the other way on both journeys and no drag is possible, so it
+    // is never seen moving.
+    const r = cameraPosition.length();
+    const behind =
+      1 -
+      THREE.MathUtils.smoothstep(r, HOME_BEHIND_FROM, HOME_BEHIND_TO);
+    const aside = 1 - behind;
     homePlane.position.set(
-      homeCamera.current.x + ((frame.left + frame.width / 2 - W / 2) / K) * p,
-      homeCamera.current.y - ((frame.top + frame.height / 2 - H / 2) / K) * p,
+      homeCamera.current.x * aside +
+        ((frame.left + frame.width / 2 - W / 2) / K) * p * aside,
+      homeCamera.current.y * aside -
+        ((frame.top + frame.height / 2 - H / 2) / K) * p * aside,
       homeCamera.current.z - p,
     );
     homePlane.width = (frame.width / K) * p;
@@ -1106,7 +1129,6 @@ function CameraRig({
       active.to.position.length(),
       1e-3,
     );
-    const r = cameraPosition.length();
     const inward = THREE.MathUtils.clamp((1 - r / outer) / 0.5, 0, 1);
     homePlane.opacity = THREE.MathUtils.lerp(
       1,
@@ -1496,8 +1518,6 @@ function CameraRig({
 
     const active = flight;
     if (!active) {
-      flightMotion.speed = 0;
-      lastFlightPosition.current.ready = false;
       // Standing somewhere the page composed. Written every frame because the
       // composition is live — parallax, the ambient ease, a hover on `/work`
       // re-centring the graph — and camera-controls is disabled here, so
@@ -1553,16 +1573,7 @@ function CameraRig({
     }
     applyPose(controls, pose);
     applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix));
-    // Speed for the dust: the distance this frame's pose moved, over the
-    // frame. Direction is where it is going, so streaks trail behind.
-    if (lastFlightPosition.current.ready) {
-      _motionStep.copy(pose.position).sub(lastFlightPosition.current.position);
-      const moved = _motionStep.length();
-      flightMotion.speed = dt > 0 ? moved / dt : 0;
-      if (moved > 1e-6) flightMotion.direction.copy(_motionStep).divideScalar(moved);
-    }
-    lastFlightPosition.current.position.copy(pose.position);
-    lastFlightPosition.current.ready = true;
+
 
     if (t >= 1) {
       flight = null;
@@ -1681,7 +1692,6 @@ export function NebulaCanvas() {
           On every route but the graph it sits behind the camera, so the gate
           is about not paying for it rather than about hiding it. */}
       <NebulaHome />
-      <NebulaDust />
       <RouteFocus id={routeFocusId} />
       <CameraRig
         isNebula={isNebula}
