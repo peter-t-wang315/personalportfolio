@@ -39,6 +39,8 @@ export interface CameraProbe {
   home: { position: [number, number, number]; width: number; height: number; opacity: number };
   /** The graph's on-screen circle, so a script can click it where the rig drew it. */
   cluster: { x: number; y: number; r: number; ready: boolean };
+  /** Rig events since load — begin/settle calls — for the checks. */
+  events: { t: number; kind: string; detail: string }[];
 }
 
 declare global {
@@ -62,7 +64,14 @@ const probe: CameraProbe = {
   flying: false,
   home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
   cluster: { x: 0, y: 0, r: 0, ready: false },
+  events: [],
 };
+
+/** Called by the rig when it starts a flight or settles the camera. */
+export function noteRigEvent(kind: string, detail: string) {
+  if (probe.events.length > 200) probe.events.shift();
+  probe.events.push({ t: performance.now(), kind, detail });
+}
 
 /**
  * Called once per frame from the rig, after it has written the pose.

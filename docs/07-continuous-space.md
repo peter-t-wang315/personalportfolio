@@ -979,6 +979,22 @@ graph parked the reader looking outward at the page — half the frame tall
 from there — as a mirrored backdrop behind the panel. The page fades out
 while a node is open or being opened, and back when it closes.
 
+**Two bugs found by instrumenting rather than reasoning.** The open node's
+shell drew as a sphere-sized curve across the frame, and every pointer
+position hovered it: it sized and oriented itself against the camera using
+its own *local* position and rotation, and the constellation's group is
+turned by the base rotation whenever the reader is inside, so the distance it
+computed was off by up to a shell's diameter. World space now, and hovering
+the open node itself does nothing. And the flight in sometimes flashed the
+interior a third of a second after the click: the rig now logs every
+`begin` and `settle` to the probe, and the log showed the arrival replaced by
+a departure and a fresh arrival two milliseconds apart at the route commit.
+The landing page's scrollbar vanishes when it unmounts, the canvas resizes,
+the standing solve changes identity, and the route effect re-ran before the
+route had flipped — with the arrival already recorded as "the route is the
+graph", that read as leaving. An arrival in the air now stands the route
+effect down until the route really is the graph.
+
 ## The page behind you
 
 Two things about the page seen from inside, both from the owner. It was

@@ -304,6 +304,10 @@ function attractionIsWelcome() {
 
 function handlePointerOver(e: ThreeEvent<PointerEvent>, nodeId: string) {
   e.stopPropagation();
+  // The open node is the panel's backdrop and covers most of the frame;
+  // hovering it is not a preview of anything, and its label at arm's length
+  // is the size of the screen.
+  if (useSceneStore.getState().focusedNodeId === nodeId) return;
   useSceneStore.getState().setHoveredNodeId(nodeId);
   if (attractionIsWelcome()) attractNeighbors(nodeId);
 }
@@ -337,6 +341,8 @@ function hoverLabelTitle(nodeId: string): string | null {
 // the core became translucent, and it's no longer needed.
 const LABEL_Y_OFFSET_FACTOR = -0.5;
 /** Scratch for the spotlight labels' facing test, which runs every frame. */
+const _openWorld = new THREE.Vector3();
+const _openParentQuat = new THREE.Quaternion();
 const _labelCentre = new THREE.Vector3();
 const _labelWorld = new THREE.Vector3();
 const _labelEdge = new THREE.Vector3();
@@ -1064,8 +1070,22 @@ export function Constellation({
       if (open > 0) {
         // Face the camera, so "flattened along Z" means flattened toward the
         // viewer, and scale to the panel's rectangle at this node's depth.
-        mesh.quaternion.copy(state.camera.quaternion);
-        const distance = state.camera.position.distanceTo(mesh.position);
+        // **In world space.** The mesh lives inside the constellation's
+        // group, which is turned by the base rotation whenever the reader is
+        // inside — so its local position is not where it is, and a local
+        // quaternion equal to the camera's does not face the camera. Measured
+        // against the local position, the "distance" was up to a shell's
+        // diameter instead of a couple of units, and the rectangle drew as a
+        // sphere-sized curve across the whole frame that every pointer
+        // position then hovered.
+        if (mesh.parent) {
+          mesh.parent.getWorldQuaternion(_openParentQuat);
+          mesh.quaternion.copy(_openParentQuat).invert().multiply(state.camera.quaternion);
+        } else {
+          mesh.quaternion.copy(state.camera.quaternion);
+        }
+        mesh.getWorldPosition(_openWorld);
+        const distance = state.camera.position.distanceTo(_openWorld);
         const halfHeight =
           distance *
           Math.tan(

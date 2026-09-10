@@ -49,7 +49,7 @@ import { NebulaHome } from "./nebula-home";
 import { HOME_HANDOFF_MS } from "./nebula-departure";
 import { getHeroFrame, homePlane } from "./nebula-home-placement";
 import { getPlacement, setPlacement } from "./nebula-placement";
-import { publishCameraProbe } from "./nebula-probe";
+import { noteRigEvent, publishCameraProbe } from "./nebula-probe";
 import {
   getDragAngles,
   isDragging,
@@ -1261,6 +1261,10 @@ function CameraRig({
   }
 
   function begin(controls: CameraControlsImpl, next: Flight) {
+    noteRigEvent(
+      "begin",
+      `${next.path} ${next.from.position.length().toFixed(1)}->${next.to.position.length().toFixed(1)} place ${next.placementFrom}->${next.placementTo} delay ${next.delay}`,
+    );
     flight = next;
     handoffOut.current = 0;
     applyPose(controls, next.from);
@@ -1280,6 +1284,7 @@ function CameraRig({
     fov: number,
     { free, at }: { free: boolean; at: number },
   ) {
+    noteRigEvent("settle", `${pose.position.length().toFixed(1)} at ${at}`);
     flight = null;
     // Any settle is an end to travelling, however it was reached — a cold
     // mount, a reduced-motion cut, or a route change that overtook a flight.
@@ -1367,14 +1372,29 @@ function CameraRig({
    * already bound for the graph and leaves it alone.
    */
   const arrivalRequest = useSceneStore((s) => s.arrivalRequest);
+  /**
+   * An arrival is in the air and the route has not caught up with it yet.
+   *
+   * The route effect below re-runs whenever its inputs change, and one of
+   * them is the standing solve, which changes identity with the viewport —
+   * and the viewport changes at the route commit, because the landing page
+   * had a scrollbar and the graph does not. Recording the arrival as "the
+   * route is the graph now" and letting that re-run see `isNebula` still
+   * false read as leaving the graph: a departure from the centre, then a
+   * fresh arrival with no hold, two milliseconds apart. That was the
+   * one-frame flash of the interior a third of a second into the flight.
+   * While this is set the route effect stands down until the route really
+   * is the graph, and then only records it.
+   */
+  const pendingArrival = useRef(false);
   useEffect(() => {
     if (arrivalRequest === 0) return;
     const controls = controlsRef.current;
-    if (!controls || isNebula || lastRoute.current === true) return;
+    if (!controls || isNebula || pendingArrival.current) return;
     const { reducedMotion } = useSceneStore.getState();
     if (reducedMotion) return;
     solveStanding(0, reducedMotion);
-    lastRoute.current = true;
+    pendingArrival.current = true;
     // Held for the hand-off. The page dissolves into the plane over
     // HOME_HANDOFF_MS, and the two only match while the camera is at the
     // standing point: measured with the flight starting on the click, the
@@ -1390,6 +1410,12 @@ function CameraRig({
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
+    if (pendingArrival.current) {
+      if (!isNebula) return;
+      pendingArrival.current = false;
+      lastRoute.current = true;
+      return;
+    }
     const wasNebula = lastRoute.current;
     if (wasNebula === isNebula) return;
     lastRoute.current = isNebula;

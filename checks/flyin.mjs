@@ -94,6 +94,8 @@ async function flyIn() {
   await p.waitForTimeout(500);
   const T = await p.evaluate(() => window.__T);
   report('flying in from home', T, t0, taken);
+  const events = await p.evaluate(() => window.__nebulaProbe.events);
+  console.log('  rig events: ' + events.filter(e => e.t >= t0 - 100).map(e => `${Math.round(e.t - t0)}ms ${e.kind} ${e.detail}`).join(' | '));
   await p.close();
 }
 
