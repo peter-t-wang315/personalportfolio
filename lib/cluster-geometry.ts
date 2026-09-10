@@ -9,7 +9,16 @@
  */
 export const HOME_CAMERA_POSITION: [number, number, number] = [0, 0, 9];
 export const HOME_CAMERA_FOV = 45;
-export const CLUSTER_RADIUS = 3;
+/**
+ * **Halved from 3, so the graph stands twice as far away.** With one lens
+ * everywhere, on-screen size and distance are one dial: at 72 degrees a
+ * 15-unit shell draws at this footprint from 59 units when the radius is 3
+ * and from 118 when it is 1.3. The flight's whole sense of distance is the
+ * growth from landing size to interior size, and at 3 that was 5x whatever
+ * the curve did; at 1.3 it is 9x. Every landing-page overlay derives from
+ * this, so they follow. See 07-continuous-space.md, "Twice as far".
+ */
+export const CLUSTER_RADIUS = 1.3;
 /**
  * Maximum parallax displacement of the cluster, **in pixels**, per
  * 01-design-system.md's motion item 1 ("12px for text, 28px for the cluster").

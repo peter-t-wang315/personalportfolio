@@ -940,6 +940,44 @@ landed on the standing point with the plane on the page.
 The "further from both" section above still describes the dial correctly and
 now describes a setting that is not in use.
 
+## Twice as far, and the pass
+
+A jump cut was tried — wind-up, a wash to paper, a lens spike, arrival — and
+reverted: "it looks like we sprinted 2 feet rather than sped through 100 yards
+of ground". Hiding the distance is exactly what feels like no distance. A
+slingshot around the outside of the shell was tried next and scrapped as an
+idea. What stayed is the plain answer: **the graph is further away.**
+
+With one lens, on-screen size and distance are one dial, so "further" means
+"smaller on the landing page". `CLUSTER_RADIUS` in `lib/cluster-geometry.ts`
+is 1.3 rather than 3: the landing cluster draws at about 80px radius instead
+of 160, the standing camera is 118 units out instead of 59, and the growth
+across the flight — the thing the eye actually measures — is 9× rather than
+5×. Every landing overlay derives from the constant and followed. The page
+hangs 40 units ahead again (`HOME_STANDOFF`), passed a third of the way in.
+
+**The pass is close and the curve is slow to it, fast through it.** "Start
+slower past the landing page and speed up more as we get further." What makes
+a fly-past feel exaggerated is how fast the near thing sweeps the frame, which
+is speed over closeness, so the camera drifts to a point `PASS_CLEARANCE` (4)
+off the page's near edge, holding its lateral position, and only glides onto
+the axis once the page is behind it (`divePose` with a `DivePass`). The page
+fills most of the frame just before it leaves. The curve, `passEase`, is one
+smooth bezier whose speed is still rising as the page goes by and peaks just
+after; a first version with a deliberate speed jump at the page, and a corner
+in the path where the drift met the glide, read as jitter rather than a whip.
+Both are continuous now — the path is two Hermite pieces sharing a slope at
+the pass point. Outbound is the mirror. 3000ms.
+
+**Inside, two things had gone wrong with the move to the centre.** Hovering a
+node attracts its neighbours, which was built for the view from outside; from
+the centre of the shell a stray pointer crossing a node pulled nodes across
+the sky. The attraction is off inside the graph now (hover still lights the
+node, its edges and its label). And opening a node on the home side of the
+graph parked the reader looking outward at the page — half the frame tall
+from there — as a mirrored backdrop behind the panel. The page fades out
+while a node is open or being opened, and back when it closes.
+
 ## The page behind you
 
 Two things about the page seen from inside, both from the owner. It was

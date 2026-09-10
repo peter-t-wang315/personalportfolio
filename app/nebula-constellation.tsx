@@ -29,6 +29,7 @@ import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
 import { Edges } from "./nebula-edges";
+import { getPlacement } from "./nebula-placement";
 import {
   GATHER_RADIUS,
   stepSimulation,
@@ -287,9 +288,18 @@ export function snapFocusShellOpen() {
  * crossing a neighbour re-targeted every spring in the graph and the whole
  * scene lurched around the thing being read.
  */
+/**
+ * And not from inside the graph at all. The attraction was built for the
+ * view from outside, where the cluster is a small object and drawing a
+ * node's connections in toward it reads as the graph responding. From the
+ * centre of the shell every node is at arm's length in some direction, and
+ * a stray pointer crossing one pulls its neighbours across the sky — "as you
+ * move over the screen you might accidentally hover over the node and it
+ * affects the screen". Hover still lights the node, its edges and its label.
+ */
 function attractionIsWelcome() {
   const { focusedNodeId, flying } = useSceneStore.getState();
-  return !focusedNodeId && !flying;
+  return !focusedNodeId && !flying && getPlacement() < 0.5;
 }
 
 function handlePointerOver(e: ThreeEvent<PointerEvent>, nodeId: string) {

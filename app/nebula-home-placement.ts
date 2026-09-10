@@ -12,6 +12,8 @@ import * as THREE from "three";
  */
 export interface HomePlane {
   position: THREE.Vector3;
+  /** Where the plane sits when the reader is on its home side — see the rig. */
+  aside: THREE.Vector3;
   /** World-unit size of the plane. */
   width: number;
   height: number;
@@ -21,6 +23,7 @@ export interface HomePlane {
 
 export const homePlane: HomePlane = {
   position: new THREE.Vector3(),
+  aside: new THREE.Vector3(),
   width: 1,
   height: 1,
   opacity: 0,

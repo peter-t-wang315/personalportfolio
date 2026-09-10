@@ -34,7 +34,7 @@
 // wrong about which code path ships.
 import { chromium } from 'playwright';
 
-const DURATION = 2800;   // FLIGHT_DURATION_MS
+const DURATION = 3000;   // FLIGHT_DURATION_MS
 const VIEWPORT = { w: 900, h: 700 };
 const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 

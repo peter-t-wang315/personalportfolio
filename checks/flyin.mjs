@@ -17,7 +17,7 @@ import { chromium } from 'playwright';
 import fs from 'node:fs';
 
 const BASE = process.env.BASE ?? 'http://localhost:3100';
-const DURATION = 2800;   // FLIGHT_DURATION_MS
+const DURATION = 3000;   // FLIGHT_DURATION_MS
 const VIEWPORT = { width: 1440, height: 900 };
 fs.mkdirSync('flyin', { recursive: true });
 

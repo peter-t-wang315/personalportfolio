@@ -190,12 +190,12 @@ export const FOG_FAR = FOG_NEAR + FOG_BAND;
  *
  * It must stay well short of the graph: `D − p` has to clear the bounding
  * radius by a margin, and the landing camera stands closest at the widest
- * viewports. It was 50 when the landing camera stood 162 out; with one lens
- * everywhere (STANDING_FOV) it stands 59 out, and 22 leaves the page 37
- * units from the centre, 22 clear of the shell. From the centre it is then
- * about half the frame tall — close, because everything is close now.
+ * viewports. With the landing cluster at half size the camera stands 118
+ * out, and 40 leaves the page 78 units from the centre, 63 clear of the
+ * shell — passed a third of the way in, which is where the drift up to it
+ * has room to be slow and the whip past it room to be fast (divePose).
  */
-export const HOME_STANDOFF = 22;
+export const HOME_STANDOFF = 40;
 
 /**
  * How present the hero plane is once the reader is inside the graph.

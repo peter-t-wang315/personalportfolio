@@ -31,8 +31,11 @@ import {
 import {
   approachEase,
   departureHeading,
-  diveEase,
   divePose,
+  diveProgressAt,
+  PASS_CLEARANCE,
+  passEase,
+  type DivePass,
   FLIGHT_DURATION_MS,
   FOCUS_FLIGHT_DURATION_MS,
   flightEase,
@@ -475,6 +478,8 @@ interface Flight {
    * sweeps across the surface between two nodes, for a sideways move.
    */
   path: "line" | "approach" | "shell" | "dive";
+  /** For the dive: where the camera passes the page. */
+  pass?: DivePass;
   /**
    * How long it takes. Carried per flight rather than read from a constant,
    * because the two kinds of move want different times — see
@@ -1102,19 +1107,42 @@ function CameraRig({
       1 -
       THREE.MathUtils.smoothstep(r, HOME_BEHIND_FROM, HOME_BEHIND_TO);
     const aside = 1 - behind;
-    homePlane.position.set(
-      homeCamera.current.x * aside +
-        ((frame.left + frame.width / 2 - W / 2) / K) * p * aside,
-      homeCamera.current.y * aside -
-        ((frame.top + frame.height / 2 - H / 2) / K) * p * aside,
+    homePlane.aside.set(
+      homeCamera.current.x + ((frame.left + frame.width / 2 - W / 2) / K) * p,
+      homeCamera.current.y - ((frame.top + frame.height / 2 - H / 2) / K) * p,
       homeCamera.current.z - p,
+    );
+    homePlane.position.set(
+      homePlane.aside.x * aside,
+      homePlane.aside.y * aside,
+      homePlane.aside.z,
     );
     homePlane.width = (frame.width / K) * p;
     homePlane.height = (frame.height / K) * p;
 
+    // Not while a node is open, or being opened: the reader is parked
+    // against the shell looking outward, and on the home side of the graph
+    // that puts the page — half the frame tall from here — straight behind
+    // the panel as a mirrored backdrop. It fades over a few frames rather
+    // than cutting, and comes back the same way when the node closes.
+    const focused =
+      useSceneStore.getState().focusedNodeId !== null ||
+      (active !== null && active.placementFrom === 1 && active.placementTo === 1);
+    if (focused) {
+      homePlane.opacity = THREE.MathUtils.lerp(homePlane.opacity, 0, 0.25);
+      return;
+    }
     if (!active) {
+      // Between a route commit and the flight it starts, hold whatever the
+      // plane was: a reader who had turned to face home would otherwise see
+      // it blink out for a frame or two as the route flips to `/`.
+      if (lastRoute.current !== isNebula) return;
       if (isNebula) {
-        homePlane.opacity = HOME_REST_OPACITY;
+        homePlane.opacity = THREE.MathUtils.lerp(
+          homePlane.opacity,
+          HOME_REST_OPACITY,
+          0.15,
+        );
       } else if (handoffOut.current > 0) {
         const u = (performance.now() - handoffOut.current) / HOME_HANDOFF_OUT_MS;
         homePlane.opacity = THREE.MathUtils.clamp(1 - u, 0, 1);
@@ -1292,9 +1320,29 @@ function CameraRig({
    * be in the document for the hand-off), and the route itself, for every
    * other way of arriving — a work page, the browser's forward button.
    */
+  /**
+   * The point beside the page the dive passes through: PASS_CLEARANCE off
+   * its near edge, at the camera's own height, at the page's depth. From the
+   * page's *at-home* placement, since at the centre it has slid onto the
+   * axis (solveHomePlane).
+   */
+  function passPoint(): DivePass {
+    const aside = homePlane.aside;
+    return {
+      point: new THREE.Vector3(
+        aside.x + homePlane.width / 2 + PASS_CLEARANCE,
+        standing.current.position.y,
+        aside.z,
+      ),
+    };
+  }
+
   function beginArrival(controls: CameraControlsImpl, delay: number) {
+    const from = clonePose(standing.current);
+    const pass = passPoint();
+    const sPass = diveProgressAt(pass.point.length(), from.position.length(), 0);
     begin(controls, {
-      from: clonePose(standing.current),
+      from,
       to: INSIDE_POSE,
       start: performance.now(),
       fovFrom: STANDING_FOV,
@@ -1302,8 +1350,9 @@ function CameraRig({
       placementFrom: 0,
       placementTo: 1,
       path: "dive",
+      pass,
       duration: FLIGHT_DURATION_MS,
-      ease: diveEase,
+      ease: passEase(sPass, true),
       delay,
       revealAt: 1,
       toHome: false,
@@ -1400,9 +1449,19 @@ function CameraRig({
       });
       return;
     }
+    const departFrom = departurePose(controls, leavingNode);
+    const departTo = clonePose(standing.current);
+    const departPass = leavingNode ? undefined : passPoint();
+    const departEase = departPass
+      ? passEase(
+          diveProgressAt(departPass.point.length(), departTo.position.length(), 0),
+          false,
+        )
+      : approachEase;
     begin(controls, {
-      from: departurePose(controls, leavingNode),
-      to: clonePose(standing.current),
+      from: departFrom,
+      to: departTo,
+      pass: departPass,
       start: performance.now(),
       // Read off the camera rather than assumed to be the graph's. Leaving
       // from inside a node starts at FOCUS_CAMERA_FOV, not INSIDE_CAMERA_FOV,
@@ -1423,7 +1482,7 @@ function CameraRig({
       // camera off the node's surface early, which a line from the middle has
       // no need to do.
       path: leavingNode ? "approach" : "dive",
-      ease: leavingNode ? approachEase : diveEase,
+      ease: departEase,
       revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
       toHome: isHome,
       turnAround: true,
@@ -1548,7 +1607,7 @@ function CameraRig({
     let pose: CameraPose;
     let fovMix = eased;
     if (active.path === "dive") {
-      const dive = divePose(active.from, active.to, eased);
+      const dive = divePose(active.from, active.to, eased, active.pass);
       pose = dive;
       fovMix = dive.lens;
     } else if (active.path === "approach") {

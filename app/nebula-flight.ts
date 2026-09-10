@@ -22,7 +22,7 @@ import { getLivePosition } from "./nebula-simulation";
  * about three fifths of the way through; 2800 is what that takes at the pace
  * `diveEase` sets without the interior half becoming a crawl.
  */
-export const FLIGHT_DURATION_MS = 2800;
+export const FLIGHT_DURATION_MS = 3000;
 
 /**
  * How long a move *within* the graph takes: opening a node, closing one, or
@@ -395,6 +395,68 @@ export function approachLerpPose(
  * Symmetric on the way out: the lens narrows back over the last half, as the
  * hero passes again.
  */
+/**
+ * **Where the camera passes the page**, in world units, and how the flight
+ * is shaped around it.
+ *
+ * "Start slower past the landing page and speed up more as we get further"
+ * — sharpened to: slow *up to* the page, fast *through* it. What makes a
+ * fly-past feel exaggerated is how fast the near thing sweeps across the
+ * frame, which is speed over closeness. So the camera drifts in a straight
+ * line from the standing point to a point PASS_CLEARANCE off the page's near
+ * edge (the rig computes it from the plane it places), holding its lateral
+ * position rather than sliding toward the axis, and only glides onto the axis
+ * once the page is behind it. The page therefore fills most of the frame just
+ * before it leaves, and leaves fast. The curve (`passEase`) is the other
+ * half: a drift accelerating gently to the page, a kick through it, and a
+ * long settle.
+ */
+export interface DivePass {
+  /** The point the camera passes through beside the page. */
+  point: THREE.Vector3;
+}
+
+export const PASS_CLEARANCE = 4;
+/** The glide onto the axis is done by this fraction of the outer distance. */
+const GLIDE_DONE_AT = 0.22;
+
+/**
+ * Eased progress for the flight, in either direction.
+ *
+ * One smooth curve rather than the two-piece drift-then-kick it replaced.
+ * That version reached the page slowly and then jumped to three times the
+ * speed — the "whip" — and the jump read as a jolt, not a whip; with the
+ * graph's turn keyed to the same curve it stuttered too. This is a slow
+ * start whose speed is still rising as the page goes by (the page sits at
+ * about a sixth of the schedule and is reached near a third of the time),
+ * peaks just after, and then a long settle into the centre. Outbound is the
+ * mirror: the page comes in with the camera still fast and the last third
+ * is the settle onto the standing point.
+ */
+const inwardEase = cubicBezier(0.62, 0, 0.22, 1);
+export function passEase(_sPass: number, inbound: boolean): (t: number) => number {
+  return inbound ? inwardEase : (t) => 1 - inwardEase(1 - t);
+}
+
+/** Cubic Hermite from (0, x0, slope m0) to (1, x1, slope m1). */
+function hermite(q: number, x0: number, m0: number, x1: number, m1: number) {
+  const q2 = q * q;
+  const q3 = q2 * q;
+  return (
+    (2 * q3 - 3 * q2 + 1) * x0 +
+    (q3 - 2 * q2 + q) * m0 +
+    (-2 * q3 + 3 * q2) * x1 +
+    (q3 - q2) * m1
+  );
+}
+
+/** Where a distance `r` from the centre falls on the geometric schedule. */
+export function diveProgressAt(r: number, rFrom: number, rTo: number) {
+  const a = rFrom + DIVE_SHELL;
+  const b = rTo + DIVE_SHELL;
+  return Math.log((r + DIVE_SHELL) / a) / Math.log(b / a);
+}
+
 export interface DivePose extends CameraPose {
   /** Distance from the graph's centre. */
   r: number;
@@ -427,12 +489,69 @@ const _diveDirB = new THREE.Vector3();
 const _diveHeadA = new THREE.Vector3();
 const _diveHeadB = new THREE.Vector3();
 
-export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose {
+export function divePose(
+  from: CameraPose,
+  to: CameraPose,
+  s: number,
+  pass?: DivePass,
+): DivePose {
   const rA = from.position.length();
   const rB = to.position.length();
   const outer = Math.max(rA, rB, 1e-3);
   const innerIsTo = rB < rA;
   const r = diveDistance(rA, rB, s);
+
+  if (pass) {
+    // The pass route: standing point -> pass point in a straight drift, then
+    // a glide onto the axis, at every step keeping exactly the distance the
+    // schedule asks for.
+    // Two Hermite pieces meeting at the pass point with one shared slope, so
+    // the path has no corner there: lateral position and lateral velocity
+    // are both continuous through the pass. The first version joined a
+    // straight drift to a smoothstep glide, and the corner was a visible
+    // jerk right as the page went by.
+    const S = innerIsTo ? from.position : to.position;
+    const rPass = pass.point.length();
+    const rGlideEnd = outer * GLIDE_DONE_AT;
+    const lenDrift = Math.max(outer - rPass, 1e-6);
+    const lenGlide = Math.max(rPass - rGlideEnd, 1e-6);
+    // The shared slope at the pass, per unit of distance travelled: the
+    // overall lateral drift rate, so the drift arrives already moving
+    // sideways and the glide continues it.
+    const mx = (0 - S.x) / (lenDrift + lenGlide);
+    const my = (0 - S.y) / (lenDrift + lenGlide);
+    let x: number;
+    let y: number;
+    if (r >= rPass) {
+      const q = (outer - r) / lenDrift;
+      x = hermite(q, S.x, 0, pass.point.x, mx * lenDrift);
+      y = hermite(q, S.y, 0, pass.point.y, my * lenDrift);
+    } else if (r >= rGlideEnd) {
+      const q = (rPass - r) / lenGlide;
+      x = hermite(q, pass.point.x, mx * lenGlide, 0, 0);
+      y = hermite(q, pass.point.y, my * lenGlide, 0, 0);
+    } else {
+      x = 0;
+      y = 0;
+    }
+    const z = Math.sqrt(Math.max(r * r - x * x - y * y, 0)) * Math.sign(S.z || 1);
+    const position = new THREE.Vector3(x, y, z);
+    _diveHeadA.copy(from.target).sub(from.position).normalize();
+    _diveHeadB.copy(to.target).sub(to.position).normalize();
+    const heading = slerpDirection(_diveHeadA, _diveHeadB, s);
+    const lookLen = THREE.MathUtils.lerp(
+      from.target.distanceTo(from.position),
+      to.target.distanceTo(to.position),
+      s,
+    );
+    return {
+      position,
+      target: position.clone().addScaledVector(heading, lookLen),
+      r,
+      outer,
+      lens: s,
+    };
+  }
 
   _diveHeadA.copy(from.target).sub(from.position).normalize();
   _diveHeadB.copy(to.target).sub(to.position).normalize();
