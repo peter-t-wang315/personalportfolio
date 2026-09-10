@@ -386,13 +386,14 @@ export function approachLerpPose(
  * of approach — a dolly zoom. It was first spent over the inner 45% of the
  * distance, and that stalled the graph's growth for a few hundred
  * milliseconds right where the graph was still turning, which read as the
- * flight pausing for the rotation to finish. It is spent over the first 80%
- * of the *eased progress* now, which the burst curve puts almost entirely
- * in the launch: a wide lens makes the hero rush as it passes, the widening
- * is done before the shell, and modelled against the far wall the growth
- * never dips below 1.0 per frame — the graph only ever grows. Symmetric on
- * the way out: the lens narrows back over the last 80%, as the hero passes
- * again.
+ * flight pausing for the rotation to finish. It is spent over the first half
+ * of the *eased progress* now, which the burst curve puts entirely in the
+ * launch: a wide lens makes the hero rush as it passes — 41 degrees by the
+ * time it goes by — and the widening is done long before the shell. Modelled
+ * against the far wall the growth dips to 0.98 for one frame at the pass and
+ * never otherwise; over 80% it never dipped, and the pass read as too slow.
+ * Symmetric on the way out: the lens narrows back over the last half, as the
+ * hero passes again.
  */
 export interface DivePose extends CameraPose {
   /** Distance from the graph's centre. */
@@ -407,7 +408,7 @@ const DIVE_SHELL = CONSTELLATION_BOUNDING_RADIUS;
 /** The glide is finished once `r` is inside this fraction of the outer distance. */
 const DIVE_GLIDE_INNER = 0.3;
 /** The lens moves over this share of the eased progress, at the outer end. */
-const DIVE_LENS_SHARE = 0.8;
+const DIVE_LENS_SHARE = 0.5;
 
 function smoothstep(u: number) {
   const x = THREE.MathUtils.clamp(u, 0, 1);
@@ -436,12 +437,19 @@ export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose 
   _diveHeadA.copy(from.target).sub(from.position).normalize();
   _diveHeadB.copy(to.target).sub(to.position).normalize();
   // Where each endpoint sits around the graph. A pose at the centre has no
-  // direction of its own, so it takes the one it is looking along, reversed:
-  // the camera reaches the centre by flying in along its own heading.
-  if (rA > 1e-3) _diveDirA.copy(from.position).divideScalar(rA);
-  else _diveDirA.copy(_diveHeadA).negate();
+  // direction of its own. Arriving, it takes the one it is looking along,
+  // reversed: the camera reaches the centre by flying in along its own
+  // heading, which is what lets the glide put the graph in the middle of the
+  // frame before the run in. Leaving, it takes the *destination's* direction,
+  // so the way out is the straight line from the centre to the standing
+  // point whatever the reader had turned to look at — a yank, not a route.
+  // Taking the reversed heading there flew out sideways after a drag and
+  // then circled round to the standing point.
   if (rB > 1e-3) _diveDirB.copy(to.position).divideScalar(rB);
   else _diveDirB.copy(_diveHeadB).negate();
+  if (rA > 1e-3) _diveDirA.copy(from.position).divideScalar(rA);
+  else if (rB > 1e-3) _diveDirA.copy(_diveDirB);
+  else _diveDirA.copy(_diveHeadA).negate();
 
   // 1 at the outer end, 0 once inside the glide band.
   const far = smoothstep((r / outer - DIVE_GLIDE_INNER) / (1 - DIVE_GLIDE_INNER));

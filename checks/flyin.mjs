@@ -97,21 +97,30 @@ async function flyIn() {
   await p.close();
 }
 
-async function flyHome(from, label) {
+async function flyHome(from, label, { drag = false } = {}) {
   const p = await b.newPage({ viewport: VIEWPORT });
   await p.goto(BASE + from, { waitUntil: 'networkidle' });
   await p.waitForTimeout(6000);
+  if (drag) {
+    // Look around first — a departure after a drag once flew out sideways.
+    await p.mouse.move(720, 450);
+    await p.mouse.down();
+    for (let i = 1; i <= 12; i++) { await p.mouse.move(720 + i * 60, 450 - i * 15); await p.waitForTimeout(40); }
+    await p.mouse.up();
+    await p.waitForTimeout(1200);
+  }
   await installTracer(p);
   const t0 = await p.evaluate(() => performance.now());
   await p.evaluate(() => document.querySelector('a[href="/"]').click());
   const taken = await shots(p, label, t0);
   await p.waitForTimeout(800);
   const T = await p.evaluate(() => window.__T);
-  report(`flying home from ${from}`, T, t0, taken);
+  report(`flying home from ${from}${drag ? ' after a drag' : ''}`, T, t0, taken);
   await p.close();
 }
 
 await flyIn();
 await flyHome('/nebula', 'out');
 await flyHome('/nebula/vgclite', 'outnode');
+await flyHome('/nebula', 'outdrag', { drag: true });
 await b.close();

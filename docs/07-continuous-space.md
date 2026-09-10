@@ -858,11 +858,13 @@ first spent over the inner 45% of the distance, on the theory that the near
 nodes streaming past would carry it — and it stalled the graph's growth for a
 few hundred milliseconds right where the graph was still turning, which the
 reader saw as "flies in, pauses for the nebula to finish rotating, then goes
-in all the way". It is spent over the first 80% of the eased progress now,
-which the burst curve below puts almost entirely in the launch. That is also
-where the hero is passing, and a wide lens makes it rush. Modelled against the
-far wall, the growth never dips below 1.0 per frame with this schedule; the
-first version's dip was 0.97, and that was the pause.
+in all the way". It is spent over the first half of the eased progress now,
+which the burst curve below puts entirely in the launch. That is also where
+the hero is passing, and a wide lens makes it rush — 41° by the time it goes
+by. Modelled against the far wall, the growth dips to 0.98 for one frame at
+the pass and never otherwise; over 80% it never dipped at all, and the pass
+read as too slow. The first version's dip was 0.97 for several frames, and
+that was the pause.
 
 The curve is `diveEase`, (0.3, 0.35, 0.2, 1), over 2800ms — up from 2000,
 because the journey is longer by the part that was missing. It is a burst:
@@ -921,6 +923,19 @@ instead would slide a small, distant graph across the frame right as it lands.
 Yaw and pitch rather than a slerp, because a reader who had turned round to
 look at home is facing exactly away, and a slerp between opposites has no
 plane to turn in.
+
+**Two things about leaving after a drag, both found by tracing it.** Looking
+around orbits the camera about a pivot a tenth of a unit ahead, so after a
+drag the camera sits up to a fifth of a unit off the origin in a direction
+that means nothing; read literally as "where the camera is", the dive flew
+out along it. The departure now starts from the centre by definition, with
+only the heading being the reader's. And a pose at the centre has no direction
+of its own: arriving, the dive takes the reversed heading (the axis, which is
+what lets the glide centre the graph); leaving, it takes the *destination's*,
+so the way out is the straight line from the centre to the standing point
+whatever the reader had turned to look at. Measured after a drag of 72°: x and
+z in constant proportion from the first frame, heading straight by 40 units
+out, landed on the standing point to a tenth of a unit.
 
 ## The hand-off
 

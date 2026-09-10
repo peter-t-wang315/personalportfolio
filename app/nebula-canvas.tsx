@@ -1110,6 +1110,35 @@ function CameraRig({
     );
   }
 
+  /**
+   * Where a departure starts from.
+   *
+   * From a node, the camera is where it is. From the centre, the camera is
+   * *not* quite where it is: looking around orbits it about a pivot
+   * LOOK_DISTANCE ahead (parkForLookingAround), so after a drag it sits up to
+   * a fifth of a unit off the origin in some direction that has nothing to do
+   * with anything. Read literally, the dive took that offset as the direction
+   * the camera was in and flew out along it for fifty units before swinging
+   * round to the standing point — "flying around the world and then circling
+   * back". The reader stands at the centre by definition; only the heading
+   * they turned to is theirs.
+   */
+  function departurePose(
+    controls: CameraControlsImpl,
+    fromNode: boolean,
+  ): CameraPose {
+    const current = currentPose(controls);
+    if (fromNode) return current;
+    const heading = current.target.sub(current.position);
+    if (heading.lengthSq() < 1e-9) heading.copy(FORWARD);
+    heading.normalize();
+    const position = INSIDE_POSE.position.clone();
+    return {
+      position,
+      target: position.clone().addScaledVector(heading, INSIDE_DISTANCE),
+    };
+  }
+
   function clonePose(pose: CameraPose): CameraPose {
     return { position: pose.position.clone(), target: pose.target.clone() };
   }
@@ -1345,7 +1374,7 @@ function CameraRig({
       return;
     }
     begin(controls, {
-      from: currentPose(controls),
+      from: departurePose(controls, leavingNode),
       to: clonePose(standing.current),
       start: performance.now(),
       // Read off the camera rather than assumed to be the graph's. Leaving
