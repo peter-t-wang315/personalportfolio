@@ -17,7 +17,7 @@ import { hasWebgl } from "@/lib/webgl";
  * The interior panel: real HTML, sized from 02-architecture.md's tier table,
  * centred, scrollable inside, with the graph still live past its edges.
  *
- * **Sizing is CSS, not a tier hook.** 70% of the viewport on desktop, 85%
+ * **Sizing is CSS, not a tier hook.** 70% of the viewport on desktop, 80%
  * below (`lg:` is 1024px, the same line useDeviceTier draws), and under 500px
  * of viewport height a full-height sheet with no morph in any tier. Media
  * queries are correct in the very first painted frame, which a JS tier switch
@@ -154,10 +154,13 @@ export function NebulaPanel({
   const visible = cold || (focusSettled && focusedNodeId === nodeId);
 
   // Panel geometry, mirroring the CSS below and 02-architecture.md's tier
-  // table: 70% of the viewport on desktop, 85% under it, a full sheet under
-  // 500px of height.
+  // table: 70% of the viewport on desktop, 80% under it, a full sheet under
+  // 500px of height. 80 rather than the 85 it was: the opened shell overshoots
+  // the panel's rectangle by ~23px, and at 85% of an 844px-tall phone its top
+  // edge sat at 40px, straight across the corner links at 32-52px. At 80% it
+  // clears them by 9px on the tallest-shell case the checks run.
   const short = viewport.height > 0 && viewport.height < SHORT_VIEWPORT_HEIGHT_PX;
-  const fraction = viewport.width >= DESKTOP_MIN_WIDTH_PX ? 0.7 : 0.85;
+  const fraction = viewport.width >= DESKTOP_MIN_WIDTH_PX ? 0.7 : 0.8;
   const panelWidth = short ? viewport.width : viewport.width * fraction;
   const panelHeight = short ? viewport.height : viewport.height * fraction;
   const nodeDiameter = focusedNodeHeightFraction(nodeId) * viewport.height;
@@ -196,7 +199,7 @@ export function NebulaPanel({
         }}
         className={
           "pointer-events-auto relative flex justify-center " +
-          "w-[85vw] h-[85vh] lg:w-[70vw] lg:h-[70vh] " +
+          "w-[80vw] h-[80vh] lg:w-[70vw] lg:h-[70vh] " +
           "px-8 py-10 md:px-14 md:py-14 " +
 
           // Under 500px of height the node does not open at all — there is no

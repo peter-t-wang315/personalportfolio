@@ -233,7 +233,7 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
  * swapped, so there is nothing for the eye to notice being swapped.
  *
  * Panel size is the tier table's (02-architecture.md): 70% of the viewport on
- * desktop, 85% below, taken as a fraction of the frustum at the node's own
+ * desktop, 80% below, taken as a fraction of the frustum at the node's own
  * depth — the same numbers nebula-panel.tsx uses in CSS, so the mesh and the
  * DOM agree without either measuring the other. Under 500px of viewport height
  * there is no morph at all: the panel is a full-height sheet and the node stays
@@ -242,7 +242,7 @@ function baseOpacity(node: NodeGeometry, tier: DeviceTier): number {
 
 const easeStandard = cubicBezier(0.32, 0.72, 0, 1);
 const PANEL_FRACTION_DESKTOP = 0.7;
-const PANEL_FRACTION_COMPACT = 0.85;
+const PANEL_FRACTION_COMPACT = 0.8;
 /** Depth of the opened node relative to its own radius — flattened, not gone,
  * so the rim still turns away from the viewer and catches the fresnel term. */
 const OPEN_DEPTH_FACTOR = 0.35;
@@ -913,17 +913,15 @@ export function Constellation({
     return () => releaseAttraction();
   }, [gatherNodeId]);
 
-  // Tech node visibility is tier-dependent — see 02-architecture.md's
-  // Responsive tiers. The mobile/tablet toggle arrives in 2.8; this is the
-  // default it will toggle from. Tech opacity's tier-dimming is folded into
-  // the per-frame hover loop below (baseOpacity reads `tier` directly), so
-  // it doesn't need its own effect.
-  // Off /nebula this is a texture rather than a graph, and the tier rule is
-  // about keeping the graph legible on a small screen — so the whole
-  // population is drawn there. A phone's landing cluster would otherwise be
-  // 20 nodes where every other device sees 45, which reads as sparse rather
-  // than as restrained.
-  const showTech = !isNebula || tier !== "mobile";
+  // Tech nodes are drawn on every tier now. They were hidden on the mobile
+  // tier for legibility — 02-architecture.md's tier table, back when a phone
+  // stood at the centre of the graph and the tech shell was clutter at arm's
+  // length — never for performance: `/` has always drawn all 51 on phones.
+  // A portrait phone stands outside the graph since 07-continuous-space.md's
+  // mobile section, and from there they are dots on a globe, which is the
+  // graph rather than clutter. Tech opacity's tier-dimming is folded into
+  // the per-frame hover loop below (baseOpacity reads `tier` directly).
+  const showTech = true;
 
   useFrame((state, delta) => {
     const { reducedMotion, hoveredNodeId, focusedNodeId: focused } =

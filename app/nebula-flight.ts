@@ -131,9 +131,18 @@ export interface CameraPose {
  * than importing it keeps this module free of the camera composition, which is
  * the reason it is a module of its own.
  */
+/**
+ * @param side Which side of the node the camera stops on. `inner` is the
+ * interior's: the reader is at the centre and approaches from there. `outer`
+ * is for a viewport standing outside the graph (`standsOutside`), where an
+ * inner pose would punch the camera through the shell to open a node and
+ * back out again to close it — exactly the crossing this function's comment
+ * above describes getting rid of, in the other direction.
+ */
 export function focusPose(
   nodeId: string,
   baseRotation: THREE.Quaternion,
+  side: "inner" | "outer" = "inner",
 ): CameraPose | null {
   const node = nodeGeometry[nodeId];
   if (!node) return null;
@@ -146,11 +155,14 @@ export function focusPose(
   if (approach.lengthSq() < 1e-6) approach.copy(FALLBACK_APPROACH);
   approach.normalize();
 
+  const standoff = node.radius + SURFACE_STANDOFF;
   return {
-    // Negative: back along the normal toward the middle, not out past the node.
+    // Negative: back along the normal toward the middle, not out past the
+    // node — unless the reader is outside, in which case out past it is
+    // where they are coming from.
     position: nodePosition
       .clone()
-      .addScaledVector(approach, -(node.radius + SURFACE_STANDOFF)),
+      .addScaledVector(approach, side === "inner" ? -standoff : standoff),
     target: nodePosition,
   };
 }
@@ -512,7 +524,14 @@ export function divePose(
     // jerk right as the page went by.
     const S = innerIsTo ? from.position : to.position;
     const rPass = pass.point.length();
-    const rGlideEnd = outer * GLIDE_DONE_AT;
+    // The glide onto the axis has to be finished by the time the flight
+    // is, and a flight that ends outside the shell (the portrait phone's
+    // standing point, `standsOutside`) ends well before the fraction of the
+    // outer distance the interior's glide is done by. So it is done by the
+    // inner endpoint's own distance when that is the later of the two;
+    // for an arrival at the centre this is exactly the old value.
+    const rInner = Math.min(rA, rB);
+    const rGlideEnd = Math.max(outer * GLIDE_DONE_AT, rInner);
     const lenDrift = Math.max(outer - rPass, 1e-6);
     const lenGlide = Math.max(rPass - rGlideEnd, 1e-6);
     // The shared slope at the pass, per unit of distance travelled: the

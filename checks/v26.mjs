@@ -128,7 +128,7 @@ for (const [w,h,name] of [[844,390,'landscape-phone'],[900,700,'tablet'],[390,84
   await p.waitForTimeout(3000);
   const r = await p.evaluate(() => { const el = document.querySelector('[data-nebula-panel]'); const b = el.getBoundingClientRect(); return { w: b.width, h: b.height, radius: getComputedStyle(el).borderRadius }; });
   await p.screenshot({ path: `${OUT}/${name}.png` });
-  const expectFrac = h < 500 ? 1 : (w >= 1024 ? 0.7 : 0.85);
+  const expectFrac = h < 500 ? 1 : (w >= 1024 ? 0.7 : 0.8);
   const fw = r.w / w, fh = r.h / h;
   ok(`${name} ${w}x${h}: panel ${Math.round(fw*100)}%×${Math.round(fh*100)}% (expect ${expectFrac*100}%)`, Math.abs(fw-expectFrac) < 0.02 && Math.abs(fh-expectFrac) < 0.02, `radius=${r.radius}`);
   ok(`${name}: no console errors`, p.errors.length === 0, p.errors[0]?.slice(0,200));

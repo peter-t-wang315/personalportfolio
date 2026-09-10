@@ -210,8 +210,12 @@ So the centre is solved, not fixed (`lib/cluster-geometry.ts`):
 - **Off `/`, below the desktop tier, the cluster is not drawn at all.** It is
   ambient on those routes, and at those widths the content column is nearly the
   whole viewport, so it would sit behind body prose. See 04-phase-1.md.
-- **Vertically**, narrow viewports drop it below the hero text rather than
-  centring it behind them, for the same reason.
+- **Vertically**, stacked layouts — anything that is not beside a text
+  column — drop it to 62% of the height, below the hero text, rather than
+  centring it behind them. This used to key off the width cap ("narrow enough
+  to have shrunk"), which no real phone triggers: at 390x844 the cluster is
+  150px against a 214px cap, so it never shrank, never dropped, and sat on
+  the metrics line.
 - **Where the spotlight labels are drawn (`/work` and `/work/[slug]`), the
   horizontal solve centres in the space left over instead.** Clearing the text
   column is a floor, not a destination: stopping there parked the graph against
@@ -356,7 +360,7 @@ stale the first time the camera moves.
 | Transmission | **None, on any tier — see below.** The focused node's shell is a `--mask` `MeshPhysicalMaterial` with transmission off | None | None |
 | Particle count | ~600 | 350 | 200 |
 | Interaction | `CameraControls`: drag to look around from a fixed standing point; the wheel does nothing. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | **Portrait phones stand outside the graph** and turn the whole globe with one finger — see `07-continuous-space.md`, "Mobile — the outside standing point". Tap to open. The bottom sheet is deferred until the outside view has been measured; labels on the visible face are the likelier answer. |
-| Interior panel size | 70% of viewport | 85% of viewport | 85% of viewport — no separate mobile value has been specified; inherits the tablet override |
+| Interior panel size | 70% of viewport | 80% of viewport | 80% of viewport. Was 85 on both: the opened shell overshoots the panel by ~23px, and at 85% of a phone's height its top edge crossed the corner links |
 
 **Real transmission was removed from every tier**, having been desktop-only before. It cannot work in this scene: the canvas is `alpha: true` over the page's `--paper` background, so the paper is CSS *behind* a transparent canvas and is not in the WebGL scene — transmission had nothing to transmit. It looked correct on the focused sphere only because a thick, short attenuation distance tinted the result `--mask` whatever lay behind it. The moment the shell flattened into a panel and cleared for legibility that tint went, the empty backdrop came through, and the opened node rendered as a bright white plate over the paper — the one colour not in the palette. Moving the camera inside the shell made it worse, since a focused node's backdrop is now mostly nothing.
 

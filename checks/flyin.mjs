@@ -18,8 +18,15 @@ import fs from 'node:fs';
 
 const BASE = process.env.BASE ?? 'http://localhost:3100';
 const DURATION = 3000;   // FLIGHT_DURATION_MS
-const VIEWPORT = { width: 1440, height: 900 };
-fs.mkdirSync('flyin', { recursive: true });
+// VIEWPORT=390x844 node checks/flyin.mjs traces the portrait phone, which
+// stands outside the graph rather than at its centre (lib/device-tier.ts,
+// standsOutside); the shots then land in flyin-390x844/.
+const VIEWPORT = (() => {
+  const m = /^(\d+)x(\d+)$/.exec(process.env.VIEWPORT ?? '');
+  return m ? { width: +m[1], height: +m[2] } : { width: 1440, height: 900 };
+})();
+const OUT = process.env.VIEWPORT ? `flyin-${VIEWPORT.width}x${VIEWPORT.height}` : 'flyin';
+fs.mkdirSync(OUT, { recursive: true });
 
 const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 
@@ -49,7 +56,7 @@ async function shots(p, label, t0) {
   for (let i = 0; i < 40; i++) {
     const now = await p.evaluate(() => performance.now());
     const q = await p.evaluate(() => ({ fly: window.__nebulaProbe?.flying, d: window.__nebulaProbe?.distance }));
-    const file = `flyin/${label}-${String(Math.round(now - t0)).padStart(4, '0')}ms.png`;
+    const file = `${OUT}/${label}-${String(Math.round(now - t0)).padStart(4, '0')}ms.png`;
     await p.screenshot({ path: file });
     taken.push({ at: Math.round(now - t0), file, d: q.d });
     if (now - t0 > DURATION + 900) break;
@@ -105,9 +112,11 @@ async function flyHome(from, label, { drag = false } = {}) {
   await p.waitForTimeout(6000);
   if (drag) {
     // Look around first — a departure after a drag once flew out sideways.
-    await p.mouse.move(720, 450);
+    const cx = VIEWPORT.width / 2, cy = VIEWPORT.height / 2;
+    const step = Math.round(VIEWPORT.width / 24);
+    await p.mouse.move(cx, cy);
     await p.mouse.down();
-    for (let i = 1; i <= 12; i++) { await p.mouse.move(720 + i * 60, 450 - i * 15); await p.waitForTimeout(40); }
+    for (let i = 1; i <= 12; i++) { await p.mouse.move(cx + i * step, cy - i * 15); await p.waitForTimeout(40); }
     await p.mouse.up();
     await p.waitForTimeout(1200);
   }

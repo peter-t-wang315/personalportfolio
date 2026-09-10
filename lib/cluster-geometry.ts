@@ -104,20 +104,26 @@ export function clusterScaleForViewport(
  * above, cluster below them, nav below that (hero-nav.tsx measures its own
  * clearance from the resulting edge).
  *
- * Keyed off the same condition as the width cap, so "narrow enough that the
- * cluster had to shrink" and "narrow enough that it has to move down" stay
- * one decision rather than two thresholds that can disagree.
+ * Keyed off whether the layout is a stack (`clusterBesideTextColumn`), not
+ * off the width cap. It used to be the cap — "narrow enough that the cluster
+ * had to shrink" — and that condition is never true on a real phone: at
+ * 390x844 the natural diameter is 150px against a 214px cap, so the cluster
+ * never shrank and never dropped, and sat centred on the metrics line at
+ * every phone the checks run. A stacked layout is the thing that puts text
+ * above the cluster, so it is the thing to key on.
  */
 export const NARROW_CLUSTER_CENTER_Y_FRACTION = 0.62;
 
 export function clusterCenterYFraction(
   viewportWidth: number,
   viewportHeight: number,
-  radiusScale = 1,
+  // Kept for callers that pass it; the answer no longer depends on the
+  // drawn radius, only on whether there is a column beside the cluster.
+  _radiusScale = 1,
 ) {
-  return clusterScaleForViewport(viewportWidth, viewportHeight, radiusScale) < 1
-    ? NARROW_CLUSTER_CENTER_Y_FRACTION
-    : 0.5;
+  return clusterBesideTextColumn(viewportWidth, viewportHeight)
+    ? 0.5
+    : NARROW_CLUSTER_CENTER_Y_FRACTION;
 }
 
 /**

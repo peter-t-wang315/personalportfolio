@@ -12,6 +12,7 @@ import {
   routeForNode,
 } from "@/lib/nebula-routes";
 import { nodeGeometry } from "@/lib/node-geometry";
+import { standsOutside } from "@/lib/device-tier";
 import { getLivePosition, neighborsOf } from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
@@ -448,6 +449,64 @@ function restingPoseFacing(nodeId: string | null): CameraPose {
   };
 }
 
+/**
+ * **Where a portrait phone stands: outside the graph, on the flight line.**
+ *
+ * 07-continuous-space.md, "Mobile — the outside standing point". From the
+ * centre a tall frame sees a slice; from outside it sees a ball. The camera
+ * stays on the same straight line the flight travels, looking down −z at the
+ * origin like every other route, so there is no new heading to search and
+ * the graph's turn (NEBULA_BASE_ROTATION) puts the same composed face toward
+ * it as the interior would have seen.
+ *
+ * The distance is set by *height*, not by fitting the frame's width. The
+ * lens is vertical, so a given distance puts the ball at a fixed fraction of
+ * the viewport's height whatever the width — which is what makes this one
+ * number rather than a solve, and what keeps it still when a phone browser
+ * shows or hides its address bar and the height changes under the page.
+ * 0.42 of the height is 91% of the width at 390x844 and 93% at 360x800,
+ * the two narrowest phones the checks run; a wider phone has more room,
+ * never less. The bounding radius is set by the single furthest node, so the
+ * ink itself sits well inside that: measured at 0.4 the ball read as about
+ * 0.37 of the height.
+ */
+const OUTSIDE_HEIGHT_FRACTION = 0.42;
+const OUTSIDE_DISTANCE =
+  CONSTELLATION_BOUNDING_RADIUS /
+  (OUTSIDE_HEIGHT_FRACTION * Math.tan((STANDING_FOV * Math.PI) / 360));
+
+const OUTSIDE_POSE: CameraPose = {
+  position: new THREE.Vector3(0, 0, OUTSIDE_DISTANCE),
+  target: new THREE.Vector3(0, 0, 0),
+};
+
+/**
+ * The outside pose, aimed along a node's radial: closing a node from
+ * outside backs out along the line it was opened on, so the node the reader
+ * was just inside is in the middle of the frame when they get there — the
+ * same promise restingPoseFacing makes for the interior, kept the other way
+ * round (there the camera stays and the heading changes; here the heading
+ * is always the centre and the camera moves round the sphere).
+ */
+function outsidePoseFacing(nodeId: string | null): CameraPose {
+  const node = nodeId ? nodeGeometry[nodeId] : null;
+  if (!node) return OUTSIDE_POSE;
+  const direction = new THREE.Vector3()
+    .fromArray(node.position)
+    .applyQuaternion(NEBULA_BASE_ROTATION);
+  if (direction.lengthSq() < 1e-6) return OUTSIDE_POSE;
+  direction.normalize();
+  return {
+    position: direction.multiplyScalar(OUTSIDE_DISTANCE),
+    target: new THREE.Vector3(0, 0, 0),
+  };
+}
+
+/** The bare graph's pose for this viewport, facing a node if one is named. */
+function restingPose(outside: boolean, nodeId: string | null): CameraPose {
+  return outside ? outsidePoseFacing(nodeId) : restingPoseFacing(nodeId);
+}
+
 
 
 /**
@@ -608,6 +667,30 @@ function parkForLookingAround(
     pose.position.x + _parkForward.x * LOOK_DISTANCE,
     pose.position.y + _parkForward.y * LOOK_DISTANCE,
     pose.position.z + _parkForward.z * LOOK_DISTANCE,
+    false,
+  );
+}
+
+/**
+ * Park the camera for turning the globe: pivot at the graph's centre, orbit
+ * radius pinned at the outside standing distance. The opposite of
+ * parkForLookingAround — there the reader stands still and the view turns;
+ * here the view is always the centre and the reader goes round it, which is
+ * what one finger on a phone expects a ball to do. The pin is what stops a
+ * drag from doubling as a dolly.
+ */
+function parkForOrbiting(controls: CameraControlsImpl, pose: CameraPose) {
+  const r = pose.position.length();
+  if (r < 1e-6) return;
+  controls.minDistance = r;
+  controls.maxDistance = r;
+  controls.setLookAt(
+    pose.position.x,
+    pose.position.y,
+    pose.position.z,
+    0,
+    0,
+    0,
     false,
   );
 }
@@ -794,6 +877,9 @@ function CameraRig({
   const flying = useSceneStore((s) => s.flying);
   const size = useThree((s) => s.size);
   const scene = useThree((s) => s.scene);
+  /** Portrait phone: the graph is stood outside of, not inside (standsOutside). */
+  const outside = standsOutside(size.width, size.height);
+  const focusSide = outside ? "outer" : "inner";
 
   /**
    * **The standing pose: where the camera is on every route but the graph.**
@@ -1183,7 +1269,9 @@ function CameraRig({
     fromNode: boolean,
   ): CameraPose {
     const current = currentPose(controls);
-    if (fromNode) return current;
+    // Outside, the camera really is where the drag left it — somewhere on
+    // the standing sphere — and leaving from there is right.
+    if (fromNode || outside) return current;
     const heading = current.target.sub(current.position);
     if (heading.lengthSq() < 1e-9) heading.copy(FORWARD);
     heading.normalize();
@@ -1295,7 +1383,10 @@ function CameraRig({
     applyPose(controls, pose);
     applyFov(controls, fov);
     applyDollyClamps(controls, { free });
-    if (!free) parkForLookingAround(controls, pose);
+    if (!free) {
+      if (outside) parkForOrbiting(controls, pose);
+      else parkForLookingAround(controls, pose);
+    }
     useSceneStore.getState().setFlying(false);
     useSceneStore.getState().setFocusSettled(true);
   }
@@ -1348,7 +1439,7 @@ function CameraRig({
     const sPass = diveProgressAt(pass.point.length(), from.position.length(), 0);
     begin(controls, {
       from,
-      to: INSIDE_POSE,
+      to: restingPose(outside, null),
       start: performance.now(),
       fovFrom: STANDING_FOV,
       fovTo: INSIDE_CAMERA_FOV,
@@ -1441,7 +1532,7 @@ function CameraRig({
       // from reading the same route as a change and flying to where it is.
       const coldFocus = wasNebula === undefined ? routeFocusId : null;
       if (coldFocus) {
-        const pose = focusPose(coldFocus, NEBULA_BASE_ROTATION);
+        const pose = focusPose(coldFocus, NEBULA_BASE_ROTATION, focusSide);
         if (pose) {
           lastFocus.current = coldFocus;
           // 05-phase-2.md: a cold entry lands "shell expanded, panel open,
@@ -1454,7 +1545,10 @@ function CameraRig({
       }
       // Reduced motion makes flights instant cuts, per 01-design-system.md.
       if (reducedMotion) {
-        settle(controls, INSIDE_POSE, INSIDE_CAMERA_FOV, { free: false, at: 1 });
+        settle(controls, restingPose(outside, null), INSIDE_CAMERA_FOV, {
+          free: false,
+          at: 1,
+        });
         return;
       }
       beginArrival(controls, 0);
@@ -1477,7 +1571,12 @@ function CameraRig({
     }
     const departFrom = departurePose(controls, leavingNode);
     const departTo = clonePose(standing.current);
-    const departPass = leavingNode ? undefined : passPoint();
+    // From outside the camera can be anywhere on the standing sphere after a
+    // drag, and the pass route's lateral schedule is written against the
+    // axis — starting it from off the axis is a jump on the first frame. The
+    // approach path measures from the centre and starts from wherever the
+    // camera is, which is why leaving a node uses it too.
+    const departPass = leavingNode || outside ? undefined : passPoint();
     const departEase = departPass
       ? passEase(
           diveProgressAt(departPass.point.length(), departTo.position.length(), 0),
@@ -1507,7 +1606,7 @@ function CameraRig({
       // the graph's centre too, so the retreat is monotonic, and it turns the
       // camera off the node's surface early, which a line from the middle has
       // no need to do.
-      path: leavingNode ? "approach" : "dive",
+      path: leavingNode || outside ? "approach" : "dive",
       ease: departEase,
       revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
       toHome: isHome,
@@ -1546,8 +1645,8 @@ function CameraRig({
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
     const to = routeFocusId
-      ? focusPose(routeFocusId, NEBULA_BASE_ROTATION)
-      : restingPoseFacing(previousFocus);
+      ? focusPose(routeFocusId, NEBULA_BASE_ROTATION, focusSide)
+      : restingPose(outside, previousFocus);
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
     // Moving straight from one open node to another — following a link inside
@@ -1589,7 +1688,33 @@ function CameraRig({
       // is what 2.5 was tuned against.
       path: sideways ? "shell" : "line",
     });
-  }, [routeFocusId, reducedMotion, isNebula]);
+  }, [routeFocusId, reducedMotion, isNebula, outside, focusSide]);
+
+  /**
+   * **The viewport crossed the outside/inside line while on the graph** — a
+   * phone rotated, a desktop window dragged narrow. The two standing rules
+   * put the camera in different places, and nothing above re-runs for a
+   * resize (the route effect guards on the route), so this is the one place
+   * the camera moves for it. A cut rather than a flight: it is a layout
+   * change, not a journey, and it happens under the reader's hand.
+   */
+  const lastOutside = useRef(outside);
+  useEffect(() => {
+    if (lastOutside.current === outside) return;
+    lastOutside.current = outside;
+    const controls = controlsRef.current;
+    if (!controls || !isNebula || flight !== null) return;
+    if (lastRoute.current !== true) return;
+    if (routeFocusId) {
+      const pose = focusPose(routeFocusId, NEBULA_BASE_ROTATION, focusSide);
+      if (pose) settle(controls, pose, FOCUS_CAMERA_FOV, { free: true, at: 1 });
+      return;
+    }
+    settle(controls, restingPose(outside, null), INSIDE_CAMERA_FOV, {
+      free: false,
+      at: 1,
+    });
+  }, [outside, focusSide, isNebula, routeFocusId]);
 
   // Priority -2, ahead of camera-controls' own -1 update: a pose pushed in
   // after that update is not on the camera until the *next* frame's update,
@@ -1675,8 +1800,12 @@ function CameraRig({
         active.placementTo < 1 ||
         useSceneStore.getState().focusedNodeId !== null;
       applyDollyClamps(controls, { free });
-      // Landed inside with nothing open: hand the drag over to looking around.
-      if (!free) parkForLookingAround(controls, active.to);
+      // Landed with nothing open: hand the drag over to looking around, or
+      // to turning the globe if this viewport stands outside it.
+      if (!free) {
+        if (outside) parkForOrbiting(controls, active.to);
+        else parkForLookingAround(controls, active.to);
+      }
     }
   }, -2);
 

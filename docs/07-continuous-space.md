@@ -1213,6 +1213,36 @@ can turn it with one finger, can open a project or tech node and get its
 shell, and the four smaller items above are fixed. Then the 2.8 list: 30fps on
 a mid-range phone, every route at 360, 768, 1024, 1440 and 844×390.
 
+**As built (2026-09-10).** `standsOutside(width, height)` in
+`lib/device-tier.ts` is the rule: under 768 wide *and* taller than wide.
+`OUTSIDE_DISTANCE` in the rig is one number, 50.4 units — the bounding
+radius over 0.42 of the frame's half-height — because the lens is vertical,
+so a distance fixes the ball's share of the *height* whatever the width, and
+the pose does not move when a phone browser's address bar changes the
+height. The flight in is the same dive, generalised: its glide onto the axis
+now finishes by the inner endpoint's distance rather than a fixed fraction
+of the outer one (`divePose`), so it lands on the axis at 50 as it did at 0.
+Traced at 390×844: 118.7 to 52.9 in 3.2s, passing the page at 14 units
+lateral, glide complete, no jump. Opening a node stops on the **outer** side
+of it (`focusPose(…, "outer")`); closing backs out along the same radial so
+the node is centred (`outsidePoseFacing`). The drag orbits the origin with
+the radius pinned (`parkForOrbiting`), where the interior pins a 0.1-unit
+pivot ahead of the camera. Leaving from outside takes the approach path, not
+the pass dive, because after a drag the camera is anywhere on the standing
+sphere and the pass schedule is written against the axis; that route goes
+*through* the page on a phone (the hero is full-width there), which the plane
+handles as a wash — judged in the harness only, see below. A viewport
+crossing the inside/outside line while on the graph cuts to the other pose.
+
+Also done in the same pass: tech nodes on every tier; the landing cluster
+drops below the text on every stacked layout (it keyed off a width cap no
+phone reached); the compact panel is 80% rather than 85% so the opened shell
+clears the corner links; the landscape hero's links get 16px of air.
+
+**Not judged yet:** how the outbound wash through the page feels on a real
+phone, the tap targets on ~10-15px nodes, and whether the panel wants the
+edge layer dimmed behind it — from outside, the whole graph is the backdrop.
+
 ## Open decisions
 
 - ~~**What the stand-in contains.**~~ Settled: the wordmark, the role line, the
