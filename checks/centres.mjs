@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-const slugs = ['station-supervisor','machine-client','flying-probe-dashboard','sonder-barber','vgclite','thai-ginger','this-site'];
+const slugs = ['station-supervisor','machine-client','flying-probe-dashboard','sonder-barber','vgclite','thai-ginger','personal-portfolio'];
 const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
 for (const slug of slugs) {

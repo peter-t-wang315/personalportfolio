@@ -15,15 +15,17 @@ import { nodeGeometry } from "@/lib/node-geometry";
 import { getLivePosition, neighborsOf } from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
-  CLUSTER_BOUNDING_RADIUS,
-  CLUSTER_DEPTH,
   CLUSTER_PARALLAX_MAX_PX,
-  HOME_CAMERA_FOV,
-  HOME_CAMERA_POSITION,
   clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
 } from "@/lib/cluster-geometry";
+import {
+  LANDING_SCALE,
+  LANDING_STANDING_DISTANCE,
+  REFERENCE_DISTANCE,
+  STANDING_FOV,
+} from "@/lib/world-scale";
 import {
   approachEase,
   FLIGHT_DURATION_MS,
@@ -37,6 +39,7 @@ import {
 } from "./nebula-flight";
 import { NebulaHome } from "./nebula-home";
 import { getPlacement, setPlacement } from "./nebula-placement";
+import { publishCameraProbe } from "./nebula-probe";
 import {
   getDragAngles,
   isDragging,
@@ -64,23 +67,6 @@ import {
  * then a short flight from wherever that cut had landed. The persistent canvas
  * was preserving a WebGL context and nothing else.
  */
-
-/**
- * Shrinks the constellation to exactly the footprint the landing page's
- * cluster has always occupied — `CLUSTER_BOUNDING_RADIUS` at `CLUSTER_DEPTH`.
- *
- * Matching that footprint rather than picking a pleasing size is what keeps
- * `lib/cluster-geometry.ts` true. Every DOM overlay on the landing page (the
- * affordance's hover circle, the idle pulse ring, the phrase label's
- * placement solve) is measured in pixels from those constants, so as long as
- * what's drawn projects to the same pixels, none of that arithmetic has to
- * know the geometry underneath it changed at all.
- *
- * The node sizes fall out of it and confirm the fit: a major project node
- * lands at 0.16 world units here, a standard at 0.12, against the 0.12-0.22
- * range the decorative spheres this replaces were drawn at.
- */
-const LANDING_SCALE = CLUSTER_BOUNDING_RADIUS / CONSTELLATION_BOUNDING_RADIUS;
 
 /** Dimming applied off `/`, where the constellation is ambient rather than
  * the subject — see 04-phase-1.md. Opacity's half of this lives in
@@ -130,28 +116,6 @@ const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
  * text column by a real margin rather than growing across it.
  */
 const SPOTLIGHT_ZOOM = 1.32;
-
-/**
- * The distance every size rule in lib/cluster-geometry.ts is written against:
- * the landing camera's 9 units to the origin plus the 14 the cluster used to be
- * pushed back. Those rules produce a *size on screen*; the standing camera's
- * distance is this divided by that size. See 07-continuous-space.md, Part 3 —
- * a group scaled by `s` at that depth and a life-size graph at `23 / s` project
- * identically, which is what lets the composition be reproduced to the pixel.
- */
-const REFERENCE_DISTANCE = HOME_CAMERA_POSITION[2] - CLUSTER_DEPTH;
-
-/**
- * The field of view the camera stands at off `/nebula`. The same 45 the size
- * rules in lib/cluster-geometry.ts are written against, which is what makes
- * REFERENCE_DISTANCE / sizeFactor the distance that reproduces them.
- *
- * It is the dial the "further away from both, still well framed" ask turns:
- * narrowing it and multiplying every standing distance by the same factor
- * leaves the composition untouched and flattens the perspective. See
- * 07-continuous-space.md.
- */
-const STANDING_FOV = HOME_CAMERA_FOV;
 
 /**
  * The orientation that turns a project's cluster to face the reader.
@@ -268,58 +232,136 @@ const _rollQuat = new THREE.Quaternion();
 
 
 /**
- * Elevated, near-top-down heading, tilted slightly off pure vertical.
- * Cluster.order maps monotonically onto Y in layout.ts's Fibonacci sphere,
- * so "front hemisphere" for the low-order SEL clusters means looking down
- * from above, not straight ahead along Z. A pure top-down heading was tried
- * first and rejected: solder and personal sit at opposite Y poles but
- * nearly identical X/Z, so they collided in screen space (~3.6 units apart
- * vs. ~8 achievable elsewhere). This heading was chosen by searching
- * viewing directions for one that keeps all four SEL centroids comfortably
- * front-facing while maximizing the closest pairwise screen-space distance
- * between all seven cluster centroids — verified against the actual
- * computed layout, not eyeballed.
+ * **Where the reader stands inside the graph, in the graph's own space —
+ * measured, and re-measured once there was an instrument for it.**
  *
- * Scaled with the shell when it shrank from 16 to 11 (content/layout.ts), so
- * the framing it was tuned for is preserved: same heading, same fraction of
- * the viewport, 28.9 units from its target instead of 41.2.
+ * This used to be derived: an outside camera position left over from the
+ * framing `/nebula` had before it moved indoors, reversed through the centre
+ * at half the shell radius and tilted 12 degrees off whichever node happened
+ * to be on the axis. Every step of that derivation was defensible when it was
+ * written and none of it was ever checked against the thing it produced.
  *
- * No route stands here any more — `/nebula` is entered from the inside. It
- * survives because the inside pose is defined by reversing it, and because
- * `/work/[slug]` is going to want the globe from outside with the relevant
- * cluster turned to face the reader. Its field of view was 50, which is what
- * FOCUS_CAMERA_FOV is set to below.
+ * Checked, it produced a wall. At the pose it gave, **not one node was within
+ * 10 units**: the nearest was 11.3 away and the furthest 14.6, so all eighteen
+ * nodes in frame sat in a shell of one depth, 3.3 units thick, across an empty
+ * middle. That is a backdrop, not a room — nothing near enough to pass,
+ * nothing far enough to recede, and no parallax between them when the reader
+ * drags. It is why arriving read as stopping in front of the graph rather than
+ * inside it.
+ *
+ * Two things were wrong with the derivation, and they compounded.
+ *
+ * **`INSIDE_DISTANCE` was measured from the pose's target, not from the
+ * graph.** The target is `(0, 2.5, 0)`, so "5.5 units out" put the camera 3.20
+ * units from the centre — the same class of mistake Part 3 step 2 found in the
+ * departure path, one layer up. The reader was very nearly at the middle of
+ * the shell, which is the one place the composition notes explicitly rule out.
+ *
+ * **Looking back through the centre can only ever show the far wall.** From
+ * anywhere inside, the near hemisphere is behind you by construction, so a
+ * heading through the middle guarantees everything in frame is at least
+ * `R − d` away and everything nearby is out of shot. No amount of tilt fixes
+ * that; it is what "through the centre" means.
+ *
+ * So both were searched instead, over standing points on shells from 7.5 to 9
+ * units and headings over the whole sphere, scored on nodes in frame, nodes
+ * within 10 units, total apparent area, how they spread across the frame, and
+ * how they hold up at six viewports. Constrained so that no node sits within 6
+ * degrees of the view axis — the thing the old tilt existed to avoid, since
+ * arriving pointed at one project reads as a focus nobody asked for — and none
+ * is closer than 4.5 units.
+ *
+ * The search has run three times, and the third run is the one to read: the
+ * first two optimised the wrong thing.
+ *
+ * **Runs one and two maximised what was in frame, and put the reader against a
+ * wall.** They landed on a standing point 9 units out, two from the shell, and
+ * by their own metrics that was excellent — 21 nodes in frame, ten of them
+ * projects, twice the apparent area of the derived pose it replaced. It was
+ * also wrong in a way none of those numbers could see, because every one of
+ * them measures the frame and the complaint was about the room:
+ *
+ * | | 9 units out | 5.5 units out |
+ * | --- | --- | --- |
+ * | nearest node in any direction | 2.85 | 5.6 |
+ * | furthest | 20.62 | 16.8 |
+ * | **ratio — 1 would be perfectly enclosed** | **7.2** | **3.0** |
+ * | nodes in frame | 21 | 24 |
+ * | **production projects in frame** | **4** | **8** |
+ * | fewest in frame across six viewports | 9 | 11 |
+ * | apparent area | 55 | 36 |
+ * | **apparent growth across the flight** | **5.3x** | **8.7x**
+ *
+ * Standing 9 units out on a shell of 11 is standing *at* the wall: something is
+ * two units from your face and the far side is twenty, and six nodes out of
+ * fifty-one ever got past you. That is a doorway, not a middle. And because the
+ * journey ended at 9 rather than 5.5, it covered less of the distance that was
+ * left — the graph grew 5.3x across the whole approach where it now grows 8.7x.
+ *
+ * **The two complaints turned out to be one fact.** "We barely flew anywhere"
+ * and "we are not in the centre of it" are the same measurement read twice:
+ * stopping early leaves you off-centre *and* shortens the flight, because the
+ * part of the journey you skipped is the part where the graph is closest and
+ * changing fastest. Half the constellation passing behind the camera is what
+ * flying into something is; six nodes is arriving at its edge.
+ *
+ * **What it costs, stated plainly, because it is a real trade.** Enclosure and
+ * presence pull against each other on a hollow shell: from the exact centre
+ * every node is 11 units away and nothing varies, which is the flat wall the
+ * first run existed to fix. Moving in from 9 to 5.5 gives some of that back —
+ * the nearest node in frame is 9.1 rather than 7.3, front-to-back depth is 7.6
+ * rather than 11.7, and total apparent area is 36 against 55. Everything is a
+ * little further off and a little flatter.
+ *
+ * **And a fourth run was needed, because "projects in frame" was the wrong
+ * count.** The third run landed on a pose with eight projects in shot and
+ * *one* of them production work: it faced the personal cluster, so the first
+ * thing a visitor saw on arriving was Thai Ginger and a Pokemon team builder.
+ * The site's entire argument is that one region of this graph is a truthful
+ * architecture diagram of software that runs a factory, and the arrival was
+ * pointed away from it. Scoring the SEL clusters specifically — through-hole,
+ * solder, maintenance, tools — rather than projects generally fixed it: all
+ * eight projects in frame are production work now, against four at 9 units.
+ * The node count went *up* at the same time, 21 to 24, and the worst viewport
+ * went from 9 nodes to 11, so this cost nothing to buy.
+ *
+ * 5.5 is the knee rather than a preference. At 3 the numbers collapse back to
+ * the original derived pose's — nearest 11.4, depth 3.3, nothing near at all —
+ * because the middle of a shell is where everything is equidistant. At 9 you
+ * are against the wall. Between 4.5 and 6.5 the measures move slowly and 5.5
+ * holds the most projects in frame while keeping the ratio under 3.
+ *
+ * The constraints the search ran under: no node within 6 degrees of the view
+ * axis, so the arrival is not pointed at one project; at least five nodes
+ * inside 11 units and at least eight projects in frame; the frame's centroid
+ * within 0.14 of centre; and at least 8 nodes at every one of six viewports.
  */
-const CONSTELLATION_CAMERA_POSITION: [number, number, number] = [8.4, 30.1, -2.2];
-
+const INTERIOR_STANDING_POINT = new THREE.Vector3(2.33, -4.637, 1.822);
 
 /**
- * Aimed slightly above the origin: the oblique heading projects the nearest
- * (solder) cluster high in the frame, and the sticky header eats the top
- * ~62px, so aiming at y=0 left the constellation riding up under the header
- * and off-center. Raising the target pushes the whole composition down into
- * the usable area.
+ * Which way the reader faces on arrival, in the graph's own space.
+ *
+ * Not through the centre — see above. It crosses the interior obliquely, so
+ * the near shell runs down one side of the frame and the far shell fills the
+ * rest, which is what puts nine nodes inside 10 units while still leaving
+ * nineteen in shot.
  */
-const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
+const INTERIOR_HEADING = new THREE.Vector3(-0.195, 0.927, 0.321).normalize();
 
 /**
- * `/nebula`'s resting pose: **inside the globe**, looking across the middle.
+ * How far the pose's target sits ahead of the camera on the interior poses.
  *
- * Three numbers, each measured rather than chosen.
- *
- * **Not at the centre.** From dead centre every node is the same distance
- * away, so nothing varies in size and fog has nothing to grade; worse, a 50
- * degree frame there covers 8.1% of the sphere's solid angle, and sampling 400
- * headings against the real layout put the tenth percentile at *zero nodes in
- * frame*. Half the shell radius out, looking back through the centre at the
- * far side, the same sampling never drops below eleven and averages sixteen.
- *
- * **Opposite the front hemisphere.** The heading is the outside pose's,
- * reversed: the composition puts the SEL clusters on the side the outside
- * camera faces, so to look at them from within you have to stand on the other
- * side of the middle. camera-controls orbits about the target, so dragging
- * sweeps the far surface past you and the near shell swings in behind.
- *
+ * Not a distance from anything, and named carefully because its predecessor
+ * was not: the reader stands still inside the graph and the pivot ends up
+ * `LOOK_DISTANCE` ahead of them anyway (parkForLookingAround). This is only
+ * the radius a flight interpolates its heading against, and it wants to be
+ * about the size of the room rather than a tenth of a unit — see
+ * approachLerpPose on what happens when a pose's target is mistaken for the
+ * graph.
+ */
+const INSIDE_DISTANCE = 9;
+
+/**
  * **Wide, but not a fisheye.** Field of view is the only lever that changes
  * *how many* nodes are in frame — shrinking the shell makes each one bigger
  * but moves none of them into view, since angular position does not care about
@@ -331,8 +373,11 @@ const CONSTELLATION_CAMERA_TARGET: [number, number, number] = [0, 2.5, 0];
  * at that width the spheres near the frame edge stretch into obvious ellipses.
  * 72 is about 99 horizontal — wide enough to read as being surrounded, inside
  * the range where a sphere still looks like one.
+ *
+ * Unlike STANDING_FOV this is **not** a dial. The interior composition was
+ * searched against it and home's apparent size from inside is held against it
+ * (lib/world-scale.ts), so moving it moves two compositions at once.
  */
-const INSIDE_DISTANCE = 5.5;
 const INSIDE_CAMERA_FOV = 72;
 
 /**
@@ -354,74 +399,43 @@ const INSIDE_CAMERA_FOV = 72;
 const LOOK_DISTANCE = 0.1;
 
 /**
- * How far the interior heading tilts up off the composed one, in degrees.
- *
- * The composed heading looks straight through the graph's centre, and a node
- * sits on that line: measured, `solder-driver` was 2.26 degrees off the view
- * axis at rest, which at a 72-degree field of view is dead centre. Arriving
- * therefore looked like flying *at* that project rather than into the graph —
- * a hard focus nobody asked for, on whichever node happened to be on the axis.
- *
- * A tilt is the cheapest fix that keeps the composition: azimuth is untouched,
- * so the clusters stay arranged left-to-right exactly as they were, and only
- * the horizon moves. Searched over headings within 12 degrees of the composed
- * one, the graph is dense enough that no small move buys much room — 2 degrees
- * of tilt buys a 4.2-degree gap, 5 buys 7.1, and 12 buys only 12.8. Twelve is
- * the whole of what is available: it puts the nearest node 95px off centre at
- * 1280x800 and 125px at 1440x900, which reads as *a* node rather than as *the*
- * subject. Eight was tried first and left it 70px out, still close enough to
- * look chosen.
- *
- * The cost is a slightly emptier lower frame, since tilting off a node
- * necessarily leaves room on the side you tilted away from. That is the trade:
- * a composition with a gap in it, against one that appears to have picked a
- * favourite project.
- */
-const INTERIOR_TILT_DEGREES = 12;
-
-/**
  * **The orientation the graph turns to as the reader arrives, and the reason
  * the arrival is a straight line.**
  *
  * `/` and `/nebula` want different faces of the constellation toward the
  * camera, so between them *something* has to rotate. It used to be the camera:
- * the interior heading was an oblique direction chosen against the layout, so
+ * the interior heading is an oblique direction chosen against the layout, so
  * flying in swung the view about 111 degrees and the reader ended up looking
- * upward relative to where they had started. That reads as being carried
- * around a corner, and it makes flying *past* anything impossible, which Part
- * 4 needs.
+ * somewhere quite different from where they had started. That reads as being
+ * carried around a corner, and it makes flying *past* anything impossible,
+ * which Part 4 needs.
  *
- * So the graph turns instead. This is the rotation that carries the composed
- * interior heading onto straight down −z, which is where the standing camera
+ * So the graph turns instead. This is the rotation that carries
+ * INTERIOR_HEADING onto straight down −z, which is where the standing camera
  * already looks — so the camera keeps one heading for the whole journey and
  * only travels. The picture at either end is identical; a rigid rotation of
  * the world and the camera together cannot change what is rendered, which is
  * what the pixel gate checks.
  *
- * The unwind in ConstellationOrientation already interpolated toward this
- * value; it was the identity, so the graph stood still and the camera did the
- * turning. Making it the rotation moves the turn from one to the other and
- * nothing else.
+ * The unwind in ConstellationOrientation interpolates toward this value, so
+ * whatever a work page had turned the globe to is exactly undone by the time
+ * the reader is inside. That is what makes arriving through a turned work page
+ * identical to arriving directly, and it holds for any orientation this is.
  */
 const NEBULA_BASE_ROTATION = (() => {
-  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
-  const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
-    .sub(target)
-    .normalize();
-  const position = target.clone().addScaledVector(outward, -INSIDE_DISTANCE);
-  const heading = target.clone().sub(position).normalize();
-  const right = new THREE.Vector3()
-    .crossVectors(heading, Math.abs(heading.y) > 0.9 ? _tiltFallbackUp : LAYOUT_UP)
-    .normalize();
-  heading.applyAxisAngle(right, (INTERIOR_TILT_DEGREES * Math.PI) / 180);
   // A camera, not a plain Object3D. `lookAt` points an object's +z at its
   // target but a camera's −z, and three special-cases that on `isCamera` — so
   // deriving this from an Object3D gives an orientation flipped 180 degrees
   // and the interior composition comes out inside-out. Measured that way, all
   // of /nebula changed at every viewport.
   const look = new THREE.PerspectiveCamera();
-  look.position.copy(position);
-  look.lookAt(position.clone().addScaledVector(heading, INSIDE_DISTANCE));
+  look.position.copy(INTERIOR_STANDING_POINT);
+  look.lookAt(
+    INTERIOR_STANDING_POINT.clone().addScaledVector(
+      INTERIOR_HEADING,
+      INSIDE_DISTANCE,
+    ),
+  );
   return look.quaternion.clone().invert();
 })();
 
@@ -432,14 +446,9 @@ const INSIDE_POSE: CameraPose = (() => {
   // graph and the camera by the same amount leaves the view untouched, so this
   // is the same place in the shell as before — it simply now has the reader
   // facing −z, like every other route.
-  const target = new THREE.Vector3(...CONSTELLATION_CAMERA_TARGET);
-  const outward = new THREE.Vector3(...CONSTELLATION_CAMERA_POSITION)
-    .sub(target)
-    .normalize();
-  const position = target
-    .clone()
-    .addScaledVector(outward, -INSIDE_DISTANCE)
-    .applyQuaternion(NEBULA_BASE_ROTATION);
+  const position = INTERIOR_STANDING_POINT.clone().applyQuaternion(
+    NEBULA_BASE_ROTATION,
+  );
   return {
     position,
     target: position.clone().addScaledVector(FORWARD, INSIDE_DISTANCE),
@@ -1050,6 +1059,50 @@ function CameraRig({
     return { position: pose.position.clone(), target: pose.target.clone() };
   }
 
+  /**
+   * **How much of the departure passes before the page you are arriving at
+   * shows up.**
+   *
+   * Leaving the graph is the one flight whose destination is a document, and
+   * the document used to win: measured, the landing page painted at full
+   * opacity 190ms after the click, and the remaining 1.9 seconds of retreat
+   * played out behind a page that had already finished arriving. The flight
+   * was there the whole time — 44%, 70% and 91% of the way out at each
+   * quarter, exactly as specified — and nothing was ever looking at it.
+   *
+   * At 0.55 the reveal starts at 1100ms and its 620ms fade completes at
+   * 1720ms, comfortably before the camera settles at 2000ms. So the retreat
+   * has the frame to itself while it is worth watching, and the page is
+   * finished and readable by the time the camera stops rather than beginning
+   * to appear then. The alternative — waiting for the landing and fading
+   * afterwards — makes the journey 2620ms and puts a pause in the middle of
+   * it.
+   *
+   * Driven off the flight's own progress rather than a `setTimeout`, for the
+   * reason the flight's `delay` is a hold rather than a timer: it cannot race
+   * a route change, and it cannot desync from a flight that was interrupted.
+   */
+  const ARRIVAL_REVEAL_AT = 0.55;
+
+  /**
+   * Let the page the reader is flying to appear.
+   *
+   * `route-curtain.tsx` raises `data-arriving` on `<html>` when a navigation
+   * leaves the graph, before the browser can paint the destination; this is the
+   * other edge of it. Written to the document rather than the store because it
+   * is read by CSS and changes in the middle of a frame loop — a `set` here
+   * would re-render every subscriber of the store to schedule a transition.
+   * The cursor layer writes to the same element for the same reason.
+   */
+  function revealDocument() {
+    if (typeof document === "undefined") return;
+    // Guarded because the frame loop asks every frame once a departure is past
+    // its reveal point, and `delete` on <html> is a real DOM write that would
+    // otherwise happen sixty times a second for the rest of the flight.
+    if (document.documentElement.dataset.arriving === undefined) return;
+    delete document.documentElement.dataset.arriving;
+  }
+
   function begin(controls: CameraControlsImpl, next: Flight) {
     flight = next;
     applyPose(controls, next.from);
@@ -1070,6 +1123,11 @@ function CameraRig({
     { free, at }: { free: boolean; at: number },
   ) {
     flight = null;
+    // Any settle is an end to travelling, however it was reached — a cold
+    // mount, a reduced-motion cut, or a route change that overtook a flight.
+    // Clearing it here rather than only on completion is what stops an
+    // interrupted departure leaving the document permanently invisible.
+    revealDocument();
     setPlacement(at);
     applyPose(controls, pose);
     applyFov(controls, fov);
@@ -1292,6 +1350,7 @@ function CameraRig({
 
     const t = flightProgress(active);
     const eased = (active.ease ?? flightEase)(t);
+    if (active.placementTo === 0 && t >= ARRIVAL_REVEAL_AT) revealDocument();
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );
@@ -1307,6 +1366,7 @@ function CameraRig({
 
     if (t >= 1) {
       flight = null;
+      revealDocument();
       setPlacement(active.placementTo);
       useSceneStore.getState().setFlying(false);
       useSceneStore.getState().setTravellingBetween(null);
@@ -1322,6 +1382,18 @@ function CameraRig({
       if (!free) parkForLookingAround(controls, active.to);
     }
   }, -2);
+
+  // Default priority, so it runs *after* camera-controls' own -1 update and
+  // reports the pose that was actually rendered rather than the one the rig
+  // asked for. Positive priority would disable r3f's automatic render.
+  useFrame(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    publishCameraProbe(
+      controls.camera as THREE.PerspectiveCamera,
+      flight !== null,
+    );
+  });
 
   return (
     // The dolly clamps are deliberately **not** props. They are state a flight
@@ -1391,7 +1463,13 @@ export function NebulaCanvas() {
       className="!fixed inset-0 z-0"
       gl={{ alpha: true }}
       dpr={[1, 2]}
-      camera={{ position: HOME_CAMERA_POSITION, fov: HOME_CAMERA_FOV }}
+      // The rig writes the real pose before the first render, so this is only
+      // ever the value one frame could be composed against — but it was still
+      // `HOME_CAMERA_POSITION`, nine units from a graph that has been life-size
+      // at the origin since Part 3, which is *inside the shell*. The standing
+      // lens and the landing distance, so the fallback is the composition
+      // rather than a leftover of the projection it is written against.
+      camera={{ position: [0, 0, LANDING_STANDING_DISTANCE], fov: STANDING_FOV }}
     >
       {/* Scene-level, and outside the constellation's group on purpose:
           `attach="fog"` writes to its parent's `fog` property, which on a

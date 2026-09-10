@@ -22,7 +22,8 @@ export const metadata: Metadata = {
 const skillOrder = [
   "csharp", "typescript", "python", "rust", "sql",
   "react", "nextjs", "redux", "jotai", "blazor", "tailwind",
-  "rabbitmq", "rest", "ipc-cfx", "smema", "tcp",
+  "mui", "mudblazor", "tanstack-query", "react-router", "threejs",
+  "rabbitmq", "rest", "mqtt", "ipc-cfx", "smema", "tcp",
   "docker", "kubernetes", "helm", "jenkins",
   "lambda", "dynamodb", "azure", "splunk", "django",
 ];
@@ -52,7 +53,6 @@ const alsoFamiliarWith = [
   "SQL Server and stored procedures",
   "xUnit",
   "LaTeX",
-  "Material UI",
   "Radix UI",
   "WPF",
 ];

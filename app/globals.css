@@ -233,3 +233,91 @@ html.nebula-affordance-armed h1 {
 .group:focus-visible .link-underline::after {
   width: 100%;
 }
+
+/*
+ * **The page you are flying back to, held until the flight is nearly over.**
+ *
+ * Leaving `/nebula` is a 2000ms retreat out of the shell to the landing
+ * page's standing point, and it was invisible. Measured, the destination
+ * painted at full opacity 190ms after the click and the remaining 1.9
+ * seconds of camera travel played out behind a finished page — which is
+ * exactly what "it doesn't have a real animation" describes. The flight was
+ * always there; nothing was ever looking at it.
+ *
+ * So `<html>` carries `data-arriving` for the first part of the departure
+ * (route-curtain.tsx raises it before the destination can paint,
+ * nebula-canvas.tsx drops it partway through the flight, so it cannot desync
+ * from the flight's own clock) and the document waits behind it. What you
+ * watch instead is the thing that is actually happening: the shell falling
+ * away, the graph shrinking to the cluster beside the hero.
+ *
+ * **Everything except the canvas**, not just `<main>`. The first version held
+ * the document and left the affordance alone, and the affordance is a set of
+ * `fixed` siblings of `<main>` — so the landing page's idle pulse ring hung
+ * in an otherwise empty frame for a second, a ring around a graph that had
+ * not arrived yet. `body > *:not(:has(canvas))` is the same selector
+ * `checks/baseline.mjs` uses to isolate the scene, for the same reason.
+ * Where `:has()` is not supported the rule is dropped whole and the page
+ * simply appears immediately, which is the behaviour this replaces.
+ *
+ * Opacity and a small lift, not `display` or `visibility`: the DOM stays laid
+ * out, focusable and measured throughout, so nothing reflows when it appears
+ * and the scroll position it restores is the right one. Server-side the
+ * attribute is never set, so a cold load — and every crawler — gets the page
+ * at full opacity with no transition to wait on.
+ */
+body > *:not(:has(canvas)) {
+  opacity: 1;
+  transition: opacity 620ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* The lift is only for the document itself. Putting a transform on the fixed
+   overlays would make them the containing block for their own fixed
+   descendants for the length of the transition, which moves things that are
+   supposed to be pinned to the viewport. */
+body > main,
+body > header {
+  transform: none;
+  transition:
+    opacity 620ms cubic-bezier(0.32, 0.72, 0, 1),
+    transform 620ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html[data-arriving] body > *:not(:has(canvas)) {
+  /* `!important` because the affordance's pulse ring animates its own
+     opacity, and a running animation outranks a plain declaration in the
+     cascade — measured, it sat at 0.018 and rising through the whole hold,
+     a ring drawn around a graph that had not arrived yet. This is the one
+     place the flag is right: it is a hold, not a preference, and it comes
+     off the moment the attribute does. */
+  opacity: 0 !important;
+  /* Going *out* is instant: the page is gone the moment the camera starts
+     moving, so there is no cross-fade between a page and a flight. Only the
+     return is eased. */
+  transition: none;
+}
+
+html[data-arriving] body > main,
+html[data-arriving] body > header {
+  transform: translateY(10px);
+}
+
+/*
+ * The whole effect is motion, so reduced motion has nothing to keep. Flights
+ * are already cuts there (01-design-system.md), which means the attribute is
+ * never raised in the first place — this is belt and braces for the case where
+ * the preference changes mid-flight.
+ */
+@media (prefers-reduced-motion: reduce) {
+  body > *:not(:has(canvas)),
+  html[data-arriving] body > *:not(:has(canvas)) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  /* Overriding the hold's own `!important` takes one of its own. */
+  html[data-arriving] body > *:not(:has(canvas)) {
+    opacity: 1 !important;
+  }
+}

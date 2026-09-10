@@ -197,6 +197,69 @@ const _lookFrom = new THREE.Vector3();
 const _lookTo = new THREE.Vector3();
 
 /**
+ * **How the direction half of the journey is spent: by proximity, not by time.**
+ *
+ * The camera's distance from the graph and its direction *around* the graph are
+ * two separate interpolations, and running both on the same clock is what made
+ * the arrival read as off-centre. Measured at 1440x900, the constellation's
+ * on-screen centroid climbed 206px in the first fifth of the flight and then
+ * came back down — a vertical excursion 262px off the direct path between where
+ * it starts and where it ends. It arrives in the right place; it takes a detour
+ * to get there, and the detour is what you see.
+ *
+ * The cause is a mismatch of rates. Distance collapses fast and early — 47 of
+ * the 131 units are gone in the first fifth — while a lateral offset's effect
+ * on screen goes as `offset / (distance * tan(fov/2))`. So the same few degrees
+ * of arc that are invisible at 131 units throw the graph across the frame at
+ * 20. Spending the arc evenly in time spends most of it while it is still
+ * cheap to see, and none of it when it matters.
+ *
+ * So the arc is spent as a function of **distance alone**: `d^-3`, normalised
+ * over the journey. One expression, and it is automatically right in both
+ * directions — going in, `d^-3` barely moves until the camera is close, so the
+ * graph grows in place and only swings as the shell arrives; coming out, the
+ * same function front-loads, so the camera slides to its heading while it is
+ * still inside and then simply recedes. "Do the turning while you are close to
+ * the thing you are turning around" is the rule, and distance is the only
+ * quantity that has to be consulted to obey it.
+ *
+ * That symmetry is the reason to prefer it over tuning the two journeys apart.
+ * Measured against the same centroid excursion, weighting by eased time gives
+ * 262px in and 270px out; weighting by proximity gives 56px in and 58px out.
+ * The two directions land within two pixels of each other at every exponent
+ * tried, which is what a rule looks like as opposed to a pair of fixes.
+ *
+ * The exponent itself is fitted rather than derived: 1 gives 162px, 2 gives 84,
+ * 3 gives 56, 4 gives 39. It is 3 because 4 buys 17px at the cost of finishing
+ * the whole arc inside the last tenth of the approach, and an arc that
+ * completes in 200ms is a flick rather than a move. Re-measure with
+ * `checks/flightpath.mjs` before changing it.
+ */
+const DIRECTION_PROXIMITY_POWER = 3;
+
+/**
+ * Where the direction interpolation has got to, given how far out the camera
+ * currently is. 0 at the start of the journey, 1 at the end.
+ */
+function directionProgress(
+  distance: number,
+  fromLen: number,
+  toLen: number,
+  fallback: number,
+) {
+  const h = (d: number) => Math.pow(d, -DIRECTION_PROXIMITY_POWER);
+  const h0 = h(fromLen);
+  const h1 = h(toLen);
+  // A journey that does not change distance has no proximity to spend the arc
+  // against. Nothing in the product does this, but a division by zero here
+  // would be a camera at NaN, which renders as a blank canvas and no error.
+  if (!Number.isFinite(h0) || !Number.isFinite(h1) || Math.abs(h1 - h0) < 1e-12) {
+    return fallback;
+  }
+  return THREE.MathUtils.clamp((h(distance) - h0) / (h1 - h0), 0, 1);
+}
+
+/**
  * Interpolation for the journey between the landing page and the graph.
  *
  * Everything here is measured from the **graph's centre**, which is the only
@@ -217,11 +280,14 @@ const _lookTo = new THREE.Vector3();
  * like — and it is monotonic by construction, so the graph only ever grows on
  * the way in and only ever shrinks on the way out.
  *
- * Direction and heading are slerped separately: where the camera is around the
- * graph, and where it is pointing. On the arrival the heading is already
- * constant — the graph turns instead of the camera (nebula-canvas.tsx) — so
- * that term does nothing and the flight is a straight run. Leaving a node it
- * carries the turn off the node's surface.
+ * Direction and heading are slerped separately from the distance, and on a
+ * different clock: both are spent against **proximity** rather than time, so
+ * the arc happens while the camera is close enough for it to be the move it
+ * looks like. See DIRECTION_PROXIMITY_POWER for what that fixes and how it was
+ * measured. On the arrival the heading is already constant — the graph turns
+ * instead of the camera (nebula-canvas.tsx) — so that term does nothing and the
+ * flight is a straight run. Leaving a node it carries the turn off the node's
+ * surface.
  */
 export function approachLerpPose(
   from: CameraPose,
@@ -235,24 +301,31 @@ export function approachLerpPose(
       ? fromLen * Math.pow(toLen / fromLen, t)
       : THREE.MathUtils.lerp(fromLen, toLen, t);
 
+  // Distance is spent in time; direction is spent in proximity. See
+  // DIRECTION_PROXIMITY_POWER — this split is the whole of it.
+  const dirT = directionProgress(distance, fromLen, toLen, t);
+
   // Where the camera sits around the graph.
   _fromDir.copy(from.position);
   _toDir.copy(to.position);
   const position =
     fromLen > 1e-3 && toLen > 1e-3
-      ? slerpDirection(_fromDir.divideScalar(fromLen), _toDir.divideScalar(toLen), t)
+      ? slerpDirection(_fromDir.divideScalar(fromLen), _toDir.divideScalar(toLen), dirT)
           .multiplyScalar(distance)
       : from.position.clone().lerp(to.position, t);
 
   // Where it points, and how far ahead its pivot sits — the second only so
-  // camera-controls has a sane radius to hand over to on arrival.
+  // camera-controls has a sane radius to hand over to on arrival. The heading
+  // is a direction too, so it goes on the same clock: leaving an open node, the
+  // camera turns off the node's surface while it is still against it rather
+  // than halfway back to the landing page.
   _lookFrom.copy(from.target).sub(from.position);
   _lookTo.copy(to.target).sub(to.position);
   const lookLen = THREE.MathUtils.lerp(_lookFrom.length(), _lookTo.length(), t);
   const heading = slerpDirection(
     _lookFrom.normalize(),
     _lookTo.normalize(),
-    t,
+    dirT,
   );
 
   return {

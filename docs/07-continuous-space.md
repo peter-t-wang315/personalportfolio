@@ -430,23 +430,362 @@ physically coherent — the graph really is further — and it reads as softer
 rather than absent. But it is a new relationship between viewport width and
 atmosphere, and it did not exist when width only changed a scale factor.
 
-## Where "further from both" now lives
+## Where "further from both" now lives — **turned**
 
 `STANDING_FOV` is the whole dial, and it is one constant. Narrowing it and
 scaling `REFERENCE_DISTANCE` by the same `tan(θ/2)` ratio moves every standing
 camera further out while the graph occupies exactly the same fraction of the
 frame — the composition untouched, the perspective flattened, and the fog given
-more depth to work across. At 30° the landing camera stands about 130 units out
-instead of 84. Not turned yet: it is a taste decision about how the landing
-page should feel, and it wants eyes rather than arithmetic.
+more depth to work across.
+
+**It is at 30° now, and the landing camera stands 129.5 units out instead of
+83.8.** Measured on the pixel gate, the landing graph's on-screen extent went
+from 262×264 px to 243×266 and its centre moved 7 px — which is the equivalence
+holding, not a coincidence: the width lost is fog eating the faintest outer
+nodes, and the height, which the fog barely touches, is unchanged to two
+pixels. `/work/[slug]` holds the same way, 349×272 to 346×262 with its centre
+one pixel off.
+
+**Turning it exposed the thing the dial was really for, which was not the
+perspective.** `STANDING_FOV` was aliased to `HOME_CAMERA_FOV` — the *reference*
+projection every size rule in `lib/cluster-geometry.ts` is written against —
+so narrowing it would have quietly broken the equivalence Part 3 rests on
+rather than exercising it. The two are separate constants now, and
+`pxPerWorldUnitFor` keeps the reference projection because that is what it is
+for.
+
+**Everything downstream of the dial is derived rather than written down.** This
+is the Part 1 lesson applied before it could happen a second time. The fog band
+had been inert for months because it was measured correctly once and then left
+next to a camera that moved; Part 3 step 4 re-measured it by hand and wrote
+down 55–210, which was correct and was also a *second copy of the camera's
+numbers waiting to go stale*. It would have gone stale immediately: at 130 units
+the old band leaves the graph two thirds faded. So `lib/world-scale.ts` now owns
+the dial and derives the band, home's distance and home's size from it, and each
+formula reproduces the hand-tuned number it replaces when the dial is back at 45:
+
+| | at 45° | at 30° | reproduces |
+| --- | --- | --- | --- |
+| `REFERENCE_DISTANCE` | 23.0 | 35.6 | Part 3's 23 |
+| landing camera | 83.8 | 129.5 | Part 3 step 1's 83.8 |
+| fog band | 55.9–210.9 | 101.6–256.6 | step 4's 55–210 |
+| `HOME_DISTANCE` | 150.5 | 196.2 | Part 2's 150 |
+| home plane height | 40.1 | 52.3 | Part 2's 40 |
+
+The band's *width* is held at 155 rather than scaled, and that is the one real
+decision in the table. The graph is 25 units deep whatever lens looks at it, so
+a fixed band holds the gradient across the subject — the landing graph grades
+10% to 26% front to back at either setting, which is what step 4 was for.
+Scaling the band would have preserved every route's fog fraction exactly and
+flattened that gradient to 10–20% instead, which is the wrong thing to protect.
+The cost is that the ambient routes, which stand further back still, get hazier:
+measured, `/about` lost 35% of its ink mass. It is faint now. It is meant to be
+faint, it is still legible, and it is the honest consequence of standing 186
+units away rather than 111 — but it is the number to watch if the dial goes
+narrower.
+
+## The arrival was a wall, and it is a room now
+
+Part 3 left `/nebula`'s interior pose exactly as it inherited it, because Part 3
+was about the camera outside the graph and the interior "already worked". It did
+not. It had never been measured against the thing it produced.
+
+**Not one node was within 10 units of the reader.** The nearest was 11.3 away
+and the furthest 14.6, so all eighteen nodes in frame sat in a shell of a single
+depth, 3.3 units thick, across an empty middle. That is a backdrop, not a room:
+nothing near enough to pass, nothing far enough to recede, no parallax between
+them when the reader drags. It is why arriving read as stopping in front of the
+graph rather than being inside it.
+
+Two things were wrong with the derivation, and they compounded.
+
+**`INSIDE_DISTANCE` was measured from the pose's own target, not from the
+graph.** The target is `(0, 2.5, 0)`, so "5.5 units out" put the camera **3.20
+units from the centre**. This is precisely the mistake Part 3 step 2 found in
+the departure path — "a camera parked inside the graph has its target a tenth of
+a unit ahead of it" — one layer up, in the pose that path departs from, and it
+survived that commit because the fix was applied to the interpolation rather
+than to the quantity. The reader was very nearly at the middle of the shell,
+which is the one place the composition notes explicitly rule out.
+
+**A heading through the centre can only ever show the far wall.** From anywhere
+inside, the near hemisphere is behind you by construction, so looking through
+the middle guarantees that everything in frame is at least `R − d` away and
+everything nearby is out of shot. No amount of tilt fixes that; it is what
+"through the centre" means. `INTERIOR_TILT_DEGREES` was solving a real problem —
+a node sitting dead on the axis — and could never have solved this one.
+
+So both were searched, over standing points from 7.5 to 9 units and headings
+over the whole sphere, scored on nodes in frame, nodes within 10 units, total
+apparent area, spread across the frame, and how each holds up at six viewports.
+Constrained so no node sits within 6° of the view axis, and none closer than
+4.5 units. The winner is better on every measure at every viewport:
+
+| at 1280×800 | was | is |
+| --- | --- | --- |
+| nodes in frame | 18 | 19 |
+| of them projects | 6 | 8 |
+| within 10 units | **0** | **9** |
+| nearest node | 11.3 | 6.9 |
+| front-to-back depth in frame | 3.3 | 11.8 |
+| total apparent area | 26 | 52 |
+| nearest node to the view axis | 7.7° | 11.4° |
+
+Twice the apparent area from the same 45 spheres through the same lens — the
+difference is entirely that some of them are now near. On the pixel gate the
+interior draws 2.1 to 3.8 times the ink it used to, and at 1024×768 the graph
+fills the full height of the frame instead of leaving the bottom third empty.
+Nothing sits closer to dead centre than it did before, so the thing the tilt
+existed to prevent is more true rather than less.
+
+Turning the graph is what carries this, which is the point: `NEBULA_BASE_ROTATION`
+rotates the constellation so the chosen interior heading lands on −z. The camera
+still holds one heading for the whole journey — measured, 0.00° of change — so
+the arrival is still a straight run and Part 4 can still fly past the hero. The
+graph does the turning; the reader only travels.
+
+It costs the departure nothing and gains it something. Leaving from 3.20 units
+meant starting at the middle, where the shell is uniformly distant and the first
+half of the retreat crosses empty space. Leaving from 9.0 puts the wall two
+units away, and the way out goes through it.
+
+## Leaving the graph had an animation all along
+
+The complaint was that going home does not animate. Traced, the camera was
+doing exactly what it was specified to do: 2000ms, 9.0 units to 132.4, heading
+held to 0.00°, and 44% / 70% / 91% of the way out at each quarter — the
+schedule Part 3 step 2 measured and wrote down.
+
+**The document was on top of it.** Measured, the landing page painted at full
+opacity 190ms after the click, and the remaining 1.9 seconds of retreat played
+out behind a page that had already finished arriving. Nothing was ever looking
+at the flight. A camera trace alone would have said it was fine, which is why
+`checks/exitflight.mjs` reads the camera and the document's opacity on the same
+frames.
+
+So the destination is held for the first half of the retreat and fades in over
+the second: `route-curtain.tsx` raises `data-arriving` on `<html>` in a layout
+effect on the route change, and the rig drops it at 55% of the flight's own
+progress. Measured now, the page is held for the first 1060ms, fully opaque at
+1728ms, and the camera settles at 2000ms — so the retreat has the frame to
+itself while it is worth watching, and the page is finished and readable before
+the camera stops rather than beginning to appear then.
+
+Three things about it that are not obvious:
+
+- **The raise has to be a layout effect and the drop has to be the rig.** They
+  are two edges of one attribute answering to different clocks. The rig's route
+  effect is a passive `useEffect` and runs *after* the browser has painted the
+  new route, so raising it there showed one full-opacity frame of the
+  destination before it vanished — worse than not doing it at all. The drop has
+  to answer to the flight's real progress and must not be a `setTimeout` an
+  interrupted flight could leave running.
+- **Everything but the canvas, not just `<main>`.** The first version held the
+  document and left the affordance alone, and the affordance is a set of `fixed`
+  siblings of `<main>` — so the landing page's idle pulse ring hung in an
+  otherwise empty frame for a second, a ring drawn around a graph that had not
+  arrived. The selector is `body > *:not(:has(canvas))`, the same one
+  `checks/baseline.mjs` uses to isolate the scene.
+- **It needs `!important`, and that is not laziness.** The pulse ring animates
+  its own opacity, and a running animation outranks a plain declaration in the
+  cascade — measured, it sat at 0.018 and rising through the whole hold. A hold
+  is exactly the case the flag is for.
+
+This is **not** Part 5. Part 5 is the cross-fade between the real hero and the
+plane standing in for it, and it needs the home standing point that Part 4 has
+still to place. This is the half that does not: the page waits for the flight
+instead of covering it.
+
+## The arrival moved again, because the graph did
+
+A later pass corrected the project write-ups against what the services actually
+do, and six technologies that were load-bearing and missing became nodes: MQTT,
+Three.js, Material UI, MudBlazor, TanStack Query, React Router. The graph went
+from 45 nodes to 51.
+
+**That re-lays out the constellation, and it is worth understanding why.**
+`content/layout.ts` places technologies on a Fibonacci sphere sized by
+`tech.length`, so a single addition re-points every technology node. It then
+pulls each one toward the projects using it, so correcting one project's
+`techIds` moves nodes belonging to projects nobody touched. Both happened at
+once. Nothing about the world scale moved with it — the bounding radius is
+capped by the shell and stayed at 12.383, so `LANDING_SCALE`, the standing
+distances, the fog band, and home's distance and size are all unchanged, which
+is the derivation in `lib/world-scale.ts` doing its job.
+
+The interior standing point is the thing that could not survive on its own,
+because it was searched against positions that have since moved. Measured
+against the new layout it had **not** broken — 20 nodes in frame and 7 within 10
+units at 1280×800, against 19 and 9 before — but it had decayed where there was
+least room to lose: on a phone it was down to 15 thousandths of apparent area
+with two nodes near, which is most of the way back to the flat wall this part
+existed to fix.
+
+Re-searching the moved layout recovered it and then some:
+
+| at 1280×800 | first search | after the graph moved | re-searched |
+| --- | --- | --- | --- |
+| nodes in frame | 19 | 20 | 21 |
+| of them projects | 8 | 8 | **10** |
+| within 10 units | 9 | 7 | 9 |
+| apparent area | 52 | 53 | 55 |
+| same, on a phone | 16 | **15** | **40** |
+
+Ten of the twenty-one nodes in frame are projects now rather than eight, which
+matters more than the count: projects are the content, technologies are the
+connective tissue. And the phone recovering from 15 to 40 is the real result —
+that viewport has the least frame to spend and had quietly lost the most.
+
+**The lesson is the one Part 1 already taught, in a second place.** A number
+measured correctly once, against inputs that later moved, is indistinguishable
+from a number that was never right. The fog band was inert for months that way.
+This pose would have decayed the same way, silently, except that the search that
+produced it is a script rather than an afternoon — so re-running it cost a
+minute. Anything derived from the layout should be re-derived when the layout
+changes, and the way to make that affordable is to keep the derivation.
+
+## Flying in was off-centre, and it was the clock
+
+The arrival and the departure both took a visible detour. Measured at 1440×900,
+the constellation's on-screen centroid climbed 206px in the first fifth of the
+arrival and then came back down — an excursion **262px off the direct path**
+between where it starts and where it ends. The departure was the same shape,
+270px. The camera was never in the wrong place: it left the landing pose
+exactly, arrived at the interior pose exactly, and `exitflight.mjs` said the
+schedule was right to the percent. What was wrong was the middle.
+
+**The cause is two interpolations sharing one clock.** `approachLerpPose` moves
+the camera's distance from the graph and its direction *around* the graph, and
+both ran on eased time. Distance collapses fast and early — 47 of the 131 units
+are gone in the first fifth — while a lateral offset's effect on screen goes as
+`offset / (distance · tan(fov/2))`. The same few degrees of arc that are
+invisible at 131 units throw the graph across the frame at 20. Spending the arc
+evenly in time spends most of it while it is still cheap to see, and none of it
+when it matters.
+
+**The fix is to spend the arc against distance instead of time:** `d⁻³`,
+normalised over the journey. Distance stays on the clock; direction moves to
+proximity.
+
+One expression covers both journeys, and that is the reason to prefer it over
+tuning them separately. Going in, `d⁻³` barely moves until the camera is close,
+so the graph grows in place and only swings as the shell arrives. Coming out,
+the same function front-loads, so the camera slides to its heading while it is
+still inside and then simply recedes. "Do the turning while you are close to the
+thing you are turning around" is the rule, and distance is the only quantity
+that has to be consulted to obey it.
+
+| direction weighted by | arrival | departure |
+| --- | --- | --- |
+| eased time (before) | 262px | 270px |
+| proximity, `d⁻¹` | 162px | 165px |
+| proximity, `d⁻²` | 84px | 87px |
+| **proximity, `d⁻³`** | **56px** | **58px** |
+| proximity, `d⁻⁴` | 39px | 40px |
+
+The two directions land within two pixels of each other at every exponent
+tried, which is what a rule looks like as opposed to a pair of fixes. Three
+rather than four because four buys 17px at the cost of finishing the whole arc
+inside the last tenth of the approach, and an arc that completes in 200ms is a
+flick rather than a move.
+
+**Two things were tried and rejected.** Separate exponents per direction worked
+— `a³` in, `a^0.25` out — and was strictly worse than one rule that falls out
+of the geometry. A straight world-space line, which is what Part 4's brief
+literally asks for, measured 142px in and 144px out: better than the old orbit,
+worse than the weighted one, because a straight line still spends its lateral
+offset early. Part 4 may still want the line for other reasons — flying *past*
+the hero is a statement about the path, not about the framing — and if it does,
+this weighting is what will keep it centred.
+
+**The measurement is analytic and the browser only corroborates it.**
+`approachLerpPose` is pure arithmetic over the layout, so the path can be
+evaluated at any resolution offline, which is where every number above comes
+from. `checks/flightpath.mjs` runs the same measurement on real pixels and
+reports a lower bound, because a screenshot under software GL costs ~400ms and
+a 2000ms flight samples five or six times whatever the viewport. It agrees on
+the order of magnitude and confirms the model is describing the code that
+ships, which is the only thing a coarse instrument can usefully do.
+
+## Stopping short was both complaints at once
+
+Re-weighting the path fixed the detour and left two things the reader still
+felt: *"it feels like we barely flew anywhere"*, and *"when we fly into the
+nebula we're not at all in the centre of it"*. Those turned out to be one
+measurement read twice.
+
+**The arrival stopped 9 units out, on a shell of radius 11.** That is standing
+at the wall. Measured from that point, the nearest node in any direction was
+2.85 units and the furthest 20.62 — a lopsidedness of **7.2**, where 1 would be
+perfectly enclosed. And only **6 of 51 nodes** ever got behind the camera, so
+almost nothing went past on the way in. That is arriving at a doorway.
+
+The same stopping-short shortens the flight, because the part of the journey
+skipped is the part where the graph is nearest and changing fastest. Apparent
+size goes as `1 / (d · tan(θ/2))`, so the whole approach only grew the graph
+**5.3×** — the camera closed a 14.4× distance ratio and the field of view
+widening from 30° to 72° gave 2.7× of it straight back. That is a dolly zoom,
+which is precisely the effect that cancels the sense of approach.
+
+**Moving the standing point in to 5.5 units fixes both**, because both were the
+same fact:
+
+| | 9 units out | 5.5 units out |
+| --- | --- | --- |
+| nearest node in any direction | 2.85 | 5.6 |
+| lopsidedness (1 = enclosed) | **7.2** | **3.0** |
+| nodes behind you on arrival | **6 of 51** | **25 of 51** |
+| apparent growth across the flight | **5.3×** | **8.7×** |
+| nodes in frame | 21 | 24 |
+| fewest across six viewports | 9 | 11 |
+
+**The centre is not the answer either, and that is worth recording.** On a
+hollow shell every point is equidistant from the middle, so at 3 units the
+numbers collapse back to the original derived pose's — nearest 11.4, depth 3.3,
+nothing near at all. That *is* the flat wall, approached from the other side.
+Enclosure and presence genuinely pull against each other here; 5.5 is the knee,
+not a preference. The cost is real and worth stating: nearest node in frame 9.1
+rather than 7.3, front-to-back depth 7.6 rather than 11.7, apparent area 36
+against 55. Everything is a little further off and a little flatter.
+
+**One more run was needed, and it caught the worst mistake of the four.** The
+first pose at 5.5 scored well on every metric above and had eight projects in
+frame — *one* of which was production work. It faced the personal cluster, so
+what a visitor saw on arriving was Thai Ginger and a Pokémon team builder. The
+entire argument of this site is that one region of the graph is a truthful
+architecture diagram of software that runs a factory, and the arrival was
+pointed away from it. **"Projects in frame" was the wrong thing to count.**
+Scoring the SEL clusters specifically — through-hole, solder, maintenance,
+tools — moved it to eight of eight, and the node count went *up* at the same
+time, 21 to 24, with the worst viewport going from 9 nodes to 11.
+
+That is the fourth search over this one pose, and the pattern across them is
+worth more than the pose. Every run optimised exactly what it was told to and
+was wrong about something it had not been told to measure: run one maximised
+nodes in frame and produced a flat wall of them at uniform depth; runs two and
+three maximised the frame and put the reader against the shell; run four had to
+be told that not all projects are equal. A search only ever answers the question
+you actually asked, and the recurring failure is asking a narrower one than you
+meant. The layout will move again — it moves every time `content/tech.ts` does —
+so the constraints matter more than the coordinates.
 
 ## How any of this was measured
 
 Everything above that carries a number — 0.23% worst, 0.00° of heading change,
-44/70/91% — came out of a script, and those scripts are in `checks/`, with a
-README covering how to run them and the six traps that produced a wrong
-conclusion each. They were in a scratchpad until Part 3 ended, which meant none
-of the numbers in this document could be reproduced by anyone reading it.
+44/70/91%, nine nodes within ten units — came out of a script, and those
+scripts are in `checks/`, with a README covering how to run them and the traps
+that produced a wrong conclusion each. They were in a scratchpad until Part 3
+ended, which meant none of the numbers in this document could be reproduced by
+anyone reading it.
+
+**The camera itself is now traceable, which it was not.** The README told you
+to "trace the camera instead" of judging a transition from screencast frames,
+and then offered no way to: the r3f store is not reachable from the page and
+nothing in the scene is on `window`. Every camera number this document quotes
+was measured by instrumenting the rig by hand and throwing the instrument away.
+`app/nebula-probe.ts` is that hook, made permanent — one object per frame, not
+gated on `NODE_ENV`, because the checks run against a production build by
+necessity. `checks/exitflight.mjs` is the first script to use it.
 
 The one to know about is the **pixel gate**: `checks/baseline.mjs` captures 5
 routes × 6 viewports with motion frozen and the DOM hidden, and
@@ -471,13 +810,25 @@ last stretch.
 **Done when:** the hero passes the camera on the way in, and going home is a
 single pull with no separate turn after it lands.
 
-### Part 5 — The DOM handoff
+### Part 5 — The DOM handoff — **half of it landed early**
 
 Real hero at home, plane away from home, cross-faded in a band. The real hero
 keeps text selection, SEO and keyboard.
 
 **Done when:** there is no frame where both are visible as two things, and no
 frame where neither is.
+
+**The document half is done** — see "Leaving the graph had an animation all
+along". The page is held for the first half of the retreat and fades in over
+the second, so the flight is visible and the reader is reading before the
+camera stops. It landed early because it is what "going home does not animate"
+turned out to be, and it needs nothing Part 4 has yet to decide.
+
+What is left is the half that does: the **plane**. Fading the stand-in out as
+the real hero fades in requires knowing where the real hero *is* in the world,
+which is the home standing point, which is Part 4's to place. Until then the
+plane is simply not drawn off `/nebula` and the two never overlap — a gap
+rather than a cross-fade, and the reason this part is not finished.
 
 ### Part 6 — Seeing home through the glass
 
@@ -501,11 +852,24 @@ placement model that no longer exists.
   numbers.
 - ~~**`p`, the hero's distance from the standing point.**~~ Deferred rather
   than decided, and deliberately: `p` is an offset *ahead of the standing
-  point*, and there is no standing point until Part 3. What exists today is
-  `HOME_DISTANCE`, home's distance from the graph, now 150.
+  point*, and there is no standing point until Part 4 places one. What exists
+  is `HOME_DISTANCE`, home's distance from the graph — no longer a number but a
+  fraction of the fog band (`lib/world-scale.ts`), which is 196 at the current
+  lens and was 150 at the old one. Note for whoever takes Part 4: the fraction
+  puts home 66 units *behind* the landing standing point at either setting,
+  which is a candidate value for `p` that fell out of holding home's haze
+  rather than being chosen. It is not a decision, but it is a number the
+  composition already likes.
 - **Whether `/work/[slug]` is a third standing point or the home point with a
   different aim.** Still open. Both work. The second is fewer poses to reason
   about; the first is easier to compose independently.
+- **New, from the arrival re-measure:** the interior standing point is at 9.0
+  units, two from the shell, rather than the 3.20 it turned out to be at. The
+  reader is nearer the wall than any note in this document assumed, and the
+  drag sweeps a near surface past them rather than turning a distant one.
+  Nothing measured says that is wrong — it is most of why the arrival reads as
+  a room — but every claim in Part 2 about what the reader can see by turning
+  around was measured from the middle, and has not been re-measured from here.
 - **New, from Part 2:** the reader can now face empty paper. Looking away from
   both the graph and home shows nothing at all, which is honest for a space and
   is the first direction on this site that holds nothing. The corner Home link

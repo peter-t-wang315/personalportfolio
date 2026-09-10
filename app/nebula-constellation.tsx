@@ -7,6 +7,7 @@ import { Html } from "@react-three/drei";
 import { cubicBezier } from "motion/react";
 import { makeRng } from "@/lib/seeded-random";
 import { palette } from "@/lib/palette";
+import { FOG_FAR, FOG_NEAR } from "@/lib/world-scale";
 import { useDeviceTier, type DeviceTier } from "@/lib/device-tier";
 import {
   DESKTOP_MIN_WIDTH_PX,
@@ -140,37 +141,37 @@ const HOVER_EASE = 0.2;
 
 /**
  * Fog band, in world units — **derived from the distances the camera actually
- * stands at**, which is the first time that has been possible.
+ * stands at, and now derived in code rather than by hand.**
  *
- * It has been describing a composition that did not ship for a long time. The
- * 27-48 it started at was measured correctly against an *outside* framing of
- * the constellation, and then `/nebula` moved inside the shell and nothing
+ * It spent a long time describing a composition that did not ship. The 27-48
+ * it started at was measured correctly against an *outside* framing of the
+ * constellation, and then `/nebula` moved inside the shell and nothing
  * re-measured; every node on every route sat nearer than 28 units, so the fog
- * was simply inert. Part 3 made the distances real: the graph is life-size at
- * the origin and the camera stands where the composition asks, so there are
- * finally numbers to tune against rather than a scale factor to guess from.
+ * was simply inert, and inert fog and absent fog look the same. Part 3 made
+ * the distances real. Part 3 step 4 re-measured the band against them, by
+ * hand, and wrote down 55-210 — which was correct, and was also a second copy
+ * of numbers that belong to the camera, waiting to go stale the next time the
+ * camera moved.
  *
- * What each end is for:
+ * It moved immediately: narrowing STANDING_FOV to 30 put the landing camera
+ * 130 units out instead of 84, and 55-210 would have had the graph's own
+ * subject two-thirds faded. So the band is computed from the standing
+ * distances now (lib/world-scale.ts) and this file only draws it. What the
+ * ends are for is unchanged, and the fractions are the ones step 4 chose:
  *
- * - **Near clears the graph seen from inside**, which spans 8 to 14 units from
- *   the standing point. From within a shell there is no recession to describe:
- *   every node is about as far away as every other, and fog there would only
- *   flatten the one view that has real depth cues of its own.
- * - **The landing page finally gets some.** The graph sits 71 to 96 units away
- *   there — genuinely distant now rather than small and near — and grades from
- *   11% to 27% across its own depth. That gradient is the difference between a
- *   far-off object and a near one drawn small, and it could not exist while the
- *   graph was a shrunken copy 23 units from the camera.
- * - **Ambient routes recede further**, 28% to 44%, which is what they are for.
- * - **Far is set against home**, 147 units from the reader once they turn
- *   around inside the graph: 59% faded, present and hazed rather than erased.
- *
- * Four bands were compared against these distances. This one is the only one
- * that keeps the interior clear, gives the landing page a real gradient, and
- * still leaves home legible.
+ * - **Near clears the graph seen from inside**, which spans 5 to 20 units from
+ *   the standing point against a near plane past 100. From within a shell there
+ *   is no recession to describe: fog there would only flatten the one view that
+ *   has real depth cues of its own.
+ * - **The landing page grades 10% to 26%** across the graph's own depth. That
+ *   gradient is the difference between a far-off object and a near one drawn
+ *   small, and it could not exist while the graph was a shrunken copy 23 units
+ *   from the camera. It is held fixed as the lens narrows.
+ * - **Ambient routes recede further**, which is what they are for.
+ * - **Far is set against home**, three fifths of the way through the band once
+ *   the reader turns around inside the graph: present and hazed rather than
+ *   erased, and not the "slightly grey card" a quarter of a band gave.
  */
-const FOG_NEAR = 55;
-const FOG_FAR = 210;
 
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };

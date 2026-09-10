@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
+import { HOME_DISTANCE, HOME_PLANE_HEIGHT } from "@/lib/world-scale";
 import { heroMetrics, site } from "@/content";
 import { useDeviceTier } from "@/lib/device-tier";
 import { palette } from "@/lib/palette";
@@ -25,30 +26,37 @@ import { palette } from "@/lib/palette";
  *
  * From `07-continuous-space.md`: the shell has to sit ~74 units from the
  * landing viewpoint for it to draw at the size it draws today. Nothing stands
- * there yet — the landing camera is still at (0, 0, 9) with the graph shrunk
- * and pushed back to meet it — so for now this is where home *will* be, and
- * the plane is placed at it rather than in front of it. The plan's `p`, the
- * hero's offset ahead of the standing point, is a Part 3 quantity and does not
- * exist until there is a standing point to be ahead of.
+ * there yet — Part 4 has still to place it — so this is where home *will* be,
+ * and the plane sits at it rather than in front of it. The plan's `p`, the
+ * hero's offset ahead of the standing point, does not exist until there is a
+ * standing point to be ahead of.
  *
  * Along +z because that is the direction the landing camera looks from: the
- * graph is at the origin and `HOME_CAMERA_POSITION` is at +9z, so "back the
+ * graph is at the origin and the standing camera is out along +z, so "back the
  * way you came" from inside the shell is +z.
- */
-export const HOME_DISTANCE = 150;
+ *
+ * **The number itself moved to lib/world-scale.ts**, where it is derived as a
+ * fraction of the fog band rather than written down. 150 was chosen by looking
+ * — Part 2's note is that "a quarter faded is not distance, it is a slightly
+ * grey sign", and 150 is where it stopped being one. What that turned out to
+ * mean is three fifths of the way through the band, and holding *that* is what
+ * keeps home reading the same when the standing lens narrows and every
+ * distance in the world grows by half again.
 
 /**
  * The plane's height in world units, which is what sets how large home reads
  * from inside the graph.
  *
- * At `HOME_DISTANCE` and the interior's 72° field of view, the full viewport
- * spans about 108 world units, so this covers a bit under a third of the
- * frame's height. Large enough to be unmistakably a page rather than a speck;
- * small enough to still be *over there*. Very much a number to look at rather
- * than derive — it and `HOME_DISTANCE` are the two dials this part exists to
- * let us turn.
+ * At the interior's 72° field of view the full viewport spans about 108 world
+ * units at 150 away, so 40 covered a bit under a third of the frame's height.
+ * Large enough to be unmistakably a page rather than a speck; small enough to
+ * still be *over there*. Very much a number arrived at by looking.
+ *
+ * Derived now, for the same reason HOME_DISTANCE is: what was chosen by
+ * looking is the *apparent* size, and holding a height while the distance
+ * grows would quietly shrink it. lib/world-scale.ts keeps the ratio.
  */
-const PLANE_HEIGHT = 40;
+const PLANE_HEIGHT = HOME_PLANE_HEIGHT;
 
 /**
  * Texture resolution. The plane is far away and fogged, so this is not about

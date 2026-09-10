@@ -16,14 +16,15 @@ export const projects: ProjectNode[] = [
     clusterId: 'throughhole',
     ownership: 'sole',
     ownershipNote: 'Sole developer. Pattern adapted from a sister team\'s existing platform.',
-    oneLine: 'Decision layer for through-hole machine automation, live on 7+ machines across 6 lines at 2 sites.',
+    oneLine: 'Decision layer for through-hole automation. One per line, six in production driving 7 machines at 2 sites.',
     body: [
       'The supervisor is the top tier of a three-tier automation platform driving through-hole placement machines, adapting a decision-worker-client pattern already proven on a sister team\'s line. It receives messages from the line, decides what logic the situation calls for, and instructs the worker below it. Machine-originated messages bubble back up the same path.',
+      'One supervisor coordinates one line, not one machine. Six are in production covering seven machines, because a line can hold more than one. That is the unit the decision logic is written against: what the line should do next is a question about the line, and a supervisor that owned a single machine could not answer it.',
       'The pattern\'s separation of decision-making from machine communication means the logic can be reasoned about and changed without touching protocol code, and a single supervisor can coordinate a station whose lower tiers know nothing about why they are being asked to do something.',
       'I implemented all three tiers for through-hole automation, then containerised and deployed the stack on Kubernetes through a sister team\'s monorepo. This platform was its first consumer. I drove the containerisation and adoption rather than building the deployment platform itself.',
     ],
     metrics: [
-      { value: '7+', label: 'machines in production', note: '6 lines at 2 sites, expanding' },
+      { value: '6', label: 'supervisors in production', note: 'one per line, driving 7 machines at 2 sites' },
       { value: '3', label: 'tier topology', note: 'supervisor, worker, client' },
     ],
     techIds: ['csharp', 'rabbitmq', 'docker', 'kubernetes', 'helm', 'jenkins', 'ipc-cfx'],
@@ -39,10 +40,11 @@ export const projects: ProjectNode[] = [
     oneLine: 'Executes supervisor instructions and publishes machine messages upward.',
     body: [
       'The worker implements the middle tier of the same three-tier pattern, hosting the machine client and sitting between decision-making and protocol. It receives instructions from the supervisor over RabbitMQ, tells the client what to send, and publishes messages coming back off the machine upward.',
-      'Keeping the worker thin (translation and transport, no business logic) is what allows the same worker shape to be reused as machine types are added.',
+      'Everything it publishes upward is IPC-CFX. Normalising at this tier rather than at the supervisor means the decision layer never sees a proprietary message shape, and a new machine type changes the client below without changing anything above.',
+      'Keeping the worker thin (translation and transport, no business logic) is what allows the same worker shape to be reused as machine types are added. It is containerised and released per machine through the same Kubernetes and Helm configuration as the supervisor above it.',
     ],
     metrics: [],
-    techIds: ['csharp', 'rabbitmq', 'docker', 'kubernetes'],
+    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'docker', 'kubernetes', 'helm'],
     size: 'standard',
   },
   {
@@ -55,10 +57,11 @@ export const projects: ProjectNode[] = [
     oneLine: 'Speaks the machine\'s native protocol over TCP.',
     body: [
       'The client implements the bottom tier of the pattern and is the only component that knows the machine\'s native protocol. It is consumed as a library inside the worker, translating instructions down to the machine over TCP and passing machine-originated messages back up.',
-      'Isolating protocol knowledge in one library means a new machine type needs a new client, not a new platform. Reconnect, backoff, and heartbeat handling live here so that a dropped socket recovers without operator intervention.',
+      'It is the one component in the platform that never touches the message bus. The worker hosting it subscribes to its events directly, in process, so there is no IPC-CFX down here and nothing to normalise: raw machine protocol on one side, .NET events on the other.',
+      'Isolating protocol knowledge in one library means a new machine type needs a new client, not a new platform. Reconnect, backoff, and heartbeat handling live here so that a dropped socket recovers without operator intervention, and the SMEMA handshake governing board handoff between the machine and its conveyors is handled at this tier too.',
     ],
     metrics: [],
-    techIds: ['csharp', 'tcp', 'ipc-cfx', 'smema'],
+    techIds: ['csharp', 'tcp', 'smema'],
     size: 'standard',
   },
 
@@ -72,16 +75,19 @@ export const projects: ProjectNode[] = [
     clusterId: 'solder',
     ownership: 'contributor',
     ownershipNote: 'Contributor. Built with the team.',
-    oneLine: 'Gates machine entry on board identity, cutting cycle time 18%.',
+    oneLine: 'Solders only the joints a board actually has, cutting cycle time 18%.',
     body: [
-      'The terminal service in a three-service pipeline that automates selective solder program selection. It receives resolved board data, gates machine entry on the returned program and revision, and enables per-revision program targeting, work that previously required an operator to select the correct program by hand.',
-      'Failures publish structured error events to a dedicated exchange, so an operator sees the specific reason a board was rejected and can resolve it without escalating to engineering. On a board-eligibility failure the driver withholds the SMEMA handshake and holds the machine in a safe wait state rather than failing open and letting an unverified board through.',
+      'The terminal service in a three-service pipeline that automates selective solder program selection. It receives resolved board data over RabbitMQ from the two services upstream of it, and talks down to the machine over MQTT on a TCP connection it holds open.',
+      'The 18% comes from program selection, not from running anything faster. A recipe on its own covers every variant of a board the machine might see, so told only the recipe it runs the union: every solder point any variant could need. This service sends the recipe and the revision together, so the machine loads the program for the exact board in front of it and solders only the joints that board actually has. The joints this variant does not have are the 18%.',
+      'It also decides whether a board may enter at all, and the mechanism is quieter than it sounds. The machine asks for the scan of the board arriving; if board data comes back ineligible, the driver simply does not answer. There is no handshake to withhold and no stop to assert. The machine waits, which is the safe state, rather than failing open and soldering something unverified.',
+      'Failures publish structured error events to a dedicated exchange, so an operator sees the specific reason a board was rejected and can resolve it without escalating to engineering.',
+      'The machines were bought to be driven this way, so this is not automation of a job someone used to do by hand. It is the software the plan assumed: without it, every board and every variant would need an operator to change the program over before it ran.',
       'Running continuously in production since launch.',
     ],
     metrics: [
       { value: '18%', label: 'cycle time reduction', note: '+60 boards per day' },
     ],
-    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'smema', 'tcp', 'rest', 'azure', 'splunk'],
+    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'mqtt', 'tcp', 'azure', 'splunk'],
     size: 'major',
   },
   {
@@ -95,10 +101,11 @@ export const projects: ProjectNode[] = [
     oneLine: 'Turns a barcode into the program and revision the machine needs.',
     body: [
       'Sits between the scanner and the solder driver, resolving board identity against internal REST services: scan data, route completion, route creation.',
-      'Isolating every external API call in one service means the driver stays a protocol component. It never has to know how board data is fetched, only what came back.',
+      'Isolating every external API call in one service means the driver stays a protocol component. It never has to know how board data is fetched, only what came back — the driver itself makes no REST calls at all.',
+      'What it hands on is IPC-CFX, like everything else on the bus.',
     ],
     metrics: [],
-    techIds: ['csharp', 'rabbitmq', 'rest'],
+    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'rest'],
     size: 'standard',
   },
   {
@@ -110,10 +117,10 @@ export const projects: ProjectNode[] = [
     ownershipNote: 'Contributor. Built with the team.',
     oneLine: 'Entry point of the line: barcode scans onto the message bus.',
     body: [
-      'Talks to the barcode scanner over TCP and publishes scans to RabbitMQ. It is the first service in the solder pipeline and the point where a physical board becomes a message.',
+      'Talks to the barcode scanner over TCP and publishes scans to RabbitMQ as IPC-CFX. It is the first service in the solder pipeline and the point where a physical board becomes a message.',
     ],
     metrics: [],
-    techIds: ['csharp', 'rabbitmq', 'tcp'],
+    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'tcp'],
     size: 'standard',
   },
 
@@ -130,16 +137,19 @@ export const projects: ProjectNode[] = [
     ownershipNote: 'Sole frontend developer. Schema and API design lead.',
     oneLine: 'Scheduling and execution tracking for machine maintenance, used across 30%+ of manufacturing.',
     body: [
-      'A React platform for planning and recording preventive maintenance, replacing paper and spreadsheet tracking. It has two distinct faces. Administrators author and maintain the maintenance definitions; operators work through what is actually due.',
+      'A React platform for planning and recording preventive maintenance. It replaced an existing PM tool rather than paper: the old one worked, it just was not comprehensive enough or used widely enough, and machines were still going down for want of maintenance that should have been scheduled. The brief was a new platform good enough to actually be used.',
+      'It has two distinct faces. Administrators author and maintain the maintenance definitions; operators work through what is actually due.',
       'The data model is a four-level hierarchy (machine, checklist, section, task), and the administrative side allows editing at any level of it. You can open a checklist, edit down through its sections to individual tasks, and revert the entire tree of changes in one action. Making that feel immediate meant caching 10k+ ID-linked records in Jotai and treating the client cache as the working copy, with the server reconciled on commit rather than on every keystroke.',
-      'The operator view answers a different question: what needs doing first, what is coming up, and which line and machine it belongs to. Same data, ordered by urgency instead of by structure.',
+      'The operator view answers a different question: what needs doing first, what is coming up, and which line and machine it belongs to. Same data, ordered by urgency instead of by structure. The lists themselves are generated: the frequency defined on the administrative side is what decides when a checklist comes due and appears in front of somebody.',
+      'Completed work is kept rather than cleared. Every execution stays as a record, and notes written against a checklist, section, or individual task are tied to the work order they were written under, so they come back the next time anyone opens that same item. Reading why a task took three attempts last quarter is the traceability the previous tool did not have.',
+      'The client is styled with plain CSS and Material UI rather than a utility framework, and it calls REST endpoints directly, both the ones designed for this platform and other internal APIs it needs along the way.',
     ],
     metrics: [
       { value: '30%+', label: 'of manufacturing using it' },
       { value: '10k+', label: 'records cached client-side' },
       { value: '4', label: 'level hierarchy', note: 'machine, checklist, section, task' },
     ],
-    techIds: ['react', 'typescript', 'jotai', 'tailwind'],
+    techIds: ['react', 'typescript', 'jotai', 'mui', 'rest'],
     size: 'major',
   },
   {
@@ -178,7 +188,7 @@ export const projects: ProjectNode[] = [
     metrics: [
       { value: '3k+', label: 'PCBs processed daily', note: 'across all sites' },
     ],
-    techIds: ['react', 'redux', 'typescript', 'csharp', 'rest'],
+    techIds: ['react', 'redux', 'typescript', 'mui', 'react-router', 'csharp', 'rest'],
     size: 'major',
   },
   {
@@ -193,12 +203,12 @@ export const projects: ProjectNode[] = [
     body: [
       'Before this existed, the team had no practical way to test a driver without contriving a real message from a real machine. I built the first practical way to do it: a tool that talks directly to RabbitMQ and speaks CFX, so a driver can be exercised without a live machine in the loop.',
       'It connects to any number of hosts, exchanges, and topics at once, listening and publishing across all of them. Its more useful half composes complete IPC-CFX messages from minimal input: supply two unit identifiers and it packages the remaining fields, so a developer can send a valid message without hand-writing the envelope.',
-      'This is the developer counterpart to the operator monitoring console: same message bus, opposite audience. Built on my own initiative and now used by all four engineers on the team.',
+      'This is the developer counterpart to the operator monitoring console: same message bus, opposite audience, and the same Blazor and MudBlazor front end, which is most of why it took gaps rather than a project to build. Built on my own initiative and now used by all four engineers on the team.',
     ],
     metrics: [
       { value: '4 of 4', label: 'engineers on the team using it' },
     ],
-    techIds: ['csharp', 'rabbitmq', 'ipc-cfx'],
+    techIds: ['csharp', 'rabbitmq', 'ipc-cfx', 'blazor', 'mudblazor'],
     size: 'major',
   },
   {
@@ -211,14 +221,14 @@ export const projects: ProjectNode[] = [
     ownershipNote: 'Contributor. Built while mentoring a junior developer through their first production service.',
     oneLine: 'Live message monitoring for the floor, with a deliberately narrow command surface.',
     body: [
-      'A Blazor application listening to RabbitMQ with live filtering across 5k+ events, giving operators visibility into what the automation services are actually doing.',
+      'A Blazor and MudBlazor application listening to RabbitMQ with live filtering across 5k+ IPC-CFX events, giving operators visibility into what the automation services are actually doing.',
       'It can do two things beyond observing: enter a board scan manually, and restart a driver. That surface is narrow by design: the drivers do not depend on the console to run, so if it is down, production is not.',
       'I built this alongside a junior developer, working through their first production service with them.',
     ],
     metrics: [
       { value: '5k+', label: 'events filtered live' },
     ],
-    techIds: ['blazor', 'csharp', 'rabbitmq'],
+    techIds: ['blazor', 'mudblazor', 'csharp', 'rabbitmq', 'ipc-cfx'],
     size: 'standard',
   },
 
@@ -234,13 +244,13 @@ export const projects: ProjectNode[] = [
     ownershipNote: 'Contributor. Frontend components and pages.',
     oneLine: 'Subscription purchasing and components for an environmental monitoring platform.',
     body: [
-      'ZENTRA is the web platform for METER Group\'s environmental sensor hardware. I built React and MUI components and pages across the site, with most of my work on the subscription purchasing flow, the path effectively every hardware customer passes through.',
+      'ZENTRA is the web platform for METER Group\'s environmental sensor hardware. I built React and Material UI components and pages across the site, with TanStack Query handling server state, and most of my work on the subscription purchasing flow, the path effectively every hardware customer passes through.',
       'Separately, I handled reporting requests from the sales team, writing Django queries across 150k+ object relationships to pull usage statistics that had no existing reporting path.',
     ],
     metrics: [
       { value: '150k+', label: 'objects queried for sales reporting' },
     ],
-    techIds: ['react', 'typescript', 'python', 'django'],
+    techIds: ['react', 'typescript', 'mui', 'tanstack-query', 'python', 'django'],
     size: 'standard',
   },
   {
@@ -350,8 +360,8 @@ export const projects: ProjectNode[] = [
   },
   {
     id: 'code-quiz-2023',
-    slug: 'coding-quiz-platform',
-    title: 'Coding quiz platform',
+    slug: 'codelingo',
+    title: 'CodeLingo',
     clusterId: 'personal',
     ownership: 'contributor',
     ownershipNote: 'Contributor. Frontend components. Team of four.',
@@ -364,7 +374,7 @@ export const projects: ProjectNode[] = [
     metrics: [
       { value: '3rd', label: 'WSU Hackathon 2023', note: 'team of four, 24 hours' },
     ],
-    techIds: ['react', 'typescript', 'tailwind', 'sql'],
+    techIds: ['react', 'typescript', 'tailwind', 'react-router', 'sql'],
     size: 'standard',
   },
   {
@@ -387,20 +397,21 @@ export const projects: ProjectNode[] = [
   },
   {
     id: 'this-site',
-    slug: 'this-site',
-    title: 'This site',
+    slug: 'personal-portfolio',
+    title: 'Personal portfolio',
     clusterId: 'personal',
     ownership: 'sole',
     ownershipNote: 'Sole developer.',
     oneLine: 'A portfolio rendered as the thing it describes: a connected service topology.',
     body: [
-      'Most of my work is message routing between services, so this site is built as a node graph. That choice is not decorative: the edges in the SEL clusters are real runtime message paths between services I worked on, not "these two share a technology." Solid animated edges mean messages actually move along them. Faint static edges mean shared tooling. The distinction is the point.',
-      'Next.js App Router with React Three Fiber. The canvas lives in the root layout rather than in a page, so it persists across route changes and the camera flight from the landing page into the graph is continuous rather than a page transition. Layout positions are computed once at build from a seeded generator, so the constellation is identical on every load.',
+      'Most of my work is message routing between services, so this portfolio is built as a node graph. That choice is not decorative: the edges in the SEL clusters are real runtime message paths between services I worked on, not "these two share a technology." Solid animated edges mean messages actually move along them. Faint static edges mean shared tooling. The distinction is the point.',
+      'Next.js App Router with Three.js through React Three Fiber. The canvas lives in the root layout rather than in a page, so it persists across route changes and the camera flight from the landing page into the graph is continuous rather than a page transition. Layout positions are computed once at build from a seeded generator, so the constellation is identical on every load.',
+      'There is one world and one camera. The graph sits at the origin at life size on every route and never moves; `/`, `/work/[slug]` and `/nebula` are three places the camera stands, solved per frame from the same rules that used to solve a scale factor. Getting there meant proving the two are equivalent — a group scaled by s and a life-size graph at the matching distance project identically — so the rebuild could be gated on zero changed pixels rather than on an opinion. Zustand carries state across the boundary between React DOM and the R3F scene, camera-controls owns the pointer, and Motion handles everything that is not the camera.',
       'Every project exists as a real, crawlable, keyboard-navigable page at /work/[slug], rendered from the same content object the 3D node displays. The graph is a second way through the same material, never the only one. With WebGL unavailable the site is completely usable.',
       'Built with Claude Code.',
     ],
     metrics: [],
-    techIds: ['nextjs', 'react', 'typescript', 'tailwind'],
+    techIds: ['nextjs', 'react', 'typescript', 'threejs', 'tailwind'],
     size: 'standard',
   },
 ];

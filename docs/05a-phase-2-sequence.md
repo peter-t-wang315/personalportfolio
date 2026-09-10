@@ -10,9 +10,34 @@ Last completed in *this* sequence: **2.6** (interior panel and routing), on top
 of **2.5** and the **Phase 1 landing page**. Since then the branch has done
 **Parts 1, 2 and 3 of `07-continuous-space.md`** — the fog, the hero as an
 object in the world, and the fixed life-size world with the camera solved per
-route. **Part 4 (the approach and the string) is next**, and it is the part
-that decides how `/work/[slug]` stands. Read 07 before 05a's remaining items:
-it changed what they sit on.
+route — and then three things that follow from Part 3 rather than from this
+sequence: the **`STANDING_FOV` dial turned to 30**, with every distance derived
+from it in `lib/world-scale.ts`; the **arrival re-measured**, because the
+interior pose put the reader 3.20 units from the centre looking at a flat wall
+of nodes with nothing inside 10 units; the **departure made visible**, which was
+never a camera problem — the flight was correct and the destination page painted
+over it 190ms in; the **flight path re-weighted**, because distance and direction
+were sharing a clock and the graph took a 262px detour across the frame on the
+way in and out; and the **arrival moved in from 9 units to 5.5**, which was two
+complaints with one cause — stopping at the shell wall left the reader
+off-centre (lopsidedness 7.2, six nodes behind them) *and* short-changed the
+flight (5.3x apparent growth instead of 8.7x).
+
+Then a content pass corrected the project write-ups against what the services
+actually do, which added six technology nodes (MQTT, Three.js, Material UI,
+MudBlazor, TanStack Query, React Router) and **re-laid out the constellation** —
+`content/layout.ts` sizes the technology shell by `tech.length` — so the
+interior pose had to be searched again against the moved graph. **Read the
+constraints in `app/nebula-canvas.tsx` before re-running that search**: four
+runs each optimised what they were told to and missed something they were not,
+the last one landing an arrival that faced the personal cluster rather than the
+production work the site exists to show. Two projects
+were renamed with 301s on the old slugs, and the downloadable resume was
+replaced.
+
+**Part 4 (the approach and the string) is next**, and it is the part that
+decides how `/work/[slug]` stands and where the home standing point is. Read 07
+before 05a's remaining items: it changed what they sit on.
 
 Still outstanding from this document: **a preview deploy — 05a asks for one
 after 2.6, and the owner runs `npx vercel` themselves**; 2.7; 2.8; the mobile

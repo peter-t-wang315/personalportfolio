@@ -74,13 +74,13 @@ Only runtime edges get motion. This is what makes the SEL region visibly the den
 | `client` | Client work | Freelance, unpaid |
 | `personal` | Personal projects | — |
 
-## Technology nodes (24)
+## Technology nodes (31)
 
-**Languages and runtimes:** C# / .NET · TypeScript · Python · SQL
+**Languages and runtimes:** C# / .NET · TypeScript · Python · Rust · SQL
 
-**Frontend:** React · Next.js · Redux · Jotai · Blazor · Tailwind CSS
+**Frontend:** React · Next.js · Redux · Jotai · Blazor · Tailwind CSS · Material UI · MudBlazor · TanStack Query · React Router · Three.js
 
-**Messaging and protocols:** RabbitMQ · IPC-CFX · SMEMA · TCP sockets · REST APIs
+**Messaging and protocols:** RabbitMQ · MQTT · IPC-CFX · SMEMA · TCP sockets · REST APIs
 
 **Infrastructure:** Docker · Kubernetes · Helm · Jenkins
 
@@ -91,7 +91,36 @@ Only runtime edges get motion. This is what makes the SEL region visibly the den
 - **Assumed:** HTML, CSS, Git, Agile, code review. Listing them is a negative signal.
 - **Too thin to advertise as a node:** Java, C/C++ (coursework only), SQL Server, stored procedures, xUnit, unit testing. A node implies proficiency and invites a question the current depth won't survive. These stay off the graph.
 - **Concepts, not technologies:** microservices, event-driven architecture, distributed systems, message queues, data modeling, API design, machine integration, industrial protocol integration, manufacturing automation, caching, relational schema design. These become edge `protocol`/`detail` text and body prose.
-- **Not graph material:** Claude Code, AI-assisted development, mentoring, on-call support, LaTeX, Material UI, Radix UI, WPF. These belong on `/about` and the resume. Claude Code in particular should be prominent on `/about` — it was named in eight of sixteen job postings reviewed.
+- **Not graph material:** Claude Code, AI-assisted development, mentoring, on-call support, LaTeX, Radix UI, WPF, Serverless Framework. These belong on `/about`, the resume, or a project's body prose. Claude Code in particular should be prominent on `/about` — it was named in eight of sixteen job postings reviewed.
+
+### Six added after the write-ups were corrected
+
+The list above was curated before anyone checked it against what the services
+actually do. Correcting the project write-ups turned up six technologies that
+were load-bearing and missing, and the reasons divide cleanly:
+
+- **MQTT** was never considered and should always have been here. It is how the
+  selective solder driver reaches its machine, over a TCP connection it holds
+  open — a protocol in exactly the sense SMEMA and IPC-CFX are, and now on a
+  runtime path.
+- **Three.js** likewise: it is what the portfolio node is built out of, and its
+  absence was an oversight rather than a decision.
+- **Material UI** was on the excluded list, as a UI library on one project. It
+  is on three — the maintenance client (which uses it with plain CSS, not
+  Tailwind, as this document previously implied), the flying probe dashboard,
+  and ZENTRA. Three projects is load-bearing. **MudBlazor**, **TanStack Query**
+  and **React Router** came in on the same reasoning.
+
+**Serverless Framework stayed out**, on one project and already named in that
+project's prose, which is what the exclusion rule is for.
+
+**Adding to this list is not free.** `content/layout.ts` places technologies on
+a Fibonacci sphere sized by `tech.length`, then biases each toward the projects
+using it — so a new node moves every node, and correcting one project's
+`techIds` moves nodes belonging to projects nobody touched. Going from 25 to 31
+re-laid out the constellation and made `/nebula`'s measured interior
+composition stale; it had to be re-searched (`07-continuous-space.md`). Budget
+for that, or batch the additions.
 
 ## Naming — resolved
 
@@ -151,7 +180,7 @@ Tech: SQL, REST APIs, C#/.NET.
 
 ### Needs content from Peter (see `content-intake.md`)
 
-`flying-probe` · `meter-zentra` · `meter-pipeline` · `vgclite` · `pokemon-team-builder` · `timesense` · `sonder-barber` · `thai-ginger` · `hackathon-2023` · `this-site`
+`flying-probe` · `meter-zentra` · `meter-pipeline` · `vgclite` · `pokemon-team-builder` · `timesense` · `sonder-barber` · `thai-ginger` · `hackathon-2023` · `personal-portfolio`
 
 ## Project decisions
 
