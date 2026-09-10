@@ -21,6 +21,8 @@ import {
   clusterScaleForViewport,
 } from "@/lib/cluster-geometry";
 import {
+  HOME_REST_OPACITY,
+  HOME_STANDOFF,
   LANDING_SCALE,
   LANDING_STANDING_DISTANCE,
   REFERENCE_DISTANCE,
@@ -28,6 +30,8 @@ import {
 } from "@/lib/world-scale";
 import {
   approachEase,
+  diveEase,
+  divePose,
   FLIGHT_DURATION_MS,
   FOCUS_FLIGHT_DURATION_MS,
   flightEase,
@@ -38,6 +42,8 @@ import {
   type CameraPose,
 } from "./nebula-flight";
 import { NebulaHome } from "./nebula-home";
+import { HOME_HANDOFF_MS } from "./nebula-departure";
+import { getHeroFrame, homePlane } from "./nebula-home-placement";
 import { getPlacement, setPlacement } from "./nebula-placement";
 import { publishCameraProbe } from "./nebula-probe";
 import {
@@ -204,6 +210,28 @@ function smoothDampToZero(
   current.add(_dampTemp).multiplyScalar(decay);
 }
 
+/**
+ * **The graph finishes turning before the reader reaches it.**
+ *
+ * The turn between the landing face and the interior one is carried by the
+ * graph, and it used to be spread across the whole flight in step with the
+ * placement. With the flight now ending at the centre, the last stretch is
+ * spent inside the shell with nodes a unit or two from the camera, and a
+ * graph still rotating there sweeps those nodes sideways across the frame —
+ * which reads as the world swinging rather than the reader travelling. So
+ * the turn is spent over the first seven tenths of the placement, which on
+ * the dive's schedule is done just before the shell is crossed, and the run
+ * through the wall and into the middle is against a graph that holds still.
+ * Symmetric on the way out: the graph waits until the camera is clear of the
+ * shell, then turns back while it is far.
+ */
+const UNWIND_BY = 0.7;
+
+function unwindShare(placement: number) {
+  const u = Math.min(1, placement / UNWIND_BY);
+  return u * u * (3 - 2 * u);
+}
+
 /** Scratch for the roll solve, the turn and the centring; all run every frame. */
 const _dampTemp = new THREE.Vector3();
 const _turnDelta = new THREE.Quaternion();
@@ -232,121 +260,48 @@ const _rollQuat = new THREE.Quaternion();
 
 
 /**
- * **Where the reader stands inside the graph, in the graph's own space —
- * measured, and re-measured once there was an instrument for it.**
+ * **Where the reader stands inside the graph: the centre of it.**
  *
- * This used to be derived: an outside camera position left over from the
- * framing `/nebula` had before it moved indoors, reversed through the centre
- * at half the shell radius and tilted 12 degrees off whichever node happened
- * to be on the axis. Every step of that derivation was defensible when it was
- * written and none of it was ever checked against the thing it produced.
+ * This is a decision, not a measurement, and the measurements argued the
+ * other way. `07-continuous-space.md` records four searches over standing
+ * points inside the shell, and every one of them avoided the middle for the
+ * same reason: on a hollow shell every node is the same distance from the
+ * centre, so from there nothing is near and nothing is far — "a flat wall,
+ * approached from the other side". The searched poses stood 5.5 to 9 units
+ * out to buy depth, and the price was that the reader arrived off-centre,
+ * with two nodes filling one edge of the frame and the mass of the graph
+ * piled in the opposite corner, and the flight in felt like it stopped at a
+ * doorway.
  *
- * Checked, it produced a wall. At the pose it gave, **not one node was within
- * 10 units**: the nearest was 11.3 away and the furthest 14.6, so all eighteen
- * nodes in frame sat in a shell of one depth, 3.3 units thick, across an empty
- * middle. That is a backdrop, not a room — nothing near enough to pass,
- * nothing far enough to recede, and no parallax between them when the reader
- * drags. It is why arriving read as stopping in front of the graph rather than
- * inside it.
- *
- * Two things were wrong with the derivation, and they compounded.
- *
- * **`INSIDE_DISTANCE` was measured from the pose's target, not from the
- * graph.** The target is `(0, 2.5, 0)`, so "5.5 units out" put the camera 3.20
- * units from the centre — the same class of mistake Part 3 step 2 found in the
- * departure path, one layer up. The reader was very nearly at the middle of
- * the shell, which is the one place the composition notes explicitly rule out.
- *
- * **Looking back through the centre can only ever show the far wall.** From
- * anywhere inside, the near hemisphere is behind you by construction, so a
- * heading through the middle guarantees everything in frame is at least
- * `R − d` away and everything nearby is out of shot. No amount of tilt fixes
- * that; it is what "through the centre" means.
- *
- * So both were searched instead, over standing points on shells from 7.5 to 9
- * units and headings over the whole sphere, scored on nodes in frame, nodes
- * within 10 units, total apparent area, how they spread across the frame, and
- * how they hold up at six viewports. Constrained so that no node sits within 6
- * degrees of the view axis — the thing the old tilt existed to avoid, since
- * arriving pointed at one project reads as a focus nobody asked for — and none
- * is closer than 4.5 units.
- *
- * The search has run three times, and the third run is the one to read: the
- * first two optimised the wrong thing.
- *
- * **Runs one and two maximised what was in frame, and put the reader against a
- * wall.** They landed on a standing point 9 units out, two from the shell, and
- * by their own metrics that was excellent — 21 nodes in frame, ten of them
- * projects, twice the apparent area of the derived pose it replaced. It was
- * also wrong in a way none of those numbers could see, because every one of
- * them measures the frame and the complaint was about the room:
- *
- * | | 9 units out | 5.5 units out |
- * | --- | --- | --- |
- * | nearest node in any direction | 2.85 | 5.6 |
- * | furthest | 20.62 | 16.8 |
- * | **ratio — 1 would be perfectly enclosed** | **7.2** | **3.0** |
- * | nodes in frame | 21 | 24 |
- * | **production projects in frame** | **4** | **8** |
- * | fewest in frame across six viewports | 9 | 11 |
- * | apparent area | 55 | 36 |
- * | **apparent growth across the flight** | **5.3x** | **8.7x**
- *
- * Standing 9 units out on a shell of 11 is standing *at* the wall: something is
- * two units from your face and the far side is twenty, and six nodes out of
- * fifty-one ever got past you. That is a doorway, not a middle. And because the
- * journey ended at 9 rather than 5.5, it covered less of the distance that was
- * left — the graph grew 5.3x across the whole approach where it now grows 8.7x.
- *
- * **The two complaints turned out to be one fact.** "We barely flew anywhere"
- * and "we are not in the centre of it" are the same measurement read twice:
- * stopping early leaves you off-centre *and* shortens the flight, because the
- * part of the journey you skipped is the part where the graph is closest and
- * changing fastest. Half the constellation passing behind the camera is what
- * flying into something is; six nodes is arriving at its edge.
- *
- * **What it costs, stated plainly, because it is a real trade.** Enclosure and
- * presence pull against each other on a hollow shell: from the exact centre
- * every node is 11 units away and nothing varies, which is the flat wall the
- * first run existed to fix. Moving in from 9 to 5.5 gives some of that back —
- * the nearest node in frame is 9.1 rather than 7.3, front-to-back depth is 7.6
- * rather than 11.7, and total apparent area is 36 against 55. Everything is a
- * little further off and a little flatter.
- *
- * **And a fourth run was needed, because "projects in frame" was the wrong
- * count.** The third run landed on a pose with eight projects in shot and
- * *one* of them production work: it faced the personal cluster, so the first
- * thing a visitor saw on arriving was Thai Ginger and a Pokemon team builder.
- * The site's entire argument is that one region of this graph is a truthful
- * architecture diagram of software that runs a factory, and the arrival was
- * pointed away from it. Scoring the SEL clusters specifically — through-hole,
- * solder, maintenance, tools — rather than projects generally fixed it: all
- * eight projects in frame are production work now, against four at 9 units.
- * The node count went *up* at the same time, 21 to 24, and the worst viewport
- * went from 9 nodes to 11, so this cost nothing to buy.
- *
- * 5.5 is the knee rather than a preference. At 3 the numbers collapse back to
- * the original derived pose's — nearest 11.4, depth 3.3, nothing near at all —
- * because the middle of a shell is where everything is equidistant. At 9 you
- * are against the wall. Between 4.5 and 6.5 the measures move slowly and 5.5
- * holds the most projects in frame while keeping the ratio under 3.
- *
- * The constraints the search ran under: no node within 6 degrees of the view
- * axis, so the arrival is not pointed at one project; at least five nodes
- * inside 11 units and at least eight projects in frame; the frame's centroid
- * within 0.14 of centre; and at least 8 nodes at every one of six viewports.
+ * The brief, restated by the person whose site it is: land in the centre, so
+ * that looking around is looking around from the middle of a cloud of nodes,
+ * and fly *straight* there — the camera holds its heading, and it is the
+ * graph that turns to put something worth seeing in front of the reader on
+ * arrival. Uniform depth is the thing being asked for. So the standing point
+ * is the origin, and what is searched now is only the heading.
  */
-const INTERIOR_STANDING_POINT = new THREE.Vector3(2.33, -4.637, 1.822);
+const INTERIOR_STANDING_POINT = new THREE.Vector3(0, 0, 0);
 
 /**
- * Which way the reader faces on arrival, in the graph's own space.
+ * Which way the reader faces on arrival, in the graph's own space — and
+ * therefore which face of the constellation the graph turns toward the
+ * approaching camera.
  *
- * Not through the centre — see above. It crosses the interior obliquely, so
- * the near shell runs down one side of the frame and the far shell fills the
- * rest, which is what puts nine nodes inside 10 units while still leaving
- * nineteen in shot.
+ * Searched from the centre (`checks/interiorheading.mjs`), over the whole
+ * sphere of headings, scored on nodes in frame across six desktop viewports,
+ * production projects in frame, and total apparent area, with the frame's
+ * centroid held near the middle and no node within 6 degrees of the axis, so
+ * the arrival is not pointed at one project. Two more constraints exist only
+ * because the flight is now a straight line *through* the shell: the camera
+ * enters along the reverse of this heading, so no node may sit within 1.5
+ * units of that line — the reader passes nodes, not through them.
+ *
+ * At 1440x900 this puts 18 nodes in frame, six of them projects and all six
+ * production work, with the sparsest of the six viewports at 17. Re-run the
+ * search when `content/layout.ts` moves; a heading measured against a layout
+ * that has since changed is indistinguishable from one that was never right.
  */
-const INTERIOR_HEADING = new THREE.Vector3(-0.195, 0.927, 0.321).normalize();
+const INTERIOR_HEADING = new THREE.Vector3(-0.083, 0.908, 0.411).normalize();
 
 /**
  * How far the pose's target sits ahead of the camera on the interior poses.
@@ -522,7 +477,7 @@ interface Flight {
    * graph, measured from the graph's centre — see approachLerpPose. `shell`
    * sweeps across the surface between two nodes, for a sideways move.
    */
-  path: "line" | "approach" | "shell";
+  path: "line" | "approach" | "shell" | "dive";
   /**
    * How long it takes. Carried per flight rather than read from a constant,
    * because the two kinds of move want different times — see
@@ -550,6 +505,17 @@ interface Flight {
    * flight exists from the moment it is asked for, it simply has not started.
    */
   delay: number;
+  /**
+   * Where the destination document is allowed to appear, as a fraction of
+   * raw progress — see ARRIVAL_REVEAL_AT. Only meaningful for a departure.
+   */
+  revealAt: number;
+  /**
+   * Does this flight end at the home standing point? Then the hero plane
+   * has to be exactly where the real hero is by the end, and dissolve into
+   * it as the document appears.
+   */
+  toHome: boolean;
 }
 let flight: Flight | null = null;
 
@@ -719,7 +685,9 @@ function ConstellationOrientation({
     // placement 1 the orientation is exactly the layout's, whatever the reader
     // was looking at before.
     if (placement > 0) {
-      group.quaternion.copy(orientationTarget.current).slerp(UNROTATED, placement);
+      group.quaternion
+        .copy(orientationTarget.current)
+        .slerp(UNROTATED, unwindShare(placement));
       turnVelocity.current.set(0, 0, 0);
     } else if (reducedMotion || isDragging()) {
       // A drag is direct manipulation: the sphere is under the pointer and has
@@ -816,6 +784,7 @@ function CameraRig({
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const flying = useSceneStore((s) => s.flying);
   const size = useThree((s) => s.size);
+  const scene = useThree((s) => s.scene);
 
   /**
    * **The standing pose: where the camera is on every route but the graph.**
@@ -1055,6 +1024,89 @@ function CameraRig({
     [isNebula, isHome, spotlightNodeId, spotlightGroup, size],
   );
 
+  /** Scratch for the home solve; runs every frame. */
+  const homeCamera = useRef(new THREE.Vector3());
+
+  /**
+   * **Where the hero plane is this frame**, and how present it is.
+   *
+   * The plane hangs HOME_STANDOFF ahead of the home standing point, sized and
+   * placed so that from that point it covers the hero column's measured
+   * pixels exactly — so the swap between page and plane has nowhere to show.
+   * On `/` the standing pose *is* the home point, parallax and all, and the
+   * column's live rect carries the same parallax on the DOM side. Anywhere
+   * else, home is solved from the landing composition for this viewport with
+   * nothing moving, which is where the page will be when the reader gets
+   * back to it.
+   *
+   * Presence follows the flight, by distance from the centre so one rule
+   * serves both directions: full at the standing point, down to
+   * HOME_REST_OPACITY by half way in. Arriving home, it fades out over the
+   * same window the document fades in. Off `/nebula` at rest it is not drawn
+   * at all — it would sit on top of the real page.
+   */
+  function solveHomePlane(
+    cameraPosition: THREE.Vector3,
+    active: Flight | null,
+  ) {
+    const { width: W, height: H } = size;
+    if (W <= 0 || H <= 0) return;
+    const K = H / 2 / Math.tan((STANDING_FOV * Math.PI) / 360);
+
+    if (isHome) {
+      homeCamera.current.copy(standing.current.position);
+    } else {
+      const sizeFactor = LANDING_SCALE * clusterScaleForViewport(W, H, 1);
+      const D = REFERENCE_DISTANCE / sizeFactor;
+      const k = K / D;
+      homeCamera.current.set(
+        -(W * clusterCenterXFraction(W, H, 1, false) - W / 2) / k,
+        (H * clusterCenterYFraction(W, H, 1) - H / 2) / k,
+        D,
+      );
+    }
+
+    const frame = getHeroFrame() ?? {
+      left: 0.048 * W,
+      top: 0.045 * H,
+      width: Math.min(0.44 * W, 700),
+      height: 0.72 * H,
+    };
+    const p = HOME_STANDOFF;
+    homePlane.position.set(
+      homeCamera.current.x + ((frame.left + frame.width / 2 - W / 2) / K) * p,
+      homeCamera.current.y - ((frame.top + frame.height / 2 - H / 2) / K) * p,
+      homeCamera.current.z - p,
+    );
+    homePlane.width = (frame.width / K) * p;
+    homePlane.height = (frame.height / K) * p;
+
+    if (!active) {
+      if (isNebula) {
+        homePlane.opacity = HOME_REST_OPACITY;
+      } else if (handoffOut.current > 0) {
+        const u = (performance.now() - handoffOut.current) / HOME_HANDOFF_OUT_MS;
+        homePlane.opacity = THREE.MathUtils.clamp(1 - u, 0, 1);
+        if (u >= 1) handoffOut.current = 0;
+      } else {
+        homePlane.opacity = 0;
+      }
+      return;
+    }
+    const outer = Math.max(
+      active.from.position.length(),
+      active.to.position.length(),
+      1e-3,
+    );
+    const r = cameraPosition.length();
+    const inward = THREE.MathUtils.clamp((1 - r / outer) / 0.5, 0, 1);
+    homePlane.opacity = THREE.MathUtils.lerp(
+      1,
+      HOME_REST_OPACITY,
+      inward * inward * (3 - 2 * inward),
+    );
+  }
+
   function clonePose(pose: CameraPose): CameraPose {
     return { position: pose.position.clone(), target: pose.target.clone() };
   }
@@ -1085,6 +1137,21 @@ function CameraRig({
   const ARRIVAL_REVEAL_AT = 0.55;
 
   /**
+   * When the destination is home there is no early reveal at all. The page
+   * is *already visible* for the whole retreat, as the plane the camera is
+   * backing away toward, and the document only has to take over from it —
+   * a swap that is invisible only while the plane sits on the page pixel for
+   * pixel, which is once the camera has stopped. So the document is revealed
+   * at the moment of landing and the plane dissolves out over the document's
+   * own 620ms fade (globals.css), the arrival's hand-off in reverse.
+   */
+  const HOME_REVEAL_AT = 1;
+  /** Matches the document's fade-in in globals.css. */
+  const HOME_HANDOFF_OUT_MS = 620;
+  /** When the plane began dissolving into the document, or 0. */
+  const handoffOut = useRef(0);
+
+  /**
    * Let the page the reader is flying to appear.
    *
    * `route-curtain.tsx` raises `data-arriving` on `<html>` when a navigation
@@ -1099,12 +1166,16 @@ function CameraRig({
     // Guarded because the frame loop asks every frame once a departure is past
     // its reveal point, and `delete` on <html> is a real DOM write that would
     // otherwise happen sixty times a second for the rest of the flight.
+    if (document.documentElement.dataset.leaving !== undefined) {
+      delete document.documentElement.dataset.leaving;
+    }
     if (document.documentElement.dataset.arriving === undefined) return;
     delete document.documentElement.dataset.arriving;
   }
 
   function begin(controls: CameraControlsImpl, next: Flight) {
     flight = next;
+    handoffOut.current = 0;
     applyPose(controls, next.from);
     applyFov(controls, next.fovFrom);
     // Every flight ends closer in or further out than hand-dollying is allowed
@@ -1155,6 +1226,58 @@ function CameraRig({
    */
   const lastRoute = useRef<boolean | undefined>(undefined);
   const lastFocus = useRef<string | null | undefined>(undefined);
+
+  /**
+   * The flight in. One place, because it can start from two triggers: the
+   * landing page's click, before the route has changed (the hero has to still
+   * be in the document for the hand-off), and the route itself, for every
+   * other way of arriving — a work page, the browser's forward button.
+   */
+  function beginArrival(controls: CameraControlsImpl, delay: number) {
+    begin(controls, {
+      from: clonePose(standing.current),
+      to: INSIDE_POSE,
+      start: performance.now(),
+      fovFrom: STANDING_FOV,
+      fovTo: INSIDE_CAMERA_FOV,
+      placementFrom: 0,
+      placementTo: 1,
+      path: "dive",
+      duration: FLIGHT_DURATION_MS,
+      ease: diveEase,
+      delay,
+      revealAt: 1,
+      toHome: false,
+    });
+  }
+
+  /**
+   * **The landing page asked to leave.** Start the flight now, while the
+   * hero is still mounted and dissolving into the plane; when the route
+   * follows a fifth of a second later, the route effect below sees a flight
+   * already bound for the graph and leaves it alone.
+   */
+  const arrivalRequest = useSceneStore((s) => s.arrivalRequest);
+  useEffect(() => {
+    if (arrivalRequest === 0) return;
+    const controls = controlsRef.current;
+    if (!controls || isNebula || lastRoute.current === true) return;
+    const { reducedMotion } = useSceneStore.getState();
+    if (reducedMotion) return;
+    solveStanding(0, reducedMotion);
+    lastRoute.current = true;
+    // Held for the hand-off. The page dissolves into the plane over
+    // HOME_HANDOFF_MS, and the two only match while the camera is at the
+    // standing point: measured with the flight starting on the click, the
+    // camera had covered seven units by the end of the dissolve and the plane
+    // was 14% larger than the page fading out over it — a double image at
+    // the one moment the swap is supposed to be invisible. So the picture
+    // holds still while the page becomes the plane, then the flight goes.
+    beginArrival(controls, HOME_HANDOFF_MS);
+    // `isNebula` and `solveStanding` are read, not reacted to: this fires on
+    // a request and nothing else.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arrivalRequest]);
   useEffect(() => {
     const controls = controlsRef.current;
     if (!controls) return;
@@ -1199,19 +1322,7 @@ function CameraRig({
         settle(controls, INSIDE_POSE, INSIDE_CAMERA_FOV, { free: false, at: 1 });
         return;
       }
-      begin(controls, {
-        from: clonePose(standing.current),
-        to: INSIDE_POSE,
-        start: performance.now(),
-        fovFrom: STANDING_FOV,
-        fovTo: INSIDE_CAMERA_FOV,
-        placementFrom: 0,
-        placementTo: 1,
-        path: "approach",
-        duration: FLIGHT_DURATION_MS,
-        ease: approachEase,
-        delay: 0,
-      });
+      beginArrival(controls, 0);
       return;
     }
 
@@ -1243,14 +1354,18 @@ function CameraRig({
       placementFrom: 1,
       placementTo: 0,
       duration: FLIGHT_DURATION_MS,
-      ease: approachEase,
       // Only when there is a shell to close. Leaving the graph itself has no
       // second beat to wait for.
       delay: leavingNode ? SHELL_CLOSE_MS : 0,
-      // Measured from the graph's centre, so the retreat is monotonic — the
-      // graph only ever shrinks — whether it starts at the standing point
-      // inside the shell or against a node's surface.
-      path: "approach",
+      // From the centre, the dive in reverse: the same straight line the
+      // reader came in on. From a node, the approach path — it measures from
+      // the graph's centre too, so the retreat is monotonic, and it turns the
+      // camera off the node's surface early, which a line from the middle has
+      // no need to do.
+      path: leavingNode ? "approach" : "dive",
+      ease: leavingNode ? approachEase : diveEase,
+      revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
+      toHome: isHome,
     });
     // `settle` normally restores the clamps; a departure ends off /nebula,
     // where they must stay off (see applyDollyClamps).
@@ -1316,6 +1431,10 @@ function CameraRig({
       // Closing one waits for the shell; opening one has nothing to wait for,
       // and a sideways move carries its shell with it.
       delay: routeFocusId === null ? SHELL_CLOSE_MS : 0,
+      // Never a departure: there is no document to reveal and no home to
+      // arrive at inside the graph.
+      revealAt: 1,
+      toHome: false,
       // A focus hop is short and barely turns; a straight line is the right
       // path for it, and it is the one 2.5 was tuned against.
       // Node to node follows the surface; anything involving the resting pose
@@ -1341,31 +1460,50 @@ function CameraRig({
       // composition is live — parallax, the ambient ease, a hover on `/work`
       // re-centring the graph — and camera-controls is disabled here, so
       // nothing else will.
-      if (!isNebula) {
+      // **Only once the route effect has caught up.** Between the commit
+      // that changes the route and the effect that starts the departure
+      // there is at least one frame, and under software GL several. Writing
+      // the standing pose in that gap moved the camera to its destination
+      // before the flight began, so the flight then started from where it
+      // was meant to end and did nothing — the departure trace showed the
+      // camera at 130 units on its first flying frame. The rig's own record
+      // of the last route it handled is the gate: until it matches, the
+      // camera stays wherever the graph left it.
+      if (!isNebula && lastRoute.current === isNebula) {
         applyPose(controls, standing.current);
         applyFov(controls, STANDING_FOV);
       }
+      solveHomePlane(controls.camera.position, null);
       return;
     }
 
     const t = flightProgress(active);
     const eased = (active.ease ?? flightEase)(t);
-    if (active.placementTo === 0 && t >= ARRIVAL_REVEAL_AT) revealDocument();
+    if (active.placementTo === 0 && t >= active.revealAt) revealDocument();
     setPlacement(
       THREE.MathUtils.lerp(active.placementFrom, active.placementTo, eased),
     );
-    const pose =
-      active.path === "approach"
-        ? approachLerpPose(active.from, active.to, eased)
-        : active.path === "shell"
-          ? shellLerpPose(active.from, active.to, eased)
-          : lerpPose(active.from, active.to, eased);
+    let pose: CameraPose;
+    let fovMix = eased;
+    if (active.path === "dive") {
+      const dive = divePose(active.from, active.to, eased);
+      pose = dive;
+      fovMix = dive.lens;
+    } else if (active.path === "approach") {
+      pose = approachLerpPose(active.from, active.to, eased);
+    } else if (active.path === "shell") {
+      pose = shellLerpPose(active.from, active.to, eased);
+    } else {
+      pose = lerpPose(active.from, active.to, eased);
+    }
 
     applyPose(controls, pose);
-    applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, eased));
+    applyFov(controls, THREE.MathUtils.lerp(active.fovFrom, active.fovTo, fovMix));
+    solveHomePlane(pose.position, active);
 
     if (t >= 1) {
       flight = null;
+      if (active.toHome) handoffOut.current = performance.now();
       revealDocument();
       setPlacement(active.placementTo);
       useSceneStore.getState().setFlying(false);
@@ -1392,6 +1530,7 @@ function CameraRig({
     publishCameraProbe(
       controls.camera as THREE.PerspectiveCamera,
       flight !== null,
+      scene,
     );
   });
 
@@ -1478,7 +1617,7 @@ export function NebulaCanvas() {
       {/* Home, as a thing in the world rather than a route you came from.
           On every route but the graph it sits behind the camera, so the gate
           is about not paying for it rather than about hiding it. */}
-      <NebulaHome visible={isNebula} />
+      <NebulaHome />
       <RouteFocus id={routeFocusId} />
       <CameraRig
         isNebula={isNebula}

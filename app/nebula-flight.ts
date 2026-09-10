@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { cubicBezier } from "motion/react";
-import { nodeGeometry } from "@/lib/node-geometry";
+import { CONSTELLATION_BOUNDING_RADIUS, nodeGeometry } from "@/lib/node-geometry";
 import { SURFACE_STANDOFF } from "@/lib/focus-framing";
 import { getLivePosition } from "./nebula-simulation";
 
@@ -13,18 +13,16 @@ import { getLivePosition } from "./nebula-simulation";
 /**
  * The journey between the landing page and the graph, in ms.
  *
- * 01-design-system.md specified 1400. Longer now because this flight is the
- * one piece of motion on the site that is supposed to read as *travel* rather
- * than as a transition, and it was over before it registered as either.
- *
- * Worth knowing what actually moves during it: the camera covers very little
- * ground, and almost all of the apparent motion is the constellation growing
- * from its landing footprint to life-size around the viewer. Time makes that
- * growth more legible; it does not make it more like flying. See
- * docs/05-phase-2.md on why a real approach would have to change the path
- * rather than the clock.
+ * 01-design-system.md specified 1400, and it was 2000 through Part 3. It is
+ * longer again because the journey is longer: it ends at the centre of the
+ * shell rather than two units inside its wall, and the last stretch — through
+ * the near nodes and into the middle of the room — is the part that was
+ * missing when the flight read as "two steps over to the nebula". The camera
+ * now covers 130 units, passes the hero on the way, and crosses the shell at
+ * about three fifths of the way through; 2800 is what that takes at the pace
+ * `diveEase` sets without the interior half becoming a crawl.
  */
-export const FLIGHT_DURATION_MS = 2000;
+export const FLIGHT_DURATION_MS = 2800;
 
 /**
  * How long a move *within* the graph takes: opening a node, closing one, or
@@ -56,6 +54,19 @@ export const flightEase = cubicBezier(0.32, 0.72, 0, 1);
  * it arrives, rather than lunging and then floating.
  */
 export const approachEase = cubicBezier(0.25, 0.15, 0.35, 0.85);
+
+/**
+ * The curve for the dive: the flight from the landing page to the centre of
+ * the graph and back.
+ *
+ * Asked for in so many words — "ease in fast and ease back out as the camera
+ * lands". A short lean into the launch, then sustained speed, then a long
+ * settle into the middle of the room. It is applied to a distance that is
+ * already spent geometrically (divePose), so "sustained speed" here means a
+ * constant rate of apparent growth, which is what travel looks like, and the
+ * settle is on top of that.
+ */
+export const diveEase = cubicBezier(0.3, 0, 0.15, 1);
 
 /**
  * The constellation's **geometric** centre, which is the origin: content/
@@ -331,6 +342,121 @@ export function approachLerpPose(
   return {
     position,
     target: position.clone().addScaledVector(heading, lookLen),
+  };
+}
+
+/**
+ * **The dive: the flight between a standing point outside the graph and the
+ * centre of it**, in either direction. Part 4 of `07-continuous-space.md`.
+ *
+ * What it is asked to be: a straight run. The camera holds one heading for
+ * the whole journey — the graph turns to meet it (NEBULA_BASE_ROTATION) — and
+ * arrives at the exact centre of the shell, so what the reader sees on landing
+ * is nodes on every side, at one distance, like being in the middle of a
+ * hollow cloud. `approachLerpPose` cannot end there: it measures distance
+ * geometrically from the centre and a geometric schedule never reaches zero.
+ *
+ * Three things are spent against three different clocks, and each is a
+ * function of **distance from the centre** so that one rule serves both
+ * directions.
+ *
+ * **Distance is geometric against the far wall.** Apparent size goes as
+ * `1 / d`, and from inside the graph the thing whose size the eye measures is
+ * the far side of the shell — `r + R` away, never zero. So `r + R` decays at a
+ * constant ratio per unit of eased time: the wall grows at a steady rate all
+ * the way in, and the schedule reaches the centre. The shell itself is
+ * crossed at about 73% of the eased progress, which leaves the last quarter
+ * for the interior — the wall doubling from 22 units to 11, which is the part
+ * of the journey the old pose skipped and the part that makes it a room.
+ *
+ * **The lateral glide is spent while far.** The landing camera stands off
+ * the axis so the graph sits beside the hero; the centre is on the axis. The
+ * slide between them is spent over the outer 70% of the distance, so the
+ * graph drifts to the middle of the frame while it is still small and then
+ * the run in is dead straight. The reverse holds going out: the graph recedes
+ * straight, then settles beside the hero as the camera settles.
+ * `approachLerpPose` found the opposite rule for its swing — do the turning
+ * while close — but that was a *turn around* the graph, and a glide across
+ * the frame is not one: spent early it is an aim, spent late it is a lurch.
+ *
+ * **The lens widens over the inner 45%.** 30 degrees standing, 72 inside.
+ * Widening shrinks everything, so wherever it happens it eats into the sense
+ * of approach — a dolly zoom — and the place to spend it is where the near
+ * nodes are streaming past and the widening reads as the room opening up
+ * around the reader rather than the wall pulling away. Measured against the
+ * far wall, the growth never reverses: the slowest stretch is 1.03x per
+ * 100ms, at the crossing.
+ */
+export interface DivePose extends CameraPose {
+  /** Distance from the graph's centre. */
+  r: number;
+  /** The outer endpoint's distance. */
+  outer: number;
+  /** How far the lens has gone from `from`'s field of view to `to`'s, 0..1. */
+  lens: number;
+}
+
+const DIVE_SHELL = CONSTELLATION_BOUNDING_RADIUS;
+/** The glide is finished once `r` is inside this fraction of the outer distance. */
+const DIVE_GLIDE_INNER = 0.3;
+/** The lens widens over this innermost fraction of the outer distance. */
+const DIVE_LENS_OUTER = 0.45;
+
+function smoothstep(u: number) {
+  const x = THREE.MathUtils.clamp(u, 0, 1);
+  return x * x * (3 - 2 * x);
+}
+
+/** Geometric interpolation of `r + R` between the two endpoints. */
+export function diveDistance(rFrom: number, rTo: number, s: number) {
+  const a = rFrom + DIVE_SHELL;
+  const b = rTo + DIVE_SHELL;
+  return a * Math.pow(b / a, s) - DIVE_SHELL;
+}
+
+const _diveDirA = new THREE.Vector3();
+const _diveDirB = new THREE.Vector3();
+const _diveHeadA = new THREE.Vector3();
+const _diveHeadB = new THREE.Vector3();
+
+export function divePose(from: CameraPose, to: CameraPose, s: number): DivePose {
+  const rA = from.position.length();
+  const rB = to.position.length();
+  const outer = Math.max(rA, rB, 1e-3);
+  const innerIsTo = rB < rA;
+  const r = diveDistance(rA, rB, s);
+
+  _diveHeadA.copy(from.target).sub(from.position).normalize();
+  _diveHeadB.copy(to.target).sub(to.position).normalize();
+  // Where each endpoint sits around the graph. A pose at the centre has no
+  // direction of its own, so it takes the one it is looking along, reversed:
+  // the camera reaches the centre by flying in along its own heading.
+  if (rA > 1e-3) _diveDirA.copy(from.position).divideScalar(rA);
+  else _diveDirA.copy(_diveHeadA).negate();
+  if (rB > 1e-3) _diveDirB.copy(to.position).divideScalar(rB);
+  else _diveDirB.copy(_diveHeadB).negate();
+
+  // 1 at the outer end, 0 once inside the glide band.
+  const far = smoothstep((r / outer - DIVE_GLIDE_INNER) / (1 - DIVE_GLIDE_INNER));
+  const w = innerIsTo ? 1 - far : far;
+  const position = slerpDirection(_diveDirA, _diveDirB, w).multiplyScalar(r);
+
+  const heading = slerpDirection(_diveHeadA, _diveHeadB, w);
+  const lookLen = THREE.MathUtils.lerp(
+    from.target.distanceTo(from.position),
+    to.target.distanceTo(to.position),
+    s,
+  );
+
+  const insideLens = 1 - smoothstep(r / (outer * DIVE_LENS_OUTER));
+  const lens = innerIsTo ? insideLens : 1 - insideLens;
+
+  return {
+    position,
+    target: position.clone().addScaledVector(heading, lookLen),
+    r,
+    outer,
+    lens,
   };
 }
 

@@ -303,6 +303,18 @@ html[data-arriving] body > header {
 }
 
 /*
+ * **The page you are leaving, dissolving into the plane that stands in for
+ * it.** The other half of the hand-off. nebula-departure.ts raises this on
+ * the click; the flight starts on the same frame, the plane is already drawn
+ * where the hero is, and the route changes once the fade is done. Same
+ * selector, same `!important`, for the same reasons as the hold above.
+ */
+html[data-leaving] body > *:not(:has(canvas)) {
+  opacity: 0 !important;
+  transition: opacity 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
  * The whole effect is motion, so reduced motion has nothing to keep. Flights
  * are already cuts there (01-design-system.md), which means the attribute is
  * never raised in the first place — this is belt and braces for the case where
@@ -317,7 +329,8 @@ html[data-arriving] body > header {
   }
 
   /* Overriding the hold's own `!important` takes one of its own. */
-  html[data-arriving] body > *:not(:has(canvas)) {
+  html[data-arriving] body > *:not(:has(canvas)),
+  html[data-leaving] body > *:not(:has(canvas)) {
     opacity: 1 !important;
   }
 }

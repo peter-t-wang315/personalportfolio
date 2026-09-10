@@ -58,6 +58,15 @@ schedule is honest) and useless for judging how anything **feels**.
 | `labelviewports.mjs` | How many labels survive at each viewport, and does any of them cross the article? |
 | `exitcentre.mjs` | Does closing a node leave that node in the middle of the frame? |
 | `overlay.mjs` | Do the DOM overlays sit on the graph the scene actually drew? |
+| `flyin.mjs` | Does flying in land at the centre, pass the hero, and hand the page over to the plane and back? Traces the camera, the hero plane and the document on the same frames, both directions, and saves what screenshots it can into `flyin/`. |
+| `interiorheading.mjs` | **Offline, no browser.** Which way should the reader face on arriving at the centre? Searches the sphere of headings against the shipping layout and prints the winner beside the rig's current `INTERIOR_HEADING`. Re-run whenever `content/layout.ts` moves. Needs the TypeScript loader: `node --experimental-strip-types --no-warnings --import ./checks/ts-register.mjs checks/interiorheading.mjs`. |
+
+## Reading the app's own TypeScript
+
+`ts-register.mjs` and `ts-loader.mjs` let a check import `@/lib/...` and
+`content/...` directly — Node strips the types, the loader resolves the alias —
+so a search over the layout runs against exactly what ships rather than a copy
+of it. Nothing in the app depends on them.
 
 ## Traps
 
@@ -129,6 +138,15 @@ float simulation is still moving and the sample times land differently. The
 precise number comes from evaluating `approachLerpPose` offline — it is pure
 arithmetic over the layout — and the browser check exists to confirm the model
 describes the shipping code, not to produce the figure.
+
+**Writing the camera in the gap between a route commit and the rig's effect.**
+The frame loop applied the standing pose whenever it was off `/nebula` with no
+flight running, and there is at least one such frame — several under software
+GL — between the commit that changes the route and the passive effect that
+starts the departure. The camera was at its destination before the flight
+began, so the flight started from where it was meant to end and did nothing;
+`flyin.mjs` showed 130 units on the first flying frame. The rig now moves the
+camera only once its own record of the route matches the prop.
 
 **Stale expectations.** `centres.mjs` compared against a hard-coded `1008` for
 several commits after the solve moved to `1102`, and read as a 95px regression

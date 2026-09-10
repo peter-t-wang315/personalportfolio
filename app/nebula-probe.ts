@@ -1,4 +1,6 @@
 import type * as THREE from "three";
+import { getClusterCircle } from "./nebula-drag-state";
+import { homePlane } from "./nebula-home-placement";
 import { getPlacement } from "./nebula-placement";
 
 /**
@@ -33,16 +35,23 @@ export interface CameraProbe {
   /** 0 standing outside, 1 inside the graph; see nebula-placement.ts. */
   placement: number;
   flying: boolean;
+  /** The hero plane, as the rig placed it this frame (nebula-home-placement.ts). */
+  home: { position: [number, number, number]; width: number; height: number; opacity: number };
+  /** The graph's on-screen circle, so a script can click it where the rig drew it. */
+  cluster: { x: number; y: number; r: number; ready: boolean };
 }
 
 declare global {
   interface Window {
     __nebulaProbe?: CameraProbe;
+    /** The live scene graph, for the same scripts. Read-only by convention. */
+    __nebulaScene?: THREE.Scene;
   }
 }
 
 const HEADING: [number, number, number] = [0, 0, 0];
 const POSITION: [number, number, number] = [0, 0, 0];
+const HOME_POSITION: [number, number, number] = [0, 0, 0];
 const probe: CameraProbe = {
   t: 0,
   position: POSITION,
@@ -51,6 +60,8 @@ const probe: CameraProbe = {
   fov: 0,
   placement: 0,
   flying: false,
+  home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
+  cluster: { x: 0, y: 0, r: 0, ready: false },
 };
 
 /**
@@ -62,8 +73,13 @@ const probe: CameraProbe = {
  * (camera-controls writes `camera.position` during its own update). By this
  * point in the frame it has.
  */
-export function publishCameraProbe(camera: THREE.PerspectiveCamera, flying: boolean) {
+export function publishCameraProbe(
+  camera: THREE.PerspectiveCamera,
+  flying: boolean,
+  scene?: THREE.Scene,
+) {
   if (typeof window === "undefined") return;
+  if (scene) window.__nebulaScene = scene;
   probe.t = performance.now();
   POSITION[0] = camera.position.x;
   POSITION[1] = camera.position.y;
@@ -77,5 +93,16 @@ export function publishCameraProbe(camera: THREE.PerspectiveCamera, flying: bool
   probe.fov = camera.fov;
   probe.placement = getPlacement();
   probe.flying = flying;
+  HOME_POSITION[0] = homePlane.position.x;
+  HOME_POSITION[1] = homePlane.position.y;
+  HOME_POSITION[2] = homePlane.position.z;
+  probe.home.width = homePlane.width;
+  probe.home.height = homePlane.height;
+  probe.home.opacity = homePlane.opacity;
+  const circle = getClusterCircle();
+  probe.cluster.x = circle.centerX;
+  probe.cluster.y = circle.centerY;
+  probe.cluster.r = circle.radiusPx;
+  probe.cluster.ready = circle.ready;
   window.__nebulaProbe = probe;
 }

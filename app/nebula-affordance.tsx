@@ -22,6 +22,7 @@ import { useSceneStore } from "@/lib/scene-store";
 import { useClusterScreen } from "@/lib/use-cluster-screen";
 import { CLUSTER_RADIUS } from "@/lib/cluster-geometry";
 import { FADE_DISTANCE_PX } from "./scroll-cue";
+import { departForNebula } from "./nebula-departure";
 
 /**
  * Casual, curious phrases — mixed tones (playful, quietly intriguing, terse)
@@ -344,6 +345,7 @@ function PhraseFollower({
   anchor: "top-left" | "center";
   onExitComplete?: () => void;
 }) {
+  const router = useRouter();
   const x = useMotionValue(targetX);
   const y = useMotionValue(targetY);
   const springX = useSpring(x, FOLLOW_SPRING);
@@ -418,6 +420,23 @@ function PhraseFollower({
             }
             onFocus={onFocus}
             onBlur={onBlur}
+            // A plain activation goes through the departure so the page can
+            // dissolve into the flight (nebula-departure.ts). Anything that
+            // asks for a new tab or window keeps the link's own behaviour.
+            onClick={(event) => {
+              if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              departForNebula(router);
+            }}
           >
             {presence}
           </Link>
@@ -779,7 +798,7 @@ function useClusterTapNavigation(cluster: ClusterScreen) {
       if ((event.target as Element | null)?.closest(INTERACTIVE_SELECTOR)) {
         return;
       }
-      router.push("/nebula");
+      departForNebula(router);
     }
 
     window.addEventListener("pointerdown", handlePointerDown);

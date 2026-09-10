@@ -801,7 +801,136 @@ Nothing here runs in CI and nothing should: it needs a production build, a
 server on :3100 and a browser, and it is slow. It is what you run before
 believing a claim, not on every save.
 
-### Part 4 — The approach and the string
+## The brief, restated
+
+Two rounds of measured fixes to the arrival — the re-searched pose, then the
+move from 9 units to 5.5 — and the reader who owns the site still said the same
+two things: *it does not land in the centre of the nebula*, and *it feels like
+we took two steps over to it rather than going way far*. So the brief was
+asked for in full before anything else was tuned, and it is worth recording in
+its own words because it overrules some of what this document measured its
+way to:
+
+- **Land at the exact centre.** Looking around should be looking around from
+  the middle of a cloud of nodes — "a weird hollow earth of clouds above".
+  Uniform depth, which the searches above avoided as a flat wall, is the thing
+  being asked for.
+- **Fly straight.** No camera turn at all. The graph turns to make the landing
+  look full; the reader only travels.
+- **Heroic.** Ease in fast, ease out as it lands.
+- **Physically past the hero.** Leave the page behind on the way in, and see
+  it back there in the distance when you turn around. This is Part 4 with
+  Part 5's plane, and both were pulled into scope for it.
+- **No free movement inside.** Look around, fly in, fly out, open a node,
+  close it. Nothing else. (Which is what the controls already allowed.)
+- **Desktop first.** Mobile later.
+
+The searches were not wrong about what they measured. They were asked a
+narrower question than the one that mattered — again — which is the pattern
+this document keeps finding in itself.
+
+## The dive
+
+The flight from the landing page to the centre and back, `divePose` in
+`app/nebula-flight.ts`. Three things spent against three clocks, each a
+function of distance from the centre so that one rule serves both directions:
+
+**Distance is geometric against the far wall.** `approachLerpPose` measured
+from the centre, and a geometric schedule to the centre never arrives. The
+thing the eye measures from inside the shell is the far side of it, `r + R`
+away, which is never zero — so that is what decays at a constant ratio per
+unit of eased time. Apparent growth is steady all the way in, the schedule
+reaches the centre, and the shell is crossed at 73% of the eased progress. The
+last quarter is the interior: the far wall doubling from 22 units to 11, which
+is the part the old pose skipped and the part that makes it a room.
+
+**The lateral glide is spent while far.** The landing camera stands 18 units
+off the axis so the graph sits beside the hero; the centre is on the axis. The
+slide between them is spent over the outer 70% of the distance — measured, the
+camera is on the axis by 54 units out — so the graph drifts to the middle of
+the frame while it is still small and the run in is dead straight. The rule
+`approachLerpPose` found, do the turning while close, was for a swing *around*
+the graph; a glide across the frame spent close is a lurch.
+
+**The lens widens over the inner 45%.** 30° standing, 72° inside. Widening
+shrinks everything, so wherever it is spent it eats into the approach; spent
+here, it is where the near nodes are streaming past the edges of the frame and
+reads as the room opening up around the reader. Modelled against the far wall,
+growth never reverses: the slowest stretch is 1.03× per 100ms, at the crossing.
+
+The curve is `diveEase`, (0.3, 0, 0.15, 1), over 2800ms — up from 2000, because
+the journey is longer by the part that was missing. The graph's own turn
+(`unwindShare`) is finished by seven tenths of the placement, just before the
+shell, so the run through the wall is against a graph that holds still; the
+same in reverse on the way out.
+
+**Landing at the centre changed the heading search, not just its answer.** The
+standing point is the origin, so only the heading is searched
+(`checks/interiorheading.mjs`), and two constraints are new because the flight
+is a straight line *through* the shell: nothing within 1.5 units of the entry
+line, so the reader passes nodes rather than through them, and the search
+scores production projects rather than projects. At 1440×900 the arrival has
+18 nodes in frame, six projects and all six production, the sparsest of six
+desktop viewports at 17, the nearest node to the entry line 2.02 units clear.
+The first heading chosen was 1.40 clear and was rejected by its own script.
+
+Measured in the browser (`checks/flyin.mjs`, software GL): 130.8 units to
+0.00, x from −18.2 to 0.0 by 54 units out, lens at 30° until 55 units then to
+72°, landed at (0.00, 0.00, 0.00) — the exact centre — with the graph balanced
+across the frame rather than piled into a corner.
+
+## The hand-off
+
+The hero plane from Part 2 hangs 50 units ahead of the home standing point now
+(`HOME_STANDOFF`), sized and placed every frame so that from that point it
+covers the hero column's measured pixels exactly. Going in, the page dissolves
+into it; going out, it dissolves into the page. In between it is the page
+going past on the left, then the page back there when the reader turns round,
+at two fifths opacity.
+
+**The plane is painted from the measured DOM**, not from `content/` at a layout
+of its own (`app/hero-layout.ts`): every run of text in the column with its
+box, font, size, weight, tracking, leading and colour as the browser computed
+them, re-wrapped in the same fonts within the same widths. A dozen
+`getBoundingClientRect` calls; still not `html2canvas`. What the column
+*contains* goes to the store and repaints the texture on resize; where the
+column *is* — it carries the pointer parallax — is re-read every frame during a
+flight, so the plane sits on the page at the one moment that matters.
+
+**The flight has to start before the route changes.** Navigating unmounts the
+landing page in the same commit, and there is then nothing to dissolve from.
+So every way in goes through `departForNebula`: measure the hero now, request
+the flight, raise `data-leaving` so the page fades over the plane, and push the
+route 220ms later. The rig starts the flight on the request and, when the
+route follows, sees a flight already bound for the graph and leaves it alone.
+
+**Both hand-offs happen with the camera still.** The first version started
+moving on the click; measured, the camera had covered seven units by the end
+of the 220ms dissolve and the plane was 14% larger than the page fading out
+over it — a double image at exactly the moment the swap was supposed to be
+invisible. So the arrival holds for the hand-off and then goes, and the return
+reveals the document at the moment of landing and dissolves the plane out over
+the document's own 620ms fade. The earlier reveal at 55% of the retreat, which
+existed so the page was readable before the camera stopped, is only used for
+destinations that are not home: at home the page is visible for the whole
+retreat, as the plane.
+
+Measured: the plane at 1.00 through the hand-off, 0.40 by half way in; on the
+return 0.40 until the camera passes it at 79.5 units, back to 1.00 at the
+standing point, then 0.93 / 0.87 / 0.74 over the first 160ms after landing as
+the document comes up 0.13 / 0.61, and the settled frame is the page with the
+plane gone.
+
+**One bug worth its own line, because it was silent.** The frame loop wrote
+the standing pose whenever it was off `/nebula` with no flight running, and
+there is at least one such frame between the commit that changes the route
+and the passive effect that starts the departure. The camera was at its
+destination before the flight began, so the flight started where it was meant
+to end and did nothing — 130 units on its first flying frame, and the trace
+alone would have said the schedule was fine. The rig now moves the camera only
+once its own record of the route matches the prop.
+
+### Part 4 — The approach and the string — **done**
 
 Fly-in becomes translation: forward and right, past the hero, into the shell.
 Fly-out becomes the retreat along that line, with the re-aim folded into its
@@ -810,7 +939,12 @@ last stretch.
 **Done when:** the hero passes the camera on the way in, and going home is a
 single pull with no separate turn after it lands.
 
-### Part 5 — The DOM handoff — **half of it landed early**
+**Done** — see "The brief, restated" below, which is where the shape of it was
+decided, and "The dive", which is what was built. The hero passes on the left
+50 units in; going home is the same line reversed with no turn at all, because
+the camera never turned on the way in either.
+
+### Part 5 — The DOM handoff — **done**
 
 Real hero at home, plane away from home, cross-faded in a band. The real hero
 keeps text selection, SEO and keyboard.
@@ -824,11 +958,11 @@ the second, so the flight is visible and the reader is reading before the
 camera stops. It landed early because it is what "going home does not animate"
 turned out to be, and it needs nothing Part 4 has yet to decide.
 
-What is left is the half that does: the **plane**. Fading the stand-in out as
-the real hero fades in requires knowing where the real hero *is* in the world,
-which is the home standing point, which is Part 4's to place. Until then the
-plane is simply not drawn off `/nebula` and the two never overlap — a gap
-rather than a cross-fade, and the reason this part is not finished.
+The plane half followed once Part 4 placed the standing point: the plane hangs
+`HOME_STANDOFF` ahead of it, is painted from the *measured* hero rather than
+from `content/` at a layout of its own, and the two dissolve into each other
+while the camera holds still — on the click going in, at the moment of landing
+coming out. See "The hand-off".
 
 ### Part 6 — Seeing home through the glass
 
@@ -850,26 +984,21 @@ placement model that no longer exists.
   headline, and the metric *values*. The metric labels are a sentence each and
   would be grey noise at this distance, where the numbers still read as
   numbers.
-- ~~**`p`, the hero's distance from the standing point.**~~ Deferred rather
-  than decided, and deliberately: `p` is an offset *ahead of the standing
-  point*, and there is no standing point until Part 4 places one. What exists
-  is `HOME_DISTANCE`, home's distance from the graph — no longer a number but a
-  fraction of the fog band (`lib/world-scale.ts`), which is 196 at the current
-  lens and was 150 at the old one. Note for whoever takes Part 4: the fraction
-  puts home 66 units *behind* the landing standing point at either setting,
-  which is a candidate value for `p` that fell out of holding home's haze
-  rather than being chosen. It is not a decision, but it is a number the
-  composition already likes.
+- ~~**`p`, the hero's distance from the standing point.**~~ Settled at 50
+  (`HOME_STANDOFF`, `lib/world-scale.ts`). The 66 the fog fraction suggested
+  put home *behind* the landing camera, which is where a thing you have not
+  yet passed cannot be; ahead of the camera the fog cannot reach it at all, so
+  its haze is an opacity now (`HOME_REST_OPACITY`, two fifths). `HOME_DISTANCE`
+  is gone — home is no longer a distance from the graph but an offset from the
+  reader's own standing point, and it follows the landing camera by
+  construction.
 - **Whether `/work/[slug]` is a third standing point or the home point with a
   different aim.** Still open. Both work. The second is fewer poses to reason
   about; the first is easier to compose independently.
-- **New, from the arrival re-measure:** the interior standing point is at 9.0
-  units, two from the shell, rather than the 3.20 it turned out to be at. The
-  reader is nearer the wall than any note in this document assumed, and the
-  drag sweeps a near surface past them rather than turning a distant one.
-  Nothing measured says that is wrong — it is most of why the arrival reads as
-  a room — but every claim in Part 2 about what the reader can see by turning
-  around was measured from the middle, and has not been re-measured from here.
+- ~~**The interior standing point is at 9.0 units, two from the shell.**~~
+  Overtaken: it is at the centre now, by decision — see "The brief, restated".
+  Every claim in Part 2 about what the reader sees by turning around was
+  measured from the middle and is true again.
 - **New, from Part 2:** the reader can now face empty paper. Looking away from
   both the graph and home shows nothing at all, which is honest for a space and
   is the first direction on this site that holds nothing. The corner Home link

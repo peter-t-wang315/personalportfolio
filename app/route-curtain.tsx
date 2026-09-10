@@ -61,6 +61,13 @@ export function RouteCurtain() {
     // an arrival, and hiding it would be a blank page waiting on a flight that
     // is never going to start.
     if (was === null) return;
+    // The other direction. The landing page raised `data-leaving` on itself
+    // when the reader clicked (nebula-departure.ts) and has now gone; the
+    // graph's own chrome is about to paint and must not inherit the fade.
+    if (isGraph(pathname) && !isGraph(was)) {
+      delete document.documentElement.dataset.leaving;
+      return;
+    }
     if (!isGraph(was) || isGraph(pathname)) return;
     // Reduced motion makes every flight an instant cut (01-design-system.md),
     // so there is no journey to hold the page back for — raising it here would
@@ -79,9 +86,11 @@ export function RouteCurtain() {
     // normal case the rig has already dropped the attribute well before it
     // fires — so it is a floor under the effect rather than the thing driving
     // it, and it cannot desync the way a timer that owned the reveal would.
+    // A little past the flight: leaving from an open node holds for the shell
+    // to close first, and the reveal at home is at the moment of landing.
     const failsafe = window.setTimeout(() => {
       delete document.documentElement.dataset.arriving;
-    }, FLIGHT_DURATION_MS);
+    }, FLIGHT_DURATION_MS + 400);
     return () => window.clearTimeout(failsafe);
   }, [pathname]);
 

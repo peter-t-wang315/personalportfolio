@@ -27,9 +27,12 @@ import { CONSTELLATION_BOUNDING_RADIUS } from "./node-geometry";
  * `STANDING_FOV` and the band, home's distance and home's size all follow.
  *
  * Each derived value reproduces the number it replaces when the dial is back
- * at 45: `REFERENCE_DISTANCE` 23, the landing camera 83.8, the band 55-210,
- * home 150 at 40 units tall. Those were arrived at by looking, over Parts 1
- * to 3; the formulae are what they turned out to mean.
+ * at 45: `REFERENCE_DISTANCE` 23, the landing camera 83.8, the band 55-210.
+ * Those were arrived at by looking, over Parts 1 to 3; the formulae are what
+ * they turned out to mean. Home is the exception since Part 4: it is no
+ * longer a distance from the graph but an offset ahead of the reader's own
+ * standing point (`HOME_STANDOFF`), so it moves with the landing camera by
+ * construction rather than by derivation.
  */
 
 /**
@@ -138,11 +141,12 @@ const LANDING_NEAR_HAZE = 0.1;
  * Near is placed off the *front of the graph as seen from the landing page*,
  * which is the composition the band exists to grade. Two consequences worth
  * knowing. Inside the shell there is no fog at all, by a wide margin: the
- * standing point is 9 units from the middle and the furthest node about 20,
- * against a near plane past 100 — right, because from within a shell there is
- * no recession to describe. And the near plane now sits *behind* the reader on
+ * reader stands at the centre and every node is within 12 units, against a
+ * near plane past 100 — right, because from within a shell there is no
+ * recession to describe. And the near plane now sits *behind* the reader on
  * `/nebula`, so it can never quietly re-engage there the way the old band
- * quietly disengaged.
+ * quietly disengaged. Home sits inside it too, which is why the hero plane's
+ * haze is an opacity (`HOME_REST_OPACITY`) rather than the fog's.
  */
 export const FOG_NEAR =
   LANDING_STANDING_DISTANCE -
@@ -152,26 +156,39 @@ export const FOG_NEAR =
 export const FOG_FAR = FOG_NEAR + FOG_BAND;
 
 /**
- * How far through the band home sits, seen from inside the graph.
+ * **How far ahead of the home standing point the hero plane hangs**, in world
+ * units. Part 4's `p`.
  *
- * Part 2 picked this by looking, and the note it left is the reason it is a
- * constant rather than a distance: "a quarter faded is not distance, it is a
- * slightly grey sign". Three fifths reads as *past* the graph rather than just
- * outside it. Holding the fraction rather than the distance is what keeps that
- * true when the dial moves — at 45 degrees it is the 150 units Part 2 settled
- * on, at 30 it is 196.
+ * Home is no longer a distance from the graph. It is a place the reader
+ * stands, and the hero is a page hung `p` units in front of that place, sized
+ * so that from the standing point it covers exactly the pixels the real hero
+ * covers (nebula-canvas.tsx solves the plane against the measured DOM). Flying
+ * in, the camera passes it `p` units into the journey; looking back from the
+ * centre, it is `D − p` away, where `D` is the landing distance.
+ *
+ * `p` therefore trades two things off. Small, and the page passes the camera
+ * almost at once and is a speck from inside; large, and it hangs out in the
+ * middle of the flight and looms from the centre. From the centre it appears
+ * at `p / (D − p)` of the fraction of the frame it filled at home, through the
+ * wider interior lens — at 50 that is a page about a fifth of the frame tall,
+ * seen 80 units off. Which is "back there where I left it" rather than "a
+ * poster on the far wall", and was picked by looking.
+ *
+ * It must stay well short of the graph: `D − p` has to clear the bounding
+ * radius by a margin, and at the narrowest desktop viewport the landing
+ * camera stands closest. 50 leaves it 67 units from the centre at 1024x768.
  */
-const HOME_HAZE = 0.61;
-
-/** Home's distance from the graph's centre, along +z. */
-export const HOME_DISTANCE = FOG_NEAR + HOME_HAZE * FOG_BAND;
+export const HOME_STANDOFF = 50;
 
 /**
- * How tall the home plane is, in world units.
+ * How present the hero plane is once the reader is inside the graph.
  *
- * Derived so that home's *apparent* size from inside the graph is the one Part
- * 2 settled on by looking — 40 units at 150 away — however far the dial pushes
- * it. The interior field of view is not the dial and does not move, so holding
- * the ratio holds the picture.
+ * The fog band cannot reach it — home sits inside the near plane now that it
+ * is `p` ahead of the landing camera rather than beyond it — so this is the
+ * haze, applied as opacity. Part 2's note stands: "a quarter faded is not
+ * distance, it is a slightly grey sign". A page at two fifths reads as left
+ * behind. It fades from full to this over the first half of the flight in,
+ * and back over the last half of the flight out, so the swap with the real
+ * page always happens at full strength.
  */
-export const HOME_PLANE_HEIGHT = HOME_DISTANCE * (40 / 150);
+export const HOME_REST_OPACITY = 0.4;

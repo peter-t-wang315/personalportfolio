@@ -32,6 +32,11 @@ export function setClusterCircle(
   circle = { centerX, centerY, radiusPx, ready: true };
 }
 
+/** The circle as last published, for app/nebula-probe.ts. */
+export function getClusterCircle() {
+  return circle;
+}
+
 /** Is this viewport point on the globe? */
 export function pointOnCluster(x: number, y: number) {
   if (!circle.ready) return false;

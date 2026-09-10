@@ -15,7 +15,7 @@
 import { chromium } from 'playwright';
 
 const b = await chromium.launch({ args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
-const DURATION = 2000;   // FLIGHT_DURATION_MS
+const DURATION = 2800;   // FLIGHT_DURATION_MS
 
 async function trace(label, from, to) {
   const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
@@ -46,21 +46,25 @@ async function trace(label, from, to) {
   // The flight's own clock, not the click's: a route commit under software GL
   // costs 80-240ms before the rig's effect runs, and measuring the schedule
   // from the click blames the flight for the router's latency.
-  const start = fly[0].t, d0 = T[0].d, d1 = T.at(-1).d;
+  // Against the far wall, `d + R`, which is what the dive spends geometrically
+  // (divePose) — the reader now leaves from the exact centre, where a ratio
+  // of distances from it is a ratio with zero in it.
+  const R = 12.38;   // CONSTELLATION_BOUNDING_RADIUS
+  const start = fly[0].t, d0 = T[0].d + R, d1 = T.at(-1).d + R;
   const span = Math.abs(Math.log(d1 / d0));
   const nearest = q => T.reduce((a, r) =>
     Math.abs(r.t - (start + DURATION * q)) < Math.abs(a.t - (start + DURATION * q)) ? r : a, T[0]);
   const turn = (() => { const a = T[0].h, z = T.at(-1).h;
     return Math.acos(Math.max(-1, Math.min(1, a[0]*z[0] + a[1]*z[1] + a[2]*z[2]))) * 180 / Math.PI; })();
 
-  console.log(`  ${d0.toFixed(2)} -> ${d1.toFixed(2)} units from the graph, fov ${T[0].fov} -> ${T.at(-1).fov}, heading turned ${turn.toFixed(2)}deg`);
+  console.log(`  ${T[0].d.toFixed(2)} -> ${T.at(-1).d.toFixed(2)} units from the graph, fov ${T[0].fov} -> ${T.at(-1).fov}, heading turned ${turn.toFixed(2)}deg`);
   console.log(`  route commit to first camera move: ${(start - t0).toFixed(0)}ms`);
   console.log('  spent, against the flight\'s own clock:');
   for (const q of [0.25, 0.5, 0.75]) {
     const r = nearest(q);
     // Distance is interpolated geometrically (see approachLerpPose), so "how
     // far along" is a ratio of logs, not of distances.
-    console.log(`    ${String(q * 100).padStart(2)}%  d=${r.d.toFixed(1).padStart(6)}  ${(100 * Math.abs(Math.log(r.d / d0)) / span).toFixed(0).padStart(3)}% of the way   page ${r.curtain ? 'held' : `at ${r.opacity.toFixed(2)}`}`);
+    console.log(`    ${String(q * 100).padStart(2)}%  d=${r.d.toFixed(1).padStart(6)}  ${(100 * Math.abs(Math.log((r.d + R) / d0)) / span).toFixed(0).padStart(3)}% of the way   page ${r.curtain ? 'held' : `at ${r.opacity.toFixed(2)}`}`);
   }
   // Only samples from the route commit onward: before it, `main` is the page
   // being left, which is trivially opaque and says nothing.
