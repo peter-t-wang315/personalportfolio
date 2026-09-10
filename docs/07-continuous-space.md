@@ -940,6 +940,27 @@ landed on the standing point with the plane on the page.
 The "further from both" section above still describes the dial correctly and
 now describes a setting that is not in use.
 
+## Dust, and the page's other side
+
+"It still feels like we've travelled basically nowhere." With one lens the
+graph's growth across the flight is fixed by the two compositions — nothing
+about the curve or the duration can add distance — and what sells travel is
+things going past. Only the hero did. So `app/nebula-dust.tsx` puts 420 motes
+in the corridor between the shell and the landing camera, kept off the axis
+near the camera, each drawn as a streak stretched along the direction of
+travel in proportion to the camera's speed (the rig publishes it every frame
+in `flightMotion`). At rest they have no length and no opacity, so neither
+the landing page nor the interior changes, which is how the Phase 3 warning
+about dust on cream is honoured: it is never seen still. Desktop only. The
+dials are `COUNT`, `MAX_OPACITY` and `STREAK_PER_SPEED`.
+
+The page's back is drawn un-mirrored now — a second plane, back-facing, with
+the texture flipped — so it reads the right way round from inside. Mirrored
+was defensible as what a page looks like once you have gone past it, and it
+read as a glitch. The remaining oddness in that view is real geometry: the
+page is off the axis, so from the centre it is seen about 40° obliquely, and
+near the frame edge a 72° lens stretches it further.
+
 ## The way out is a yank
 
 The departure is the dive reversed and nothing else: the camera keeps facing

@@ -222,6 +222,22 @@ export function NebulaHome() {
   }, [heroLayout, tier]);
 
   const geometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  // The back face gets its own copy of the texture, flipped, so the page
+  // reads the right way round from inside the graph. It used to be drawn
+  // double-sided, which shows the back mirrored — defensible as "what a page
+  // looks like once you have gone past it", and it read as a glitch.
+  const flipped = useMemo(() => {
+    if (!texture) return null;
+    const t = texture.clone();
+    t.wrapS = THREE.RepeatWrapping;
+    t.repeat.x = -1;
+    t.offset.x = 1;
+    t.needsUpdate = true;
+    return t;
+  }, [texture]);
+  useEffect(() => () => flipped?.dispose(), [flipped]);
+  const backRef = useRef<THREE.Mesh>(null);
+  const backMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
 
   // Default priority: after the rig has solved this frame's placement.
   useFrame(() => {
@@ -232,11 +248,20 @@ export function NebulaHome() {
     mesh.scale.set(homePlane.width, homePlane.height, 1);
     material.opacity = homePlane.opacity;
     mesh.visible = homePlane.opacity > 0.002;
+    const back = backRef.current;
+    const backMaterial = backMaterialRef.current;
+    if (back && backMaterial) {
+      back.position.copy(mesh.position);
+      back.scale.copy(mesh.scale);
+      backMaterial.opacity = material.opacity;
+      back.visible = mesh.visible;
+    }
   });
 
-  if (!texture) return null;
+  if (!texture || !flipped) return null;
 
   return (
+    <>
     <mesh
       ref={meshRef}
       geometry={geometry}
@@ -264,8 +289,21 @@ export function NebulaHome() {
         // Part 6 is groundwork for.
         depthWrite={false}
         toneMapped={false}
-        side={THREE.DoubleSide}
+        side={THREE.FrontSide}
       />
     </mesh>
+    <mesh ref={backRef} geometry={geometry} visible={false} raycast={() => null}>
+      <meshBasicMaterial
+        ref={backMaterialRef}
+        map={flipped}
+        transparent
+        opacity={0}
+        fog
+        depthWrite={false}
+        toneMapped={false}
+        side={THREE.BackSide}
+      />
+    </mesh>
+    </>
   );
 }
