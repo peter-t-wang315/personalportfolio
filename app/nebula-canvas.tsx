@@ -13,6 +13,15 @@ import {
 } from "@/lib/nebula-routes";
 import { nodeGeometry } from "@/lib/node-geometry";
 import { standsOutside } from "@/lib/device-tier";
+import {
+  addOutsideDragDelta,
+  canDragFrom,
+  getOutsideTurn,
+  resetOutsideTurn,
+  setOutsideDragging,
+  setOutsideTurn,
+  stepOutsideTurn,
+} from "./nebula-drag-state";
 import { getLivePosition, neighborsOf } from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
@@ -126,7 +135,7 @@ const LAYOUT_UP = new THREE.Vector3(0, 1, 0);
  * solve is told about it (clusterScaleForViewport), so it still clears the
  * text column by a real margin rather than growing across it.
  */
-const SPOTLIGHT_ZOOM = 1.32;
+const SPOTLIGHT_ZOOM = 2.6;
 
 /**
  * The orientation that turns a project's cluster to face the reader.
@@ -244,6 +253,8 @@ const _parkForward = new THREE.Vector3();
 const _fromHeading = new THREE.Vector3();
 const _turnHeading = new THREE.Vector3();
 const _dragQuat = new THREE.Quaternion();
+const _outsideDrag = new THREE.Quaternion();
+const _insideTarget = new THREE.Quaternion();
 const _dragYaw = new THREE.Quaternion();
 const _dragPitch = new THREE.Quaternion();
 const SCREEN_UP = new THREE.Vector3(0, 1, 0);
@@ -481,30 +492,62 @@ const OUTSIDE_POSE: CameraPose = {
 };
 
 /**
- * The outside pose, aimed along a node's radial: closing a node from
- * outside backs out along the line it was opened on, so the node the reader
- * was just inside is in the middle of the frame when they get there — the
- * same promise restingPoseFacing makes for the interior, kept the other way
- * round (there the camera stays and the heading changes; here the heading
- * is always the centre and the camera moves round the sphere).
+ * **The outside turn as a rotation**: the reader's yaw about the screen's
+ * vertical and pitch about its horizontal, premultiplied onto the graph's
+ * own orientation exactly as the landing drag is. The camera stays on the
+ * axis; this is what moves. Read from the spring's *current* value, so a
+ * pose composed against it is composed against what is drawn this frame.
  */
-function outsidePoseFacing(nodeId: string | null): CameraPose {
+const _outsideYaw = new THREE.Quaternion();
+const _outsidePitch = new THREE.Quaternion();
+function outsideQuaternion(out: THREE.Quaternion) {
+  const turn = getOutsideTurn();
+  return out
+    .copy(_outsideYaw.setFromAxisAngle(SCREEN_UP, turn.yaw))
+    .multiply(_outsidePitch.setFromAxisAngle(SCREEN_RIGHT, turn.pitch));
+}
+
+/** The graph's orientation while the reader stands outside it. */
+const _outsideTurnQuat = new THREE.Quaternion();
+function outsideBaseRotation(out: THREE.Quaternion) {
+  return out.copy(NEBULA_BASE_ROTATION).premultiply(outsideQuaternion(_outsideTurnQuat));
+}
+
+/**
+ * Turn the globe so a node faces the camera — the outside answer to
+ * restingPoseFacing. Closing a node from outside puts the camera back on the
+ * axis and turns the *graph* so the node the reader was just inside is in
+ * the middle of the frame, rather than moving the camera round to it: that
+ * keeps every departure a straight pull along the axis.
+ *
+ * Solved in closed form. The turn is yaw(a) about screen-up applied after
+ * pitch(b) about screen-right, so a direction `d` in the graph's composed
+ * frame lands on +z when d = (−sin a, cos a·sin b, cos a·cos b). Two
+ * branches, one per hemisphere, so that pitch stays within ±90° and it is
+ * yaw that carries a node round from the far side.
+ */
+function faceNodeFromOutside(nodeId: string | null) {
   const node = nodeId ? nodeGeometry[nodeId] : null;
-  if (!node) return OUTSIDE_POSE;
-  const direction = new THREE.Vector3()
+  if (!node) return;
+  const d = new THREE.Vector3()
     .fromArray(node.position)
     .applyQuaternion(NEBULA_BASE_ROTATION);
-  if (direction.lengthSq() < 1e-6) return OUTSIDE_POSE;
-  direction.normalize();
-  return {
-    position: direction.multiplyScalar(OUTSIDE_DISTANCE),
-    target: new THREE.Vector3(0, 0, 0),
-  };
+  if (d.lengthSq() < 1e-6) return;
+  d.normalize();
+  const x = THREE.MathUtils.clamp(d.x, -1, 1);
+  if (d.z >= 0) {
+    setOutsideTurn(-Math.asin(x), Math.atan2(d.y, d.z));
+  } else {
+    setOutsideTurn(Math.PI + Math.asin(x), Math.atan2(-d.y, -d.z));
+  }
 }
 
 /** The bare graph's pose for this viewport, facing a node if one is named. */
 function restingPose(outside: boolean, nodeId: string | null): CameraPose {
-  return outside ? outsidePoseFacing(nodeId) : restingPoseFacing(nodeId);
+  if (!outside) return restingPoseFacing(nodeId);
+  // The camera does not move outside either: it is the globe that turns.
+  faceNodeFromOutside(nodeId);
+  return OUTSIDE_POSE;
 }
 
 
@@ -777,9 +820,16 @@ function ConstellationOrientation({
     // placement 1 the orientation is exactly the layout's, whatever the reader
     // was looking at before.
     if (placement > 0) {
+      // What the graph shows at placement 1: its composed orientation, with
+      // the outside turn on top where a portrait phone has spun it. The turn
+      // springs toward its target here, on the same tempo as the spotlight
+      // turn, so a node closing from outside settles into the frame rather
+      // than snapping. Inside, the turn is identity and this is UNROTATED.
+      stepOutsideTurn(dt, reducedMotion);
+      _insideTarget.copy(UNROTATED).premultiply(outsideQuaternion(_outsideDrag));
       group.quaternion
         .copy(orientationTarget.current)
-        .slerp(UNROTATED, unwindShare(placement));
+        .slerp(_insideTarget, unwindShare(placement));
       turnVelocity.current.set(0, 0, 0);
     } else if (reducedMotion || isDragging()) {
       // A drag is direct manipulation: the sphere is under the pointer and has
@@ -880,6 +930,75 @@ function CameraRig({
   /** Portrait phone: the graph is stood outside of, not inside (standsOutside). */
   const outside = standsOutside(size.width, size.height);
   const focusSide = outside ? "outer" : "inner";
+  /** The graph's orientation a focus pose is composed against, this frame. */
+  const focusBase = () =>
+    outside ? outsideBaseRotation(new THREE.Quaternion()) : NEBULA_BASE_ROTATION;
+
+  /**
+   * **The outside drag.** One finger (or a mouse) anywhere on the graph
+   * route turns the globe; the camera stays put. Installed on the window,
+   * like the landing page's drag, and for the same reason: there is no
+   * element to hang it on that would not also swallow the taps meant for
+   * nodes. Nothing while a node is open or a flight is running — the panel
+   * has its own scroll, and a flight owns the frame.
+   */
+  useEffect(() => {
+    if (!isNebula || !outside) return;
+    let pointerId: number | null = null;
+    let lastX = 0;
+    let lastY = 0;
+    let travelled = 0;
+    let live = false;
+    const SLOP = 4;
+
+    function onPointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
+      if (!canDragFrom(event.target)) return;
+      const state = useSceneStore.getState();
+      if (state.flying || state.focusedNodeId !== null) return;
+      pointerId = event.pointerId;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled = 0;
+    }
+    function onPointerMove(event: PointerEvent) {
+      if (pointerId === null || event.pointerId !== pointerId) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      travelled += Math.hypot(dx, dy);
+      if (travelled <= SLOP) return;
+      if (!live) {
+        live = true;
+        setOutsideDragging(true);
+      }
+      addOutsideDragDelta(dx, dy);
+    }
+    function end() {
+      pointerId = null;
+      travelled = 0;
+      live = false;
+      setOutsideDragging(false);
+    }
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      setOutsideDragging(false);
+    };
+  }, [isNebula, outside]);
+
+  // The turn belongs to a visit to the graph. Off it, with no flight left to
+  // unwind it, it is forgotten — a reduced-motion cut, or a first mount.
+  useEffect(() => {
+    if (!isNebula && flight === null) resetOutsideTurn();
+  }, [isNebula]);
 
   /**
    * **The standing pose: where the camera is on every route but the graph.**
@@ -1269,9 +1388,10 @@ function CameraRig({
     fromNode: boolean,
   ): CameraPose {
     const current = currentPose(controls);
-    // Outside, the camera really is where the drag left it — somewhere on
-    // the standing sphere — and leaving from there is right.
-    if (fromNode || outside) return current;
+    if (fromNode) return current;
+    // Outside, the camera never left the axis — the drag turned the globe —
+    // so the way out is the way in, exactly.
+    if (outside) return clonePose(OUTSIDE_POSE);
     const heading = current.target.sub(current.position);
     if (heading.lengthSq() < 1e-9) heading.copy(FORWARD);
     heading.normalize();
@@ -1532,7 +1652,7 @@ function CameraRig({
       // from reading the same route as a change and flying to where it is.
       const coldFocus = wasNebula === undefined ? routeFocusId : null;
       if (coldFocus) {
-        const pose = focusPose(coldFocus, NEBULA_BASE_ROTATION, focusSide);
+        const pose = focusPose(coldFocus, focusBase(), focusSide);
         if (pose) {
           lastFocus.current = coldFocus;
           // 05-phase-2.md: a cold entry lands "shell expanded, panel open,
@@ -1571,12 +1691,7 @@ function CameraRig({
     }
     const departFrom = departurePose(controls, leavingNode);
     const departTo = clonePose(standing.current);
-    // From outside the camera can be anywhere on the standing sphere after a
-    // drag, and the pass route's lateral schedule is written against the
-    // axis — starting it from off the axis is a jump on the first frame. The
-    // approach path measures from the centre and starts from wherever the
-    // camera is, which is why leaving a node uses it too.
-    const departPass = leavingNode || outside ? undefined : passPoint();
+    const departPass = leavingNode ? undefined : passPoint();
     const departEase = departPass
       ? passEase(
           diveProgressAt(departPass.point.length(), departTo.position.length(), 0),
@@ -1606,7 +1721,7 @@ function CameraRig({
       // the graph's centre too, so the retreat is monotonic, and it turns the
       // camera off the node's surface early, which a line from the middle has
       // no need to do.
-      path: leavingNode || outside ? "approach" : "dive",
+      path: leavingNode ? "approach" : "dive",
       ease: departEase,
       revealAt: isHome ? HOME_REVEAL_AT : ARRIVAL_REVEAL_AT,
       toHome: isHome,
@@ -1645,7 +1760,7 @@ function CameraRig({
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
     const to = routeFocusId
-      ? focusPose(routeFocusId, NEBULA_BASE_ROTATION, focusSide)
+      ? focusPose(routeFocusId, focusBase(), focusSide)
       : restingPose(outside, previousFocus);
     if (!to) return;
     const fovTo = routeFocusId ? FOCUS_CAMERA_FOV : INSIDE_CAMERA_FOV;
@@ -1706,7 +1821,7 @@ function CameraRig({
     if (!controls || !isNebula || flight !== null) return;
     if (lastRoute.current !== true) return;
     if (routeFocusId) {
-      const pose = focusPose(routeFocusId, NEBULA_BASE_ROTATION, focusSide);
+      const pose = focusPose(routeFocusId, focusBase(), focusSide);
       if (pose) settle(controls, pose, FOCUS_CAMERA_FOV, { free: true, at: 1 });
       return;
     }
@@ -1787,6 +1902,9 @@ function CameraRig({
 
     if (t >= 1) {
       flight = null;
+      // The outside turn has been unwound by the placement by now, and the
+      // next visit starts from the composed face.
+      if (active.placementTo === 0) resetOutsideTurn();
       if (active.toHome) handoffOut.current = performance.now();
       revealDocument();
       setPlacement(active.placementTo);
@@ -1828,7 +1946,10 @@ function CameraRig({
     // that happened to diff them would quietly put them back.
     <CameraControls
       ref={controlsRef}
-      enabled={isNebula && !flying}
+      // Outside the graph the drag turns the globe (nebula-drag-state.ts,
+      // the outside turn) and the camera stays on the axis, so the controls
+      // have nothing to do there.
+      enabled={isNebula && !flying && !outside}
       mouseButtons-left={CameraControlsImpl.ACTION.ROTATE}
       mouseButtons-right={CameraControlsImpl.ACTION.NONE}
       mouseButtons-middle={CameraControlsImpl.ACTION.NONE}
@@ -1888,6 +2009,11 @@ export function NebulaCanvas() {
   return (
     <Canvas
       className="!fixed inset-0 z-0"
+      // On the graph route a touch is a drag of the globe (or, inside, of
+      // the view) and nothing else, so the browser must not claim it as a
+      // pan and cancel the pointer a few pixels in. Everywhere else the
+      // canvas sits behind a scrolling document and the swipe is the scroll.
+      style={{ touchAction: isNebula ? "none" : "auto" }}
       gl={{ alpha: true }}
       dpr={[1, 2]}
       // The rig writes the real pose before the first render, so this is only

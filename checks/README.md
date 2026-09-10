@@ -58,6 +58,11 @@ schedule is honest) and useless for judging how anything **feels**.
 | `labelviewports.mjs` | How many labels survive at each viewport, and does any of them cross the article? |
 | `exitcentre.mjs` | Does closing a node leave that node in the middle of the frame? |
 | `overlay.mjs` | Do the DOM overlays sit on the graph the scene actually drew? |
+| `mobile-survey.mjs` | What does every route look like on a phone? 8 routes × 4 viewports, errors and overflow, plus a tap-through from the landing cluster. |
+| `outsideturn.mjs` | On a portrait phone, does a drag turn the globe with the camera staying on the axis, does closing a node face it, and is the turn forgotten once home? |
+| `phonefade.mjs` | Is the graph visible through the hero page at both ends of a phone flight? Shot at DPR 2, because the DPR-1 harness draws phone-sized nodes too faint to judge. |
+| `handoff.mjs` | Does the plane sit on the page at the moment of the hand-off home, in px? Desktop by default, `VIEWPORT=390x844` for the phone. |
+| `workshot.mjs` | What does the spotlit work page look like at three desktop sizes, and how far is the camera? |
 | `flyin.mjs` | Does flying in land at the centre, pass the hero, and hand the page over to the plane and back? Traces the camera, the hero plane and the document on the same frames, both directions, and saves what screenshots it can into `flyin/`. |
 | `clickburst.mjs` | What is on screen in the frames right after the click, in both directions? A burst of screenshots into `burst/`, as fast as the harness can take them — a hundred milliseconds apart at best, so a one-frame glitch can still slip between them. |
 | `focusshot.mjs` | What does an open node look like, cold and warm, and what happens when the pointer sits in a corner? Screenshots into `focus/`. |

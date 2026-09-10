@@ -2,6 +2,7 @@ import type * as THREE from "three";
 import { getClusterCircle } from "./nebula-drag-state";
 import { homePlane } from "./nebula-home-placement";
 import { getPlacement } from "./nebula-placement";
+import { getOutsideTurn } from "./nebula-drag-state";
 
 /**
  * A read-only window onto the camera, for the scripts in `checks/`.
@@ -34,6 +35,8 @@ export interface CameraProbe {
   fov: number;
   /** 0 standing outside, 1 inside the graph; see nebula-placement.ts. */
   placement: number;
+  /** The outside turn a portrait phone has spun the globe to (nebula-drag-state.ts). */
+  outsideTurn: { yaw: number; pitch: number };
   flying: boolean;
   /** The hero plane, as the rig placed it this frame (nebula-home-placement.ts). */
   home: { position: [number, number, number]; width: number; height: number; opacity: number };
@@ -61,6 +64,7 @@ const probe: CameraProbe = {
   distance: 0,
   fov: 0,
   placement: 0,
+  outsideTurn: { yaw: 0, pitch: 0 },
   flying: false,
   home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
   cluster: { x: 0, y: 0, r: 0, ready: false },
@@ -101,6 +105,9 @@ export function publishCameraProbe(
   probe.distance = camera.position.length();
   probe.fov = camera.fov;
   probe.placement = getPlacement();
+  const turn = getOutsideTurn();
+  probe.outsideTurn.yaw = turn.yaw;
+  probe.outsideTurn.pitch = turn.pitch;
   probe.flying = flying;
   HOME_POSITION[0] = homePlane.position.x;
   HOME_POSITION[1] = homePlane.position.y;

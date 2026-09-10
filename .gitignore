@@ -46,3 +46,7 @@ next-env.d.ts
 /burst/
 /focus/
 /mobile/
+/phonefade/
+/outsideturn/
+/handoff/
+/work-shots/

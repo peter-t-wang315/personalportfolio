@@ -146,8 +146,15 @@ function paintHero(canvas: HTMLCanvasElement, layout: HeroLayout, scale: number)
   canvas.width = Math.max(1, Math.round(layout.width * scale));
   canvas.height = Math.max(1, Math.round(layout.height * scale));
   ctx.scale(scale, scale);
-  ctx.fillStyle = palette.paper;
-  ctx.fillRect(0, 0, layout.width, layout.height);
+  // Text on nothing, not text on paper. The plane used to be filled with the
+  // page colour first, which on desktop was invisible — the hero column and
+  // the cluster are side by side, so the plane never covered anything. On a
+  // phone the column is the full width and the cluster sits *inside* it, so
+  // an opaque plane hid the graph for the whole first half of the flight in
+  // and the last half of the flight out: the nebula was "lost to the fog"
+  // the moment the page became the plane. The page's own background is the
+  // same paper the plane was painted, so nothing is lost by leaving it out.
+  ctx.clearRect(0, 0, layout.width, layout.height);
   ctx.textBaseline = "alphabetic";
 
   for (const item of layout.items) {

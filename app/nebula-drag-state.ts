@@ -103,6 +103,112 @@ export function setDragging(value: boolean) {
 }
 
 /**
+ * **The outside turn: how a portrait phone has spun the globe on `/nebula`.**
+ *
+ * Standing outside the graph (lib/device-tier.ts, standsOutside) the camera
+ * never leaves the flight axis. A drag turns the *globe*, exactly as the
+ * landing page's does, rather than orbiting the camera round it — so that
+ * leaving is always the same straight pull back along the axis the reader
+ * came in on, whatever they turned to look at. Orbiting the camera made the
+ * departure a swing from wherever the drag had left it round to the standing
+ * point, which read as anything but straight back.
+ *
+ * Separate from the landing spin above because the two live at opposite
+ * ends of a flight: the landing spin is what the globe shows at placement 0
+ * and unwinds on the way in; this is what it shows at placement 1 and
+ * unwinds on the way out. One pair of angles could not be both.
+ *
+ * Two values, not one. `target` is where the turn is asked to be; `current`
+ * is where it is, and follows the target through a spring except under a
+ * live drag, where it tracks exactly. The spring is for the one case the
+ * turn is set by code rather than by a finger: closing a node turns the
+ * globe so that node faces the camera, and that has to be a motion.
+ */
+const outsideTarget = { yaw: 0, pitch: 0 };
+const outsideCurrent = { yaw: 0, pitch: 0 };
+const outsideVelocity = { yaw: 0, pitch: 0 };
+let outsideDragging = false;
+/** A little past the landing drag's stop, so a node near a pole can be faced. */
+const MAX_OUTSIDE_PITCH = (88 * Math.PI) / 180;
+/** Matches the spotlight turn's tempo in nebula-canvas.tsx. */
+const OUTSIDE_TURN_SECONDS = 0.85;
+
+export function addOutsideDragDelta(dx: number, dy: number) {
+  outsideTarget.yaw += dx * RADIANS_PER_PX;
+  outsideTarget.pitch = Math.max(
+    -MAX_OUTSIDE_PITCH,
+    Math.min(MAX_OUTSIDE_PITCH, outsideTarget.pitch + dy * RADIANS_PER_PX),
+  );
+}
+
+/** Aim the turn, to be reached through the spring. */
+export function setOutsideTurn(yaw: number, pitch: number) {
+  outsideTarget.yaw = yaw;
+  outsideTarget.pitch = Math.max(
+    -MAX_OUTSIDE_PITCH,
+    Math.min(MAX_OUTSIDE_PITCH, pitch),
+  );
+}
+
+export function setOutsideDragging(value: boolean) {
+  outsideDragging = value;
+}
+
+export function isOutsideDragging() {
+  return outsideDragging;
+}
+
+/** Where the turn actually is this frame. */
+export function getOutsideTurn() {
+  return outsideCurrent;
+}
+
+function shortestArc(delta: number) {
+  const tau = Math.PI * 2;
+  return delta - tau * Math.round(delta / tau);
+}
+
+/**
+ * Advance `current` toward `target`. Critically damped, on the same clock
+ * the spotlight turn uses, so a node closing from outside settles into the
+ * middle of the frame at the tempo the reader already knows. Yaw takes the
+ * short way round: a facing set by code can be on the far side of ±π from
+ * wherever a drag left the globe.
+ */
+export function stepOutsideTurn(dt: number, instant: boolean) {
+  if (instant || outsideDragging) {
+    outsideCurrent.yaw = outsideTarget.yaw;
+    outsideCurrent.pitch = outsideTarget.pitch;
+    outsideVelocity.yaw = 0;
+    outsideVelocity.pitch = 0;
+    return;
+  }
+  const omega = 2 / OUTSIDE_TURN_SECONDS;
+  const x = omega * dt;
+  const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+  for (const axis of ["yaw", "pitch"] as const) {
+    let delta = outsideCurrent[axis] - outsideTarget[axis];
+    if (axis === "yaw") delta = shortestArc(delta);
+    const v = outsideVelocity[axis];
+    const temp = (v + omega * delta) * dt;
+    outsideVelocity[axis] = (v - omega * temp) * decay;
+    const next = (delta + temp) * decay;
+    outsideCurrent[axis] = outsideTarget[axis] + next;
+  }
+}
+
+/** Forget the outside turn: the reader has left the graph. */
+export function resetOutsideTurn() {
+  outsideTarget.yaw = 0;
+  outsideTarget.pitch = 0;
+  outsideCurrent.yaw = 0;
+  outsideCurrent.pitch = 0;
+  outsideVelocity.yaw = 0;
+  outsideVelocity.pitch = 0;
+  outsideDragging = false;
+}
+
+/**
  * Forget the spin. Called when the route changes and when the globe is aimed
  * at a different project: both are the reader asking for a particular view,
  * and honouring that means starting from the orientation that view specifies

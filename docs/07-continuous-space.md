@@ -1224,15 +1224,35 @@ now finishes by the inner endpoint's distance rather than a fixed fraction
 of the outer one (`divePose`), so it lands on the axis at 50 as it did at 0.
 Traced at 390×844: 118.7 to 52.9 in 3.2s, passing the page at 14 units
 lateral, glide complete, no jump. Opening a node stops on the **outer** side
-of it (`focusPose(…, "outer")`); closing backs out along the same radial so
-the node is centred (`outsidePoseFacing`). The drag orbits the origin with
-the radius pinned (`parkForOrbiting`), where the interior pins a 0.1-unit
-pivot ahead of the camera. Leaving from outside takes the approach path, not
-the pass dive, because after a drag the camera is anywhere on the standing
-sphere and the pass schedule is written against the axis; that route goes
-*through* the page on a phone (the hero is full-width there), which the plane
-handles as a wash — judged in the harness only, see below. A viewport
-crossing the inside/outside line while on the graph cuts to the other pose.
+of it (`focusPose(…, "outer")`). A viewport crossing the inside/outside line
+while on the graph cuts to the other pose.
+
+**The drag turns the globe, not the camera** (revised the same day). The
+first build orbited the camera round the graph, which put it anywhere on the
+standing sphere after a drag, so leaving had to be the approach path from
+there — a swing round to the standing point that the owner read as "not
+straight back". Now the camera never leaves the axis on this tier: the drag
+is the landing page's mechanism, yaw and pitch premultiplied onto the graph's
+orientation (`nebula-drag-state.ts`, the outside turn; `ConstellationOrientation`
+applies it at placement 1 and unwinds it with the placement on the way out),
+`CameraControls` is off, and the departure is the same pass dive as the
+interior's, from `OUTSIDE_POSE`. Closing a node turns the globe so that node
+faces the camera (`faceNodeFromOutside`, closed form, sprung on the spotlight
+turn's tempo) rather than moving the camera round to it. The probe publishes
+`outsideTurn`; `checks/outsideturn.mjs` is the instrument: 7 checks, the
+camera at (0, 0, 50.4) before and after a drag and after a close, the turn
+back to zero once home. The canvas takes `touch-action: none` on the graph
+route so a browser cannot claim the swipe as a pan.
+
+**The nebula was not lost to the fog; it was behind the page.** The hero
+plane was painted on a paper fill, which on desktop covered nothing (the
+column and the cluster sit side by side) and on a phone covered the cluster
+for the first half of the flight in and the last half of the flight out —
+the column is full-width there and the cluster sits inside it. The plane is
+text on nothing now (`paintHero`, `clearRect`); `checks/phonefade.mjs`
+shoots both ends of both flights at DPR 2, where the cluster is visible
+through the page throughout. (The DPR-1 harness draws 3px nodes too faint to
+judge this by, which is why it was misread as fog.)
 
 Also done in the same pass: tech nodes on every tier; the landing cluster
 drops below the text on every stacked layout (it keyed off a width cap no
@@ -1266,7 +1286,15 @@ edge layer dimmed behind it — from outside, the whole graph is the backdrop.
   spotlight solve that places the lit cluster beside the article has to hold
   at the nearer distance, and the work-to-nebula flight gets shorter;
   `checks/centres.mjs` and `checks/worktonebula.mjs` are the instruments.
-  Not built yet.
+  **Built (2026-09-10) as the spotlight zoom**: `SPOTLIGHT_ZOOM` went from
+  1.32 to 2.6, which stands the camera at 49.5 units on `/work/[slug]` at
+  1440×900 against 101 before and 118.7 at home — the same distance as the
+  phone's outside pose, as it happens. The lit cluster's labels still clear
+  each other and the article at every desktop viewport
+  (`checks/labelviewports.mjs`: 11, 11, 7 labels, 0 over the article). The
+  rest of the globe now overflows the frame behind the prose, dimmed to 12%,
+  which is what a graph seen from close by does. `checks/workshot.mjs` is the
+  before/after.
 - ~~**The interior standing point is at 9.0 units, two from the shell.**~~
   Overtaken: it is at the centre now, by decision — see "The brief, restated".
   Every claim in Part 2 about what the reader sees by turning around was
