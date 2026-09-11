@@ -66,6 +66,8 @@ schedule is honest) and useless for judging how anything **feels**.
 | `trackball.mjs` | On a portrait phone, does dragging keep turning the globe with no stop, drag after drag, and does a vertical drag tip it about the screen's horizontal even after a sideways quarter-turn, rather than rolling it? |
 | `coast.mjs` | On a portrait phone, does letting go of a drag drift a little and come to rest, does a drag that stops before lifting stay put, and does a press — or a node opening — stop the drift dead? |
 | `tapwhileturning.mjs` | On a portrait phone, does opening a node while the globe is still turning stop the turn, so the node and its shell stay under the parked camera? |
+| `whisperleave.mjs` | On desktop, does the whisper hold still once the cursor leaves the graph, or does a visible phrase jump? Records the phrase, the pointer and the live circle on every frame in the page, and prints the frames before any jump. |
+| `leaveturn.mjs` | On a portrait phone, does the globe leave for home from where the reader turned it — the placement unwinding the turn — rather than snapping to its arrival orientation on the first frame? |
 | `whisper.mjs` | Does the landing affordance whisper on desktop — cycling beside the graph and off the hero column, following the cursor and still cycling on hover, held where the cursor left until its beat is up, then back beside the graph — with no pulse ring? `VIEWPORT=WxH`, default 1440x900. |
 | `phonefade.mjs` | Is the graph visible through the hero page at both ends of a phone flight? Shot at DPR 2, because the DPR-1 harness draws phone-sized nodes too faint to judge. |
 | `handoff.mjs` | Does the plane sit on the page at the moment of the hand-off home, in px? Desktop by default, `VIEWPORT=390x844` for the phone. |

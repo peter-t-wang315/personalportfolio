@@ -25,37 +25,38 @@ import { FADE_DISTANCE_PX } from "./scroll-cue";
 import { departForNebula } from "./nebula-departure";
 
 /**
- * Casual, curious phrases — mixed tones (playful, quietly intriguing, terse)
- * matching the lowercase, plain-spoken register of site.positioning
- * (content/index.ts). One is picked at random per cycle, never stepped
- * through in order.
+ * **Curious, not guiding.** Every phrase is the reader's own half-noticing —
+ * a question or a small reaction to the thing beside the page — and never an
+ * instruction or a pitch. "go ahead", "worth a look", "psst", "go on, click
+ * it" and the rest of that register were cut: they point, and the owner wants
+ * the page to wonder rather than steer ("the oh? whats this? ummm? I think are
+ * great because it's curiousity not come click it"). Lowercase and
+ * plain-spoken, matching site.positioning (content/index.ts). One is picked at
+ * random per cycle, never stepped through in order.
  */
 const PHRASES = [
   "oh?",
   "what's this?",
-  "hm.",
-  "curious.",
-  "look closer.",
-  "there's more here.",
-  "psst.",
-  "wait—",
+  "ummm?",
+  "hm?",
   "huh.",
-  "keep looking.",
-  "not just decoration.",
-  "there's a graph here.",
-  "go on, click it.",
-  "this moves.",
-  "it's alive.",
-  "peek inside?",
-  "worth a look.",
-  "hey.",
-  "see for yourself.",
-  "more than it looks.",
-  "there's a map here.",
-  "go ahead.",
-  "one click away.",
-  "promise, it's real.",
-  "look inward.",
+  "wait—",
+  "oh.",
+  "…?",
+  "what is that?",
+  "is that…?",
+  "hmm, what's that?",
+  "strange.",
+  "how odd.",
+  "curious.",
+  "did that move?",
+  "was that there before?",
+  "is it moving?",
+  "what's in there?",
+  "who put that there?",
+  "wonder what that is.",
+  "that's new.",
+  "is it… alive?",
 ];
 
 const CURSOR_OFFSET = { x: 18, y: 18 };
@@ -952,15 +953,13 @@ function DesktopAffordance({ cluster }: { cluster: ClusterScreen }) {
    */
   const [leftAt, setLeftAt] = useState<{ x: number; y: number } | null>(null);
 
-  // Read at the moment a phrase is born or the pointer leaves, not reasons
-  // to re-run anything: the cursor and the cluster both move every frame.
+  // Read at the moment a phrase is born, not reasons to re-run anything: the
+  // pointer and the cluster both move every frame.
   const phraseRef = useRef(phrase);
-  const cursorRef = useRef(cursor);
   const pointerActiveRef = useRef(pointerActive);
   const clusterRef = useRef(cluster);
   useEffect(() => {
     phraseRef.current = phrase;
-    cursorRef.current = cursor;
     pointerActiveRef.current = pointerActive;
     clusterRef.current = cluster;
   });
@@ -981,13 +980,23 @@ function DesktopAffordance({ cluster }: { cluster: ClusterScreen }) {
   // until its beat is up — cutting it short read as the whisper being
   // snatched away — and the next one is born beside the graph. Under reduced
   // motion there is no beat to wait out, so it goes straight back.
-  const wasPointerActive = useRef(pointerActive);
-  useEffect(() => {
-    const was = wasPointerActive.current;
-    wasPointerActive.current = pointerActive;
-    if (!was || pointerActive || reducedMotion) return;
-    setLeftAt({ ...cursorRef.current });
-  }, [pointerActive, reducedMotion]);
+  //
+  // **Set while rendering, not in an effect.** It was an effect, and an effect
+  // runs after a frame has been committed, so for one frame the pointer had
+  // left and no point was held yet. With nothing to follow, that frame placed
+  // the follower outright at the phrase's spot beside the graph, and the next
+  // sprang it back to the cursor. Traced (checks/whisperleave.mjs), a visible
+  // phrase jumped 114px to the graph spot on the first frame out and slid back
+  // over the next few — the "jitter, shoot around" the owner saw. Adjusting
+  // state during render is React's own pattern for exactly this: it renders
+  // again before committing anything, so no frame ever has neither.
+  const [wasPointerActive, setWasPointerActive] = useState(pointerActive);
+  if (pointerActive !== wasPointerActive) {
+    setWasPointerActive(pointerActive);
+    if (!pointerActive && !reducedMotion) {
+      setLeftAt({ x: cursor.x, y: cursor.y });
+    }
+  }
 
   // Once the outgoing phrase has finished leaving. The pointer decides where
   // the new one is born at this moment, not when it was picked, so a reader

@@ -1299,6 +1299,17 @@ turn as a quaternion. `checks/trackball.mjs` is the instrument: three 400px
 drags down each turn 2.4 rad about the screen's horizontal, and after a
 sideways quarter-turn a vertical drag still does.
 
+**Leaving for home keeps the turn** (2026-09-10). Going home from a turned
+globe, the graph jumped to the orientation it had arrived in and then flew
+out, a visible jitter at the start of an otherwise smooth departure. The
+effect that forgets the turn off the graph was declared ahead of the route
+effect, so it ran before the departure existed, saw no flight, and reset the
+turn on the first frame — traced, zero 240ms after the tap with the placement
+still at 1.000. The departure now carries the reader's turn and the
+placement's slerp unwinds it, as the orientation code always intended; it is
+forgotten on landing, or with the cut when there is no flight.
+`checks/leaveturn.mjs` is the instrument.
+
 **The nebula was not lost to the fog; it was behind the page.** The hero
 plane was painted on a paper fill, which on desktop covered nothing (the
 column and the cluster sit side by side) and on a phone covered the cluster

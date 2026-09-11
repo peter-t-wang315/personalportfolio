@@ -1142,11 +1142,14 @@ function CameraRig({
     };
   }, [isNebula, outside, gl]);
 
-  // The turn belongs to a visit to the graph. Off it, with no flight left to
-  // unwind it, it is forgotten — a reduced-motion cut, or a first mount.
-  useEffect(() => {
-    if (!isNebula && flight === null) resetOutsideTurn();
-  }, [isNebula]);
+  // The turn belongs to a visit to the graph and is forgotten once the reader
+  // is off it — but not by an effect of its own. It was one, declared ahead of
+  // the route effect, so on leaving it ran before the departure had begun, saw
+  // no flight, and snapped the globe to its arrival orientation on the first
+  // frame of the way home: traced, the turn went to zero 240ms after the tap
+  // with the placement still at 1.000 (checks/leaveturn.mjs). The departure
+  // unwinds the turn with the placement and forgets it on landing; a leave
+  // with no flight forgets it where the route effect settles.
 
   /**
    * **The standing pose: where the camera is on every route but the graph.**
@@ -1831,6 +1834,8 @@ function CameraRig({
     useSceneStore.getState().clearFocus();
     // A first mount off /nebula has nowhere to depart from.
     if (wasNebula === undefined || reducedMotion) {
+      // No flight to unwind the phone's turn, so it goes here, with the cut.
+      resetOutsideTurn();
       settle(controls, clonePose(standing.current), STANDING_FOV, {
         free: true,
         at: 0,
