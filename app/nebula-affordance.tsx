@@ -27,8 +27,8 @@ import { departForNebula } from "./nebula-departure";
 /**
  * Casual, curious phrases — mixed tones (playful, quietly intriguing, terse)
  * matching the lowercase, plain-spoken register of site.positioning
- * (content/index.ts). One is picked at random per reveal (desktop) or per
- * cycle (mobile), never stepped through in order.
+ * (content/index.ts). One is picked at random per cycle, never stepped
+ * through in order.
  */
 const PHRASES = [
   "oh?",
@@ -450,10 +450,12 @@ function PhraseFollower({
 
 /**
  * Replaces the Phase 1 placeholder link per 04-phase-1.md's updated spec.
- * Desktop gets a proximity-hover reveal sized to the real cluster; mobile
- * and tablet (no hover state to gate a reveal on) get an always-present
- * label that cycles through the same phrase pool on a timer. Desktop and
- * tablet also get a slow idle pulse ring (see ClusterPulse).
+ * Every tier gets an always-present label that whispers through the phrase
+ * pool on a timer beside the cluster. Desktop adds the hover: over the
+ * cluster the whisper comes to the cursor and keeps cycling there, and goes
+ * back to the graph when the pointer leaves. Tablet also gets a slow idle
+ * pulse ring (see ClusterPulse); desktop dropped it once the whisper was
+ * always on, since two idle invitations compete.
  *
  * Everything anchors to the cluster's *live* screen position via
  * useClusterScreen — not a hardcoded viewport-centre assumption. World (0,0)
@@ -478,26 +480,18 @@ export function NebulaAffordance() {
   const tier = useDeviceTier();
   const pastHero = usePastHero();
   const cluster = useClusterScreen();
-  const [desktopHoverActive, setDesktopHoverActive] = useState(false);
 
   if (pathname !== "/" || pastHero || !cluster.ready) return null;
 
   return (
     <>
       {tier === "desktop" ? (
-        <DesktopAffordance
-          cluster={cluster}
-          onHoverChange={setDesktopHoverActive}
-        />
+        <DesktopAffordance cluster={cluster} />
       ) : (
         <MobileAffordanceLabel cluster={cluster} />
       )}
-      {tier !== "mobile" ? (
-        <ClusterPulse
-          centerX={cluster.centerX}
-          centerY={cluster.centerY}
-          paused={tier === "desktop" && desktopHoverActive}
-        />
+      {tier === "tablet" ? (
+        <ClusterPulse centerX={cluster.centerX} centerY={cluster.centerY} />
       ) : null}
     </>
   );
@@ -549,6 +543,68 @@ function boxClearsCluster(
   return Math.hypot(dx, dy) >= cluster.radiusPx;
 }
 
+/** Where a spawned label may and may not go, beyond clearing the cluster. */
+interface SpawnRules {
+  /** Degrees of arc, centred on straight up, a label may not spawn in. */
+  excludedTopArcDeg: number;
+  /** A box the label must stay off entirely: desktop's hero column. */
+  avoid?: { left: number; top: number; right: number; bottom: number } | null;
+  /** When given, the label's box must also fit the viewport vertically. */
+  viewportHeight?: number;
+  /**
+   * Extra width, each side, for the `avoid` test only. The box is already
+   * grown by the drift amplitude, but a phrase *enters* from
+   * MOBILE_ENTER_LEAD times that — measured at 1440x900, "oh?" spawned 30px
+   * clear of the hero column and slid 16px into it while still legible.
+   */
+  avoidTravelPx?: number;
+}
+
+const MOBILE_SPAWN_RULES: SpawnRules = {
+  excludedTopArcDeg: MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG,
+};
+
+/**
+ * Desktop's rules. The graph sits beside the hero column there rather than
+ * below it, so the whole circle is open except the column itself — a phrase
+ * set over the headline is the same legibility problem as one set over the
+ * nodes. Looked up by id rather than importing HERO_COLUMN_ID: hero-layout.ts
+ * pulls in `three`, which this root-layout bundle is kept free of.
+ */
+function desktopSpawnRules(): SpawnRules {
+  return {
+    excludedTopArcDeg: 0,
+    avoid: document.getElementById("hero-column")?.getBoundingClientRect() ?? null,
+    viewportHeight: window.innerHeight,
+    avoidTravelPx: MOBILE_DRIFT_AMPLITUDE_PX * (MOBILE_ENTER_LEAD - 1),
+  };
+}
+
+function boxFitsRules(
+  x: number,
+  y: number,
+  halfWidth: number,
+  halfHeight: number,
+  rules: SpawnRules,
+) {
+  const margin = MOBILE_LABEL_SAFE_MARGIN_PX;
+  if (
+    rules.viewportHeight !== undefined &&
+    (y - halfHeight < margin || y + halfHeight > rules.viewportHeight - margin)
+  ) {
+    return false;
+  }
+  const avoid = rules.avoid;
+  const reach = halfWidth + (rules.avoidTravelPx ?? 0);
+  return !(
+    avoid &&
+    x + reach > avoid.left - margin &&
+    x - reach < avoid.right + margin &&
+    y + halfHeight > avoid.top - margin &&
+    y - halfHeight < avoid.bottom + margin
+  );
+}
+
 /**
  * Where the next mobile phrase should appear.
  *
@@ -579,6 +635,7 @@ function randomLabelPoint(
   cluster: ClusterScreen,
   viewportWidth: number,
   phrase: string,
+  rules: SpawnRules = MOBILE_SPAWN_RULES,
 ) {
   const halfWidth =
     (phrase.length * MOBILE_LABEL_CHAR_PX) / 2 + MOBILE_DRIFT_AMPLITUDE_PX;
@@ -586,8 +643,8 @@ function randomLabelPoint(
   const minX = MOBILE_LABEL_SAFE_MARGIN_PX + halfWidth;
   const maxX = viewportWidth - MOBILE_LABEL_SAFE_MARGIN_PX - halfWidth;
 
-  const availableDeg = 360 - MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG;
-  const startDeg = 270 + MOBILE_LABEL_EXCLUDED_TOP_ARC_DEG / 2;
+  const availableDeg = 360 - rules.excludedTopArcDeg;
+  const startDeg = 270 + rules.excludedTopArcDeg / 2;
 
   for (let attempt = 0; attempt < MOBILE_LABEL_SPAWN_ATTEMPTS; attempt++) {
     const angle =
@@ -616,7 +673,11 @@ function randomLabelPoint(
 
     x = cluster.centerX + Math.cos(angle) * (dist + gap);
     y = cluster.centerY + Math.sin(angle) * (dist + gap);
-    if (x >= minX && x <= maxX) {
+    if (
+      x >= minX &&
+      x <= maxX &&
+      boxFitsRules(x, y, halfWidth, halfHeight, rules)
+    ) {
       return {
         dx: x - cluster.centerX,
         dy: y - cluster.centerY,
@@ -834,47 +895,119 @@ function useClusterTapNavigation(cluster: ClusterScreen) {
  *   in-progress text selection, a modified click, and anything interactive
  *   under the pointer, so it adds a behaviour rather than taking one away.
  * - **Keyboard reach** is the phrase label itself (PhraseFollower's `href`),
- *   which is exactly the size of the rendered text. Tab reveals the phrase
- *   below the cluster; Enter follows it.
+ *   which is exactly the size of the rendered text. Tab underlines the phrase
+ *   and holds it where it is, so the link is not moving under the reader;
+ *   Enter follows it.
+ *
+ * **The whisper.** Desktop used to show a phrase only while the pointer was
+ * over the cluster. It whispers the way mobile does now — a phrase every few
+ * seconds at a fresh spot beside the graph, clear of the hero column, sliding
+ * slowly across — and the hover changes where, not whether. Over the cluster
+ * the phrase glides to the cursor and new ones keep coming there, on the
+ * small settling drift (continuous travel on top of a moving cursor reads as
+ * lag). Leaving, the phrase stays where the cursor left it and lives out its
+ * beat there; the next one whispers in at a fresh spot beside the graph. How
+ * a phrase moves is fixed when it is born, so none changes its drift halfway
+ * through its life.
  */
-function DesktopAffordance({
-  cluster,
-  onHoverChange,
-}: {
-  cluster: ClusterScreen;
-  onHoverChange: (active: boolean) => void;
-}) {
+/**
+ * How a desktop phrase lives, fixed at the moment it is born. `at` is where
+ * it was born — beside the graph, or at the cursor — which picks its drift
+ * and tempo; `offset` is its spot beside the graph, from the cluster's centre;
+ * `phrase` is the text the box was measured for, so the follower's target
+ * does not jump while the outgoing phrase is still fading.
+ */
+interface DesktopPhraseLife {
+  phrase: string;
+  at: "graph" | "cursor";
+  drift: number;
+  offset: ReturnType<typeof randomLabelPoint>;
+}
+
+function DesktopAffordance({ cluster }: { cluster: ClusterScreen }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const { cursor, inWindow } = useCursorPx();
   const [focusActive, setFocusActive] = useState(false);
-  const [phrase, setPhrase] = useState(() => PHRASES[0]);
-  const [driftX, setDriftX] = useState(0);
-  // Locked when a reveal starts, not read live: pointerActive flips false the
-  // instant the pointer leaves, which is exactly when the exit begins — so
-  // reading it live would swing the follower to the focus-fallback point
-  // mid-fade instead of letting the phrase leave from where it was.
-  const [revealMode, setRevealMode] = useState<"pointer" | "focus">("pointer");
-  const wasShowing = useRef(false);
 
   const pointerActive =
     inWindow &&
     Math.hypot(cursor.x - cluster.centerX, cursor.y - cluster.centerY) <=
       cluster.radiusPx;
 
-  const showing = pointerActive || focusActive;
+  const [phrase, setPhrase] = useState(() => randomPhrase());
+  const [life, setLife] = useState<DesktopPhraseLife>(() => ({
+    phrase,
+    at: "graph",
+    drift: randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
+    offset: randomLabelPoint(
+      cluster,
+      window.innerWidth,
+      phrase,
+      desktopSpawnRules(),
+    ),
+  }));
+  /**
+   * Where the pointer left the cluster, while the phrase it was carrying
+   * lives out its beat there. Null once the next phrase has been born.
+   */
+  const [leftAt, setLeftAt] = useState<{ x: number; y: number } | null>(null);
 
+  // Read at the moment a phrase is born or the pointer leaves, not reasons
+  // to re-run anything: the cursor and the cluster both move every frame.
+  const phraseRef = useRef(phrase);
+  const cursorRef = useRef(cursor);
+  const pointerActiveRef = useRef(pointerActive);
+  const clusterRef = useRef(cluster);
   useEffect(() => {
-    onHoverChange(showing);
-  }, [showing, onHoverChange]);
+    phraseRef.current = phrase;
+    cursorRef.current = cursor;
+    pointerActiveRef.current = pointerActive;
+    clusterRef.current = cluster;
+  });
 
+  const advance = useCallback(() => {
+    setPhrase(randomPhrase(phraseRef.current));
+  }, []);
+
+  // The whisper's beat, restarted by every new phrase. Held while the link
+  // has keyboard focus, so it is not moving under the reader.
   useEffect(() => {
-    if (showing && !wasShowing.current) {
-      setPhrase((previous) => randomPhrase(previous));
-      setRevealMode(pointerActive ? "pointer" : "focus");
-      setDriftX(randomDrift());
-    }
-    wasShowing.current = showing;
-  }, [showing, pointerActive]);
+    if (reducedMotion || focusActive) return;
+    const id = setTimeout(advance, MOBILE_CYCLE_MS);
+    return () => clearTimeout(id);
+  }, [phrase, reducedMotion, focusActive, advance]);
+
+  // Leaving the cluster: the phrase under the cursor stays where it was left
+  // until its beat is up — cutting it short read as the whisper being
+  // snatched away — and the next one is born beside the graph. Under reduced
+  // motion there is no beat to wait out, so it goes straight back.
+  const wasPointerActive = useRef(pointerActive);
+  useEffect(() => {
+    const was = wasPointerActive.current;
+    wasPointerActive.current = pointerActive;
+    if (!was || pointerActive || reducedMotion) return;
+    setLeftAt({ ...cursorRef.current });
+  }, [pointerActive, reducedMotion]);
+
+  // Once the outgoing phrase has finished leaving. The pointer decides where
+  // the new one is born at this moment, not when it was picked, so a reader
+  // who comes back mid-fade gets it at the cursor.
+  const bornNext = useCallback(() => {
+    const atCursor = pointerActiveRef.current;
+    const next = phraseRef.current;
+    setLife({
+      phrase: next,
+      at: atCursor ? "cursor" : "graph",
+      drift: atCursor ? randomDrift() : randomDrift(MOBILE_DRIFT_AMPLITUDE_PX),
+      offset: randomLabelPoint(
+        clusterRef.current,
+        window.innerWidth,
+        next,
+        desktopSpawnRules(),
+      ),
+    });
+    setLeftAt(null);
+  }, []);
 
   useClusterTapNavigation(cluster);
 
@@ -888,29 +1021,63 @@ function DesktopAffordance({
     return () => root.classList.remove("nebula-affordance-armed");
   }, [pointerActive]);
 
-  const target =
-    revealMode === "pointer"
-      ? { x: cursor.x + CURSOR_OFFSET.x, y: cursor.y + CURSOR_OFFSET.y }
+  // Centre-anchored everywhere, so a phrase that glides between the graph and
+  // the cursor never jumps by half its width. At the cursor that means
+  // putting the *centre* where the old top-left anchor used to sit, plus half
+  // the box — the text still starts beside the pointer.
+  const beside = (point: { x: number; y: number }) => ({
+    x:
+      point.x +
+      CURSOR_OFFSET.x +
+      (life.phrase.length * MOBILE_LABEL_CHAR_PX) / 2,
+    y: point.y + CURSOR_OFFSET.y + MOBILE_LABEL_LINE_PX / 2,
+  });
+  const following = pointerActive || leftAt !== null;
+  const target = pointerActive
+    ? beside(cursor)
+    : leftAt
+      ? beside(leftAt)
       : {
-          x: cluster.centerX,
-          y: cluster.centerY + cluster.radiusPx + 16,
+          // Re-clamped against the live centre, as on mobile: parallax moves
+          // the cluster after the spot was solved.
+          x: Math.min(
+            Math.max(
+              cluster.centerX + life.offset.dx,
+              MOBILE_LABEL_SAFE_MARGIN_PX + life.offset.halfWidth,
+            ),
+            window.innerWidth -
+              MOBILE_LABEL_SAFE_MARGIN_PX -
+              life.offset.halfWidth,
+          ),
+          y: cluster.centerY + life.offset.dy,
         };
+  const bornAtCursor = life.at === "cursor";
 
   return (
     <PhraseFollower
       targetX={target.x}
       targetY={target.y}
-      phrase={showing ? phrase : null}
-      offsets={desktopDrift(driftX)}
-      transitionIn={LABEL_TRANSITION_IN}
-      transitionOut={LABEL_TRANSITION_OUT}
+      phrase={phrase}
+      offsets={
+        bornAtCursor ? desktopDrift(life.drift) : mobileDrift(life.drift)
+      }
+      transitionIn={
+        bornAtCursor ? LABEL_TRANSITION_IN : MOBILE_LABEL_TRANSITION_IN
+      }
+      transitionOut={
+        bornAtCursor ? LABEL_TRANSITION_OUT : MOBILE_LABEL_TRANSITION_OUT
+      }
       reducedMotion={reducedMotion}
       href="/nebula"
       linkClassName="nebula-affordance-hit"
       onFocus={() => setFocusActive(true)}
       onBlur={() => setFocusActive(false)}
-      positionMode="follow"
-      anchor="top-left"
+      // Trailing the cursor, and gliding to it from the graph, is the spring.
+      // Beside the graph a new spot is only ever taken while nothing is
+      // showing, so it is placed outright.
+      positionMode={following ? "follow" : "instant"}
+      anchor="center"
+      onExitComplete={bornNext}
       spanClassName={
         "block font-display lowercase text-[0.8125rem] tracking-[-0.01em] text-mask" +
         (focusActive && !pointerActive
@@ -925,9 +1092,9 @@ function DesktopAffordance({
  * A slow, low-amplitude "look inward" cue: a faint hairline ring that
  * contracts past the cluster's edge and fades on a long, several-second-gap
  * loop (see the `cluster-pulse` keyframes in globals.css) — an invitation,
- * not an attention-grab. Desktop and tablet only, paused on desktop while
- * the hover affordance is showing so the two never compete, and unmounted
- * outright under reduced motion rather than merely paused.
+ * not an attention-grab. Tablet only — desktop's always-on whisper is its
+ * invitation now, and two idle invitations compete — and unmounted outright
+ * under reduced motion rather than merely paused.
  *
  * Sized off CLUSTER_RADIUS, not the hit region's CLUSTER_BOUNDING_RADIUS —
  * that margin is deliberately generous for an *invisible* click target, but
@@ -937,16 +1104,14 @@ function DesktopAffordance({
 function ClusterPulse({
   centerX,
   centerY,
-  paused,
 }: {
   centerX: number;
   centerY: number;
-  paused: boolean;
 }) {
   const reducedMotion = useSceneStore((s) => s.reducedMotion);
   const cluster = useClusterScreen(CLUSTER_RADIUS);
 
-  if (reducedMotion || paused || !cluster.ready) return null;
+  if (reducedMotion || !cluster.ready) return null;
 
   return (
     <div

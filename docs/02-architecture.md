@@ -343,7 +343,7 @@ stale the first time the camera moves.
 ## Performance budget
 
 - **Do not use `MeshPhysicalMaterial` with `transmission` on more than 2 nodes.** Each transmissive mesh triggers an additional scene render pass. Default node material is a custom fresnel shader — a rim-lit translucent sphere with a soft inner core. Real transmission is reserved for the focused node only, on desktop, after the fly-in completes. See Responsive tiers below — tablet and mobile never use it.
-- Background particles: one `InstancedMesh` per tier, positions computed once, drift applied in the vertex shader — not per-instance on the CPU. Instance count varies by device tier — see Responsive tiers below, not a fixed number here.
+- Background particles: **declined** (`07-continuous-space.md`, the empty-paper decision). They were planned as one `InstancedMesh` per tier with the drift in the vertex shader.
 - Edges: batch into as few draw calls as possible. Drei's `QuadraticBezierLine` is fine for the ~40 production edges; technology edges (potentially 100+) should be a single `LineSegments` with a custom shader.
 - Target: 60fps desktop, 30fps mid-range mobile. Measure before adding postprocessing.
 - Cap `dpr` at `[1, 2]`.
@@ -358,7 +358,7 @@ stale the first time the camera moves.
 |---|---|---|---|
 | Tech nodes | Always visible | Visible, reduced opacity, toggleable | Visible, as dots on the outside globe (were hidden for legibility while the phone stood inside; see `07-continuous-space.md`) |
 | Transmission | **None, on any tier — see below.** The focused node's shell is a `--mask` `MeshPhysicalMaterial` with transmission off | None | None |
-| Particle count | ~600 | 350 | 200 |
+| Particle field | None — declined, see `07-continuous-space.md` | None | None |
 | Interaction | `CameraControls`: drag to look around from a fixed standing point; the wheel does nothing. Hover to preview, click to open. | Drag-to-rotate. The mobile tier's bottom sheet is also available, as a toggle rather than always-present. | **Portrait phones stand outside the graph** and turn the whole globe with one finger, the camera never leaving the axis — see `07-continuous-space.md`, "Mobile — the outside standing point". Tap to open. The bottom sheet is deferred until the outside view has been measured; labels on the visible face are the likelier answer. |
 | Interior panel size | 70% of viewport | 80% of viewport | 80% of viewport. Was 85 on both: the opened shell overshoots the panel by ~23px, and at 85% of a phone's height its top edge crossed the corner links |
 

@@ -7,7 +7,10 @@ const P = () => b.newPage({ viewport: { width: 1440, height: 900 } });
   const p = await P();
   await p.goto('http://localhost:3100/', { waitUntil:'networkidle' });
   await p.waitForTimeout(8000);
-  await p.mouse.click(1008, 450);
+  // The live centre: the landing cluster has moved with every change to where
+  // the camera stands, and a hard-coded point went stale with it.
+  const c = await p.evaluate(() => window.__nebulaProbe.cluster);
+  await p.mouse.click(c.x, c.y);
   await p.waitForTimeout(2500);
   console.log(`click on landing cluster -> ${new URL(p.url()).pathname} ${new URL(p.url()).pathname==='/nebula'?'PASS':'FAIL'}`);
   await p.close();

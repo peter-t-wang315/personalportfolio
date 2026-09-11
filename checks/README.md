@@ -59,7 +59,14 @@ schedule is honest) and useless for judging how anything **feels**.
 | `exitcentre.mjs` | Does closing a node leave that node in the middle of the frame? |
 | `overlay.mjs` | Do the DOM overlays sit on the graph the scene actually drew? |
 | `mobile-survey.mjs` | What does every route look like on a phone? 8 routes × 4 viewports, errors and overflow, plus a tap-through from the landing cluster. |
-| `outsideturn.mjs` | On a portrait phone, does a drag turn the globe with the camera staying on the axis, does closing a node face it, and is the turn forgotten once home? |
+| `outsideturn.mjs` | On a portrait phone, does a drag turn the globe with the camera staying on the axis, does closing a node bring the camera back to it, and is the turn forgotten once home? |
+| `closeturn.mjs` | On a portrait phone, does a drag released over a node stay a drag, does closing a node leave the globe exactly as it was, and does a node closed round the back turn to the front and stop on the camera's landing frame? |
+| `settle.mjs` | Inside the graph on desktop, does letting go of a look-around drag in a sparse view settle the three nearest nodes a little toward the middle — and not in a dense one? Does the next drag let them go, does a plain press leave them, and does opening a node mid-settle hold them still? |
+| `emptypaper.mjs` | **Offline, no browser.** How much empty paper can the reader face from the centre? Nodes in frame and the gap to the nearest node for every heading, banded in the reader's frame and the layout's. Same loader as `interiorheading.mjs`. |
+| `trackball.mjs` | On a portrait phone, does dragging keep turning the globe with no stop, drag after drag, and does a vertical drag tip it about the screen's horizontal even after a sideways quarter-turn, rather than rolling it? |
+| `coast.mjs` | On a portrait phone, does letting go of a drag drift a little and come to rest, does a drag that stops before lifting stay put, and does a press — or a node opening — stop the drift dead? |
+| `tapwhileturning.mjs` | On a portrait phone, does opening a node while the globe is still turning stop the turn, so the node and its shell stay under the parked camera? |
+| `whisper.mjs` | Does the landing affordance whisper on desktop — cycling beside the graph and off the hero column, following the cursor and still cycling on hover, held where the cursor left until its beat is up, then back beside the graph — with no pulse ring? `VIEWPORT=WxH`, default 1440x900. |
 | `phonefade.mjs` | Is the graph visible through the hero page at both ends of a phone flight? Shot at DPR 2, because the DPR-1 harness draws phone-sized nodes too faint to judge. |
 | `handoff.mjs` | Does the plane sit on the page at the moment of the hand-off home, in px? Desktop by default, `VIEWPORT=390x844` for the phone. |
 | `workshot.mjs` | What does the spotlit work page look like at three desktop sizes, and how far is the camera? |

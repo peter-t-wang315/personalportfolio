@@ -1236,13 +1236,68 @@ is the landing page's mechanism, yaw and pitch premultiplied onto the graph's
 orientation (`nebula-drag-state.ts`, the outside turn; `ConstellationOrientation`
 applies it at placement 1 and unwinds it with the placement on the way out),
 `CameraControls` is off, and the departure is the same pass dive as the
-interior's, from `OUTSIDE_POSE`. Closing a node turns the globe so that node
-faces the camera (`faceNodeFromOutside`, closed form, sprung on the spotlight
-turn's tempo) rather than moving the camera round to it. The probe publishes
+interior's, from `OUTSIDE_POSE`. Closing a node leaves the globe as the
+reader had it (revised below). The probe publishes
 `outsideTurn`; `checks/outsideturn.mjs` is the instrument: 7 checks, the
 camera at (0, 0, 50.4) before and after a drag and after a close, the turn
 back to zero once home. The canvas takes `touch-action: none` on the graph
 route so a browser cannot claim the swipe as a pan.
+
+**Closing a node no longer turns the globe** (revised again, 2026-09-10).
+The build above turned the globe on close so the node faced the camera, on
+a spring. Traced at 390×844 the camera was back on the axis at 0.85s and the
+globe was still turning at 2.5s, settling near 3s, which the owner read as
+the graph spinning on after leaving the node. The globe now stays exactly as
+the reader had it when they tapped the node, so the flight out is the flight
+in reversed and nothing moves once the camera stops (`keepClosedNodeInView`).
+The one exception is a node past the horizon from the standing point —
+reachable by following panel links round the back — which is turned to the
+front on the close flight's own clock (`glideOutsideTurn`), so its last turn
+frame is the camera's landing frame. Found on the way: letting go of a drag
+over a node opened it, because r3f fires `onClick` however far the press
+travelled; a node now ignores a press that moved more than 4px.
+`checks/closeturn.mjs` is the instrument: a front node closes with no turn
+at all, and a back node's turn ends on the landing frame (833ms).
+
+**Opening a node holds the turn.** The shell is the node's own mesh, inside
+the turning globe, and the camera's pose is composed against the globe as it
+stands at the moment of opening. A node opened while the globe was still
+turning — the old close spring's two-second tail left plenty of room for a
+tap — was carried out from under the parked camera, and its shell floated
+away as it opened. Opening from outside now stops the turn exactly where it
+is drawn first (`holdOutsideTurn`). The wander is not a second cause: the
+simulation freezes in place on focus, and hover attraction is off on the
+graph route. `checks/tapwhileturning.mjs` stages it by opening a node 450ms
+into a close turn; before the hold the turn moved 0.1 rad after opening.
+
+**Letting go drifts** (2026-09-10). The globe stopped dead the instant the
+finger lifted, which felt unnatural. On release it now carries on at the
+drag's speed over its last 90ms and decays exponentially (0.2s time
+constant, integrated exactly, capped at 3 rad/s, so at most about a tenth of
+a turn); a finger that stops before lifting gets none. A first pass at 0.3s
+and 3.5 rad/s, stepped per frame, carried a flick 70 degrees on — a spin,
+not a drift. Any press catches the drift, and that
+is what keeps a tapped node's shell under the camera — the globe has stopped
+before the tap becomes a click, with `holdOutsideTurn` behind it for opens
+that are not a press. `checks/coast.mjs` is the instrument.
+
+**The drag no longer stops, and it is a trackball** (2026-09-10). The owner
+found that dragging continually downward stopped at a certain point. That
+was the pitch stop, 88°, a quarter-turn in. Removing the stop alone would
+have left the other half of the problem: the turn was a yaw with a pitch
+under it, so once the globe had been turned side-on a vertical drag rolled
+it in the screen plane instead of tipping it. The outside turn is one
+quaternion now (`app/nebula-outside-turn.ts`, moved out of
+`nebula-drag-state.ts`, which is kept free of `three`). Every step of a drag
+and of the drift after it is a small rotation about screen-up and
+screen-right, premultiplied — down always tips the near face down, sideways
+always turns it, nothing stops, and the globe can end up upside down. The
+close turn for a node round the back is the shortest arc from where the
+globe is drawn, slerped on the flight's clock; the old spring, only ever
+reached instantly under reduced motion, is gone. The probe publishes the
+turn as a quaternion. `checks/trackball.mjs` is the instrument: three 400px
+drags down each turn 2.4 rad about the screen's horizontal, and after a
+sideways quarter-turn a vertical drag still does.
 
 **The nebula was not lost to the fog; it was behind the page.** The hero
 plane was painted on a paper fill, which on desktop covered nothing (the
@@ -1316,3 +1371,27 @@ edge layer dimmed behind it — from outside, the whole graph is the backdrop.
      which is where most of the empty paper is. Spreading the seeded layout
      more evenly over the sphere shrinks the gaps the pull has to cover.
   None of the three is built yet.
+
+  **Measured, and one of three built (2026-09-10).** `checks/emptypaper.mjs`
+  scores every heading from the centre through the real lens. At 1440×900 no
+  heading faces zero nodes; 4.3% show two or fewer, 23.6% four or fewer, and
+  the worst view centre is 42° from any node. Item 3's premise was half
+  wrong: in the layout's own frame the poles are the *densest* part of the
+  sphere (7 and 10 nodes where an even spread puts 3.4). In the reader's
+  frame — the graph is turned so the arrival looks along the layout's +y —
+  the thin part is the sky **above** the reader, 6 nodes in the top third
+  against 12.7 even, and headings there show two or fewer nodes 12–16% of the
+  time; below is dense.
+  1. **Built.** Letting go of a look-around drag whose view comes to rest
+     with four or fewer nodes in frame settles the three nodes nearest the
+     middle toward it: at most 1.5 units (about 6°), never more than a third
+     of the way, critically damped, then still. Judged on camera-controls'
+     `rest`, from our own drag detection so a tap is never a drag; the next
+     real drag, closing a node or leaving lets them go. Held exactly still
+     while a node is open, for the shell — the same reason the outside turn
+     holds (`holdViewSettle`). `checks/settle.mjs` is the instrument.
+  2. **Declined.** No particle field: the owner removed the flight dust and
+     does not want a standing field either.
+  3. **Deferred** until item 1 has been judged in the browser. If it is still
+     needed, the target is the reader's upper sky, and moving nodes means
+     re-searching `INTERIOR_HEADING` and re-running the pixel and label checks.

@@ -11,18 +11,28 @@ import {
   nodeIdForWorkPathname,
   routeForNode,
 } from "@/lib/nebula-routes";
-import { nodeGeometry } from "@/lib/node-geometry";
+import { nodeGeometry, nodeList } from "@/lib/node-geometry";
 import { standsOutside } from "@/lib/device-tier";
+import { canDragFrom } from "./nebula-drag-state";
 import {
   addOutsideDragDelta,
-  canDragFrom,
+  catchOutsideCoast,
+  flingOutsideTurn,
   getOutsideTurn,
+  glideOutsideTurn,
+  holdOutsideTurn,
   resetOutsideTurn,
   setOutsideDragging,
   setOutsideTurn,
   stepOutsideTurn,
-} from "./nebula-drag-state";
-import { getLivePosition, neighborsOf } from "./nebula-simulation";
+} from "./nebula-outside-turn";
+import {
+  getLivePosition,
+  holdViewSettle,
+  neighborsOf,
+  releaseViewSettle,
+  settleTowardView,
+} from "./nebula-simulation";
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_PARALLAX_MAX_PX,
@@ -492,19 +502,14 @@ const OUTSIDE_POSE: CameraPose = {
 };
 
 /**
- * **The outside turn as a rotation**: the reader's yaw about the screen's
- * vertical and pitch about its horizontal, premultiplied onto the graph's
- * own orientation exactly as the landing drag is. The camera stays on the
- * axis; this is what moves. Read from the spring's *current* value, so a
- * pose composed against it is composed against what is drawn this frame.
+ * **The outside turn as a rotation**, premultiplied onto the graph's own
+ * orientation exactly as the landing drag is. The camera stays on the axis;
+ * this is what moves. A trackball's orientation since the pitch stop came out
+ * (nebula-outside-turn.ts), read as drawn this frame, so a pose composed
+ * against it is composed against what the reader sees.
  */
-const _outsideYaw = new THREE.Quaternion();
-const _outsidePitch = new THREE.Quaternion();
 function outsideQuaternion(out: THREE.Quaternion) {
-  const turn = getOutsideTurn();
-  return out
-    .copy(_outsideYaw.setFromAxisAngle(SCREEN_UP, turn.yaw))
-    .multiply(_outsidePitch.setFromAxisAngle(SCREEN_RIGHT, turn.pitch));
+  return out.copy(getOutsideTurn());
 }
 
 /** The graph's orientation while the reader stands outside it. */
@@ -514,39 +519,80 @@ function outsideBaseRotation(out: THREE.Quaternion) {
 }
 
 /**
- * Turn the globe so a node faces the camera — the outside answer to
- * restingPoseFacing. Closing a node from outside puts the camera back on the
- * axis and turns the *graph* so the node the reader was just inside is in
- * the middle of the frame, rather than moving the camera round to it: that
- * keeps every departure a straight pull along the axis.
- *
- * Solved in closed form. The turn is yaw(a) about screen-up applied after
- * pitch(b) about screen-right, so a direction `d` in the graph's composed
- * frame lands on +z when d = (−sin a, cos a·sin b, cos a·cos b). Two
- * branches, one per hemisphere, so that pitch stays within ±90° and it is
- * yaw that carries a node round from the far side.
+ * A view with this many nodes in frame or fewer is sparse, and letting go of
+ * a look-around drag there settles the nearest nodes toward it. Measured from
+ * the centre at 1440x900 (checks/emptypaper.mjs): about a quarter of all
+ * headings, including every one of the emptiest.
  */
-function faceNodeFromOutside(nodeId: string | null) {
-  const node = nodeId ? nodeGeometry[nodeId] : null;
-  if (!node) return;
+const SETTLE_SPARSE_IN_FRAME = 4;
+const _settleBase = new THREE.Quaternion();
+const _settleWorld = new THREE.Vector3();
+const _settleView = new THREE.Vector3();
+
+/**
+ * The outside turn that brings a node to the middle of the frame — the
+ * outside answer to restingPoseFacing, used only when a closed node would
+ * otherwise be out of sight (keepClosedNodeInView).
+ *
+ * The shortest arc carrying the node's direction *as drawn now* onto the
+ * camera, premultiplied onto the current turn: the node comes forward along
+ * a great circle with no roll, from wherever the drag left the globe.
+ */
+const TOWARD_CAMERA = new THREE.Vector3(0, 0, 1);
+function turnFacingNode(nodeId: string) {
+  const node = nodeGeometry[nodeId];
+  if (!node) return null;
   const d = new THREE.Vector3()
     .fromArray(node.position)
-    .applyQuaternion(NEBULA_BASE_ROTATION);
-  if (d.lengthSq() < 1e-6) return;
-  d.normalize();
-  const x = THREE.MathUtils.clamp(d.x, -1, 1);
-  if (d.z >= 0) {
-    setOutsideTurn(-Math.asin(x), Math.atan2(d.y, d.z));
-  } else {
-    setOutsideTurn(Math.PI + Math.asin(x), Math.atan2(-d.y, -d.z));
-  }
+    .applyQuaternion(outsideBaseRotation(new THREE.Quaternion()));
+  if (d.lengthSq() < 1e-6) return null;
+  return new THREE.Quaternion()
+    .setFromUnitVectors(d.normalize(), TOWARD_CAMERA)
+    .multiply(getOutsideTurn());
+}
+
+/**
+ * **Closing a node from outside leaves the globe as the reader had it.**
+ *
+ * It used to turn the globe so the closed node faced the camera. The camera
+ * was back on the axis in 0.85s and the spring kept the globe turning for
+ * two seconds after that, which the owner read as the graph spinning on
+ * after leaving the node. The reader tapped that node from this view, so
+ * this view is the one to return to: the flight out is the flight in
+ * reversed, and nothing moves once the camera stops.
+ *
+ * The exception is a node that is out of sight from the standing point —
+ * reached by following links in the panel round to the back of the globe.
+ * Returning with it hidden would lose the reader, so that one turn is made,
+ * on the close flight's own clock (`clock`), so it lands with the camera.
+ * Null `clock` is a reduced-motion cut, where the turn is instant too.
+ *
+ * "Out of sight" is the horizon seen from OUTSIDE_DISTANCE: a point at
+ * radius r is on the near side when its direction's depth toward the camera
+ * exceeds r / OUTSIDE_DISTANCE.
+ */
+function keepClosedNodeInView(
+  nodeId: string | null,
+  clock: Parameters<typeof glideOutsideTurn>[1] | null,
+) {
+  const node = nodeId ? nodeGeometry[nodeId] : null;
+  if (!nodeId || !node) return;
+  const p = new THREE.Vector3().fromArray(node.position);
+  const r = p.length();
+  if (r < 1e-6) return;
+  p.applyQuaternion(outsideBaseRotation(new THREE.Quaternion()));
+  if (p.z / r > r / OUTSIDE_DISTANCE) return;
+  const facing = turnFacingNode(nodeId);
+  if (!facing) return;
+  if (clock) glideOutsideTurn(facing, clock);
+  else setOutsideTurn(facing);
 }
 
 /** The bare graph's pose for this viewport, facing a node if one is named. */
 function restingPose(outside: boolean, nodeId: string | null): CameraPose {
   if (!outside) return restingPoseFacing(nodeId);
-  // The camera does not move outside either: it is the globe that turns.
-  faceNodeFromOutside(nodeId);
+  // The camera does not move outside: it is the globe that turns, and only
+  // when keepClosedNodeInView says it must.
   return OUTSIDE_POSE;
 }
 
@@ -822,9 +868,8 @@ function ConstellationOrientation({
     if (placement > 0) {
       // What the graph shows at placement 1: its composed orientation, with
       // the outside turn on top where a portrait phone has spun it. The turn
-      // springs toward its target here, on the same tempo as the spotlight
-      // turn, so a node closing from outside settles into the frame rather
-      // than snapping. Inside, the turn is identity and this is UNROTATED.
+      // advances here — a drift after letting go, or a close turn on its
+      // flight's clock. Inside, the turn is identity and this is UNROTATED.
       stepOutsideTurn(dt, reducedMotion);
       _insideTarget.copy(UNROTATED).premultiply(outsideQuaternion(_outsideDrag));
       group.quaternion
@@ -927,6 +972,7 @@ function CameraRig({
   const flying = useSceneStore((s) => s.flying);
   const size = useThree((s) => s.size);
   const scene = useThree((s) => s.scene);
+  const gl = useThree((s) => s.gl);
   /** Portrait phone: the graph is stood outside of, not inside (standsOutside). */
   const outside = standsOutside(size.width, size.height);
   const focusSide = outside ? "outer" : "inner";
@@ -953,6 +999,10 @@ function CameraRig({
 
     function onPointerDown(event: PointerEvent) {
       if (event.button !== 0) return;
+      // Any press catches a drifting globe — above all one on a node, which
+      // must open against a globe that has stopped (holdOutsideTurn is the
+      // backstop for opens that are not a press).
+      catchOutsideCoast();
       if (!canDragFrom(event.target)) return;
       const state = useSceneStore.getState();
       if (state.flying || state.focusedNodeId !== null) return;
@@ -975,7 +1025,9 @@ function CameraRig({
       }
       addOutsideDragDelta(dx, dy);
     }
-    function end() {
+    function end(event: PointerEvent) {
+      // A lift, not a cancel, is a throw: a cancelled drag stops where it is.
+      if (live && event.type === "pointerup") flingOutsideTurn();
       pointerId = null;
       travelled = 0;
       live = false;
@@ -993,6 +1045,102 @@ function CameraRig({
       setOutsideDragging(false);
     };
   }, [isNebula, outside]);
+
+  /**
+   * **The settle after looking around** — the first of the empty-paper items
+   * in 07-continuous-space.md. When a look-around drag has ended and the view
+   * has come to rest facing a sparse part of the sky, the nodes nearest the
+   * middle of the view settle a little way toward it (settleTowardView). The
+   * drag itself is untouched — no limit, no pull on the camera, nothing at all
+   * until the hand is off — and the next real drag lets them go.
+   *
+   * A drag is movement past the slop, seen by our own pointer listeners, not
+   * camera-controls' `controlstart`: that fires on a plain press too, and a tap
+   * that opens a node must neither release a settle nor start one. "At rest"
+   * is camera-controls' `rest`, after its damping has carried the view to a
+   * stop. A hand that stopped before lifting has already had its `rest`, so
+   * that lift settles at once.
+   */
+  useEffect(() => {
+    const controls = controlsRef.current;
+    if (!isNebula || outside || !controls) return;
+    const canvas = gl.domElement;
+    const SLOP = 4;
+    let press: { id: number; x: number; y: number } | null = null;
+    /** A real drag has happened since the view was last judged. */
+    let dragged = false;
+    let resting = true;
+
+    function judge() {
+      dragged = false;
+      const state = useSceneStore.getState();
+      if (state.reducedMotion || state.flying || state.focusedNodeId !== null) {
+        return;
+      }
+      const camera = controls!.camera;
+      const base = outsideBaseRotation(_settleBase);
+      camera.getWorldDirection(_settleView);
+      let inFrame = 0;
+      for (const node of nodeList) {
+        const live = getLivePosition(node.id);
+        if (!live) continue;
+        _settleWorld.copy(live).applyQuaternion(base);
+        if (_settleWorld.clone().sub(camera.position).dot(_settleView) <= 0) {
+          continue;
+        }
+        _settleWorld.project(camera);
+        if (Math.abs(_settleWorld.x) <= 1 && Math.abs(_settleWorld.y) <= 1) {
+          inFrame++;
+        }
+      }
+      const sparse = inFrame <= SETTLE_SPARSE_IN_FRAME;
+      noteRigEvent("look", `${inFrame} in frame${sparse ? ", settle" : ""}`);
+      if (!sparse) return;
+      // Into the layout's own frame, where the simulation keeps its nodes.
+      settleTowardView(_settleView.applyQuaternion(base.invert()));
+    }
+
+    function onPointerDown(event: PointerEvent) {
+      if (event.button !== 0) return;
+      press = { id: event.pointerId, x: event.clientX, y: event.clientY };
+    }
+    function onPointerMove(event: PointerEvent) {
+      if (!press || event.pointerId !== press.id || dragged) return;
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) <= SLOP) {
+        return;
+      }
+      dragged = true;
+      releaseViewSettle();
+    }
+    function onPointerUp(event: PointerEvent) {
+      if (!press || event.pointerId !== press.id) return;
+      press = null;
+      if (dragged && resting) judge();
+    }
+    const onWake = () => {
+      resting = false;
+    };
+    const onRest = () => {
+      resting = true;
+      if (dragged && press === null) judge();
+    };
+
+    canvas.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+    controls.addEventListener("wake", onWake);
+    controls.addEventListener("rest", onRest);
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      controls.removeEventListener("wake", onWake);
+      controls.removeEventListener("rest", onRest);
+      releaseViewSettle();
+    };
+  }, [isNebula, outside, gl]);
 
   // The turn belongs to a visit to the graph. Off it, with no flight left to
   // unwind it, it is forgotten — a reduced-motion cut, or a first mount.
@@ -1753,12 +1901,24 @@ function CameraRig({
     }
     const previousFocus = lastFocus.current;
     lastFocus.current = routeFocusId;
+    // The settle after looking around: held exactly still while a node is
+    // open, since the pose below is composed against where that node is right
+    // now; let go once it closes, because the view it settled toward is gone.
+    if (routeFocusId !== null) {
+      holdViewSettle(true);
+    } else {
+      holdViewSettle(false);
+      releaseViewSettle();
+    }
     if (!isNebula) return;
 
     // Opening a node from the graph, moving sideways to a connected one, or
     // leaving back to the constellation — one flight from wherever the camera
     // is to wherever the route now says. Sideways travel never returns to
     // the framing pose first because `from` is simply the current pose.
+    // Opening from outside: freeze the globe first, so the pose composed
+    // against it below is still true when the camera arrives.
+    if (outside && routeFocusId !== null) holdOutsideTurn();
     const to = routeFocusId
       ? focusPose(routeFocusId, focusBase(), focusSide)
       : restingPose(outside, previousFocus);
@@ -1774,6 +1934,23 @@ function CameraRig({
         sideways ? { from: previousFocus, to: routeFocusId } : null,
       );
 
+    const start = performance.now();
+    // The close flight's clock — the shell's hold, then the hop — so a turn
+    // it has to make lands on the same frame as the camera.
+    if (outside && routeFocusId === null) {
+      keepClosedNodeInView(
+        previousFocus,
+        reducedMotion
+          ? null
+          : {
+              start,
+              delay: SHELL_CLOSE_MS,
+              duration: FOCUS_FLIGHT_DURATION_MS,
+              ease: flightEase,
+            },
+      );
+    }
+
     if (reducedMotion) {
       settle(controls, to, fovTo, { free: routeFocusId !== null, at: 1 });
       return;
@@ -1782,7 +1959,7 @@ function CameraRig({
     begin(controls, {
       from: currentPose(controls),
       to,
-      start: performance.now(),
+      start,
       fovFrom: (controls.camera as THREE.PerspectiveCamera).fov,
       fovTo,
       placementFrom: 1,
