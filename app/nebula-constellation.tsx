@@ -128,6 +128,12 @@ const SPOTLIGHT_OPACITY_FACTOR = 0.55 / PROJECT_OPACITY;
 /** Route-change easing for the ambient fade. */
 const AMBIENT_EASE = 0.06;
 
+/**
+ * How far a press may travel and still open the node it lands on — the same
+ * 4px the landing page's click and drag agree on (nebula-drag.tsx).
+ */
+const NODE_TAP_SLOP_PX = 4;
+
 const CORE_SCALE = 0.8;
 const CORE_OPACITY = 0.22;
 
@@ -1207,6 +1213,11 @@ export function Constellation({
               onClick={
                 interactive
                   ? (e) => {
+                      // A press that travelled is a drag — turning the globe
+                      // on a phone, looking round from inside — and letting
+                      // go over a node is not asking to open it. r3f fires
+                      // the click regardless; `delta` is how far it went.
+                      if (e.delta > NODE_TAP_SLOP_PX) return;
                       e.stopPropagation();
                       onOpenNode(node.id);
                     }

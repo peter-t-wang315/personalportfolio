@@ -48,5 +48,11 @@ next-env.d.ts
 /mobile/
 /phonefade/
 /outsideturn/
+/closeturn/
+/whisper/
+/tapwhileturning/
+/coast/
+/settle/
+/whisperleave/
 /handoff/
 /work-shots/

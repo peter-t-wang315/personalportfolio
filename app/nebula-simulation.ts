@@ -385,6 +385,105 @@ export function releaseAttraction() {
   for (const spring of neighborSprings.values()) spring.active = false;
 }
 
+/**
+ * **The settle after looking around** (07-continuous-space.md, the
+ * empty-paper decision). Letting go of a look-around drag that has left the
+ * reader facing a sparse part of the sky draws the few nodes nearest the
+ * middle of the view a little way toward it, eases them there, and rests.
+ * SETTLE_MAX_UNITS at most — about six degrees seen from the centre, never
+ * enough to leave a cluster — and never more than SETTLE_SHARE of the way,
+ * so the layout is still a truthful diagram. It does not touch the drag:
+ * nothing happens until the hand is off and the view has come to rest, and
+ * nebula-canvas.tsx decides both that and whether the view is sparse.
+ *
+ * Its own springs rather than the hover attraction's: those pull toward a
+ * node with personalities that ring, and this is a quiet slide toward a point
+ * in the sky. Critically damped, so nothing overshoots, and a vector spring,
+ * so a new settle or a release retargets from wherever a node already is.
+ *
+ * **Held while a node is open** (holdViewSettle). The camera parks against a
+ * node's live position at the moment it opens and the shell is that node, so
+ * a settle still easing in would carry the shell out from under the camera —
+ * the failure the outside turn's hold exists for.
+ */
+const SETTLE_NODES = 3;
+const SETTLE_MAX_UNITS = 1.5;
+const SETTLE_SHARE = 0.35;
+/** rad/s, critically damped: most of the way in about a second. */
+const SETTLE_OMEGA = 4.5;
+
+interface SettleSpring {
+  target: THREE.Vector3;
+  offset: THREE.Vector3;
+  velocity: THREE.Vector3;
+}
+const settleSprings = new Map<string, SettleSpring>();
+let settleHeld = false;
+const _settlePull = new THREE.Vector3();
+const _settleHome = new THREE.Vector3();
+const _settleAccel = new THREE.Vector3();
+
+/**
+ * Settle the nodes nearest a direction — the middle of the view, in the
+ * layout's own frame — toward it. Nearest by seeded position, so the choice
+ * does not depend on where the wander happens to have put things.
+ */
+export function settleTowardView(direction: THREE.Vector3) {
+  const view = direction.clone().normalize();
+  const nearest = nodeList
+    .map((node) => ({
+      node,
+      angle: _settleHome.fromArray(node.position).angleTo(view),
+    }))
+    .sort((a, b) => a.angle - b.angle)
+    .slice(0, SETTLE_NODES);
+  const chosen = new Set(nearest.map((entry) => entry.node.id));
+  for (const [id, spring] of settleSprings) {
+    if (!chosen.has(id)) spring.target.set(0, 0, 0);
+  }
+  for (const { node } of nearest) {
+    _settleHome.fromArray(node.position);
+    // Toward the view's point on this node's own sphere; the shell
+    // re-projection in stepSimulation turns it into a slide over the surface.
+    _settlePull.copy(view).multiplyScalar(_settleHome.length()).sub(_settleHome);
+    const distance = _settlePull.length();
+    const amount = Math.min(SETTLE_MAX_UNITS, distance * SETTLE_SHARE);
+    if (distance > 1e-4) _settlePull.multiplyScalar(amount / distance);
+    else _settlePull.set(0, 0, 0);
+    const spring = settleSprings.get(node.id);
+    if (spring) spring.target.copy(_settlePull);
+    else {
+      settleSprings.set(node.id, {
+        target: _settlePull.clone(),
+        offset: new THREE.Vector3(),
+        velocity: new THREE.Vector3(),
+      });
+    }
+  }
+}
+
+/** Let settled nodes ease home: the reader is looking around again, or has left. */
+export function releaseViewSettle() {
+  for (const spring of settleSprings.values()) spring.target.set(0, 0, 0);
+}
+
+/** Hold settled nodes exactly where they are (true), or let them move again. */
+export function holdViewSettle(held: boolean) {
+  settleHeld = held;
+  if (held) for (const spring of settleSprings.values()) spring.velocity.set(0, 0, 0);
+}
+
+/** For app/nebula-probe.ts: which nodes are settling, and how far the furthest has gone. */
+export function getViewSettle() {
+  let units = 0;
+  const nodes: string[] = [];
+  for (const [id, spring] of settleSprings) {
+    units = Math.max(units, spring.offset.length());
+    if (spring.target.lengthSq() > 0) nodes.push(id);
+  }
+  return { nodes, units, held: settleHeld };
+}
+
 let frozenAt: number | null = null;
 let lastClockTime = 0;
 /**
@@ -519,6 +618,33 @@ export function stepSimulation(clockTime: number, delta: number) {
       }
     }
     offsets[neighborId].add(_pull);
+  }
+
+  // The settle after looking around (settleTowardView). Integrated on the
+  // frame delta like the attraction, so the wander's freeze does not stop it;
+  // holdViewSettle does.
+  for (const [id, spring] of settleSprings) {
+    if (!settleHeld) {
+      const steps = Math.max(1, Math.ceil(delta / ATTRACT_SUBSTEP_SECONDS));
+      const stepDt = delta / steps;
+      for (let s = 0; s < steps; s++) {
+        _settleAccel
+          .subVectors(spring.target, spring.offset)
+          .multiplyScalar(SETTLE_OMEGA * SETTLE_OMEGA)
+          .addScaledVector(spring.velocity, -2 * SETTLE_OMEGA);
+        spring.velocity.addScaledVector(_settleAccel, stepDt);
+        spring.offset.addScaledVector(spring.velocity, stepDt);
+      }
+      if (
+        spring.target.lengthSq() === 0 &&
+        spring.offset.lengthSq() < 1e-6 &&
+        spring.velocity.lengthSq() < 1e-6
+      ) {
+        settleSprings.delete(id);
+        continue;
+      }
+    }
+    offsets[id].add(spring.offset);
   }
 
   for (const node of nodeList) {

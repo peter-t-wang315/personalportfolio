@@ -2,7 +2,8 @@ import type * as THREE from "three";
 import { getClusterCircle } from "./nebula-drag-state";
 import { homePlane } from "./nebula-home-placement";
 import { getPlacement } from "./nebula-placement";
-import { getOutsideTurn } from "./nebula-drag-state";
+import { getOutsideTurn } from "./nebula-outside-turn";
+import { getViewSettle } from "./nebula-simulation";
 
 /**
  * A read-only window onto the camera, for the scripts in `checks/`.
@@ -35,8 +36,13 @@ export interface CameraProbe {
   fov: number;
   /** 0 standing outside, 1 inside the graph; see nebula-placement.ts. */
   placement: number;
-  /** The outside turn a portrait phone has spun the globe to (nebula-drag-state.ts). */
-  outsideTurn: { yaw: number; pitch: number };
+  /**
+   * The outside turn a portrait phone has spun the globe to, as a quaternion
+   * (nebula-outside-turn.ts). Compare two with 2·acos(|a·b|).
+   */
+  outsideTurn: { x: number; y: number; z: number; w: number };
+  /** The settle after looking around (nebula-simulation.ts): who, how far, held. */
+  viewSettle: { nodes: string[]; units: number; held: boolean };
   flying: boolean;
   /** The hero plane, as the rig placed it this frame (nebula-home-placement.ts). */
   home: { position: [number, number, number]; width: number; height: number; opacity: number };
@@ -64,7 +70,8 @@ const probe: CameraProbe = {
   distance: 0,
   fov: 0,
   placement: 0,
-  outsideTurn: { yaw: 0, pitch: 0 },
+  outsideTurn: { x: 0, y: 0, z: 0, w: 1 },
+  viewSettle: { nodes: [], units: 0, held: false },
   flying: false,
   home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
   cluster: { x: 0, y: 0, r: 0, ready: false },
@@ -106,8 +113,11 @@ export function publishCameraProbe(
   probe.fov = camera.fov;
   probe.placement = getPlacement();
   const turn = getOutsideTurn();
-  probe.outsideTurn.yaw = turn.yaw;
-  probe.outsideTurn.pitch = turn.pitch;
+  probe.outsideTurn.x = turn.x;
+  probe.outsideTurn.y = turn.y;
+  probe.outsideTurn.z = turn.z;
+  probe.outsideTurn.w = turn.w;
+  probe.viewSettle = getViewSettle();
   probe.flying = flying;
   HOME_POSITION[0] = homePlane.position.x;
   HOME_POSITION[1] = homePlane.position.y;

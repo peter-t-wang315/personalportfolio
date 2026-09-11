@@ -104,9 +104,9 @@ body {
 
 /*
  * The desktop "What's this?" anchor (nebula-affordance.tsx) is the phrase
- * label itself, and it has no size at all until a reveal renders text into
- * it — so a focus ring would be drawn around nothing on the frame focus
- * lands. The label underlines itself on focus instead, which is why this is
+ * label itself, and between two phrases it has no size at all — so a focus
+ * ring could be drawn around nothing. The label underlines itself on focus
+ * instead (and holds still while focused), which is why this is
  * safe to suppress. Deliberately not applied to the mobile label, which is a
  * permanently visible link and keeps the standard ring.
  */
