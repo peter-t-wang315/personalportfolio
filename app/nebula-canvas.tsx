@@ -65,6 +65,7 @@ import {
   shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
+import { GlassBackdrop } from "./nebula-glass-backdrop";
 import { NebulaHome } from "./nebula-home";
 import { HOME_HANDOFF_MS } from "./nebula-departure";
 import { getHeroFrame, homePlane } from "./nebula-home-placement";
@@ -2230,6 +2231,10 @@ export function NebulaCanvas() {
           onOpenNode={openNode}
         />
       </ConstellationOrientation>
+      {/* Last, and that is load-bearing: it renders the scene into the
+          backdrop the shells refract, so everything else must have written
+          this frame before it runs. See nebula-glass-backdrop.tsx. */}
+      <GlassBackdrop isNebula={isNebula} />
     </Canvas>
   );
 }

@@ -1137,13 +1137,72 @@ from `content/` at a layout of its own, and the two dissolve into each other
 while the camera holds still — on the click going in, at the moment of landing
 coming out. See "The hand-off".
 
-### Part 6 — Seeing home through the glass
+### Part 6 — Seeing home through the glass — **done**
 
 Transmission on the node shells, now that there is something to refract.
 Tier-gated, measured.
 
 **Done when:** home is visibly bent by a node in front of it on desktop, and
 the frame budget is unchanged on tiers that do not get it.
+
+**Built as a backdrop pass and four uniforms, not as a transmissive
+material.** `MeshPhysicalMaterial`'s `transmission` and drei's
+`MeshTransmissionMaterial` both cost a render pass *per transmissive mesh* —
+which is what the performance budget's standing cap of two such meshes is
+about — and both would replace the fresnel shader, where the rim, the
+breathing, the `uOpen` morph and the scroll thumb all live. So instead:
+`nebula-glass-backdrop.tsx` renders the scene **minus the shells** into a
+half-resolution target cleared to `--paper`, once a frame, and every shell
+samples that target displaced by its own normal
+(`app/fresnel-material.ts`). One pass for all 51 nodes, and the material
+keeps everything it already did.
+
+**The paper clear is the whole trick.** 2.5 removed transmission because the
+canvas is `alpha: true` over a CSS background: the page's own colour is not
+in the scene, so glass transmitted the void and rendered white. The backdrop
+target is not the canvas — it is opaque, and it is cleared to the colour the
+void actually is. Where nothing is behind a node, what it refracts is
+exactly the paper it was already showing, so white is not reachable.
+
+**The bend is the view-space normal, weighted by the same rim term as the
+alpha, and negated.** Zero looking through the middle of a sphere, largest
+at the silhouette. Negated because the first build sampled *outward*, where
+there is only paper, and read as the node wiping the page clean at its edge
+rather than gathering it; sampling inward carries what is behind the middle
+of the node out to its rim, which is what a ball of glass does.
+`GLASS_REFRACT` is 0.03 of the frame height at the silhouette, swept at 0,
+0.008, 0.016, 0.03 and 0.05 against the headline seen from the centre: the
+first two are hard to see at all, and past 0.03 the edge is sampling from so
+far away that it stops being related to what is behind the node.
+
+**Measured** (`checks/glass.mjs`, 1440x900, reduced motion, standing at the
+centre and turned around to face home — `dot = 1.0000`). The same standing
+point with the glass on and off differs in 11,560 pixels of 1,296,000 (0.89%
+of the frame), peak channel delta 92, and 11,421 of those are ink: what
+moved is the page, not rims over empty paper. The pass runs on desktop
+`/nebula` at 720x450 against a 1440x900 buffer, and does not run at all on
+`/`, `/about`, a portrait phone or a tablet — `refract` is 0 there and the
+shader skips the sample, so the material below desktop is the material as it
+was before Part 6. Frame time under SwiftShader was 16.7ms with the pass and
+16.7ms without, which says only that the pass fits inside the 60Hz cap at
+that size under software GL; it is not a measurement of a loaded GPU.
+
+**What it cannot do, stated plainly.** A shell is 10% opaque across its face
+and 42% at the rim, and it is blended over a frame that already has home in
+it. So the refracted copy is always a *fraction* of the pixel, with the
+straight-through page underneath: the page reads as itself, disturbed, and
+the strongest reading available is a stroke of the headline gathering and
+going soft as it crosses a shell's edge. Making it read harder would mean
+making the shell opaque enough to replace what is behind it, at which point
+it stops being a shell and the graph stops showing nodes through nodes — the
+backdrop deliberately excludes the shells, so anything the glass replaced
+would lose them. Bounded on purpose; the brief asked for a smear at the rim.
+
+**Not judged yet:** all of the above was shot at DPR 1 under SwiftShader,
+where a 3px node stroke is already faint. The strength wants one look on a
+real display at DPR 2, and the most favourable moment for it is the flight,
+where home is at full opacity and passing the camera rather than at
+`HOME_REST_OPACITY` behind the reader.
 
 ### Part 7 — Re-verify and document
 

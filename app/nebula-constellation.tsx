@@ -28,6 +28,7 @@ import {
 import { nodeList, nodeGeometry, type NodeGeometry } from "@/lib/node-geometry";
 import { projectById, techById } from "@/content";
 import { createFresnelMaterial } from "./fresnel-material";
+import { glassShells } from "./nebula-glass";
 import { Edges } from "./nebula-edges";
 import { getPlacement } from "./nebula-placement";
 import {
@@ -1192,7 +1193,22 @@ export function Constellation({
           subgraphOf={!isNebula && !flying ? spotlightNodeId : null}
         />
       )}
-      {nodeList.map((node) => {
+      {/* The shells, in a group of their own so the backdrop pass can take
+          them out of the scene for the length of its render — they are the
+          things doing the refracting and must not be in what is refracted
+          (nebula-glass-backdrop.tsx). A group rather than a camera layer
+          because r3f's raycaster carries a layer mask too, and a layer the
+          backdrop camera skipped would have quietly taken 45 nodes off the
+          pointer path. */}
+      <group
+        ref={(el) => {
+          glassShells.group = el;
+          return () => {
+            if (glassShells.group === el) glassShells.group = null;
+          };
+        }}
+      >
+        {nodeList.map((node) => {
           if (node.kind === "tech" && !showTech) return null;
           return (
             <mesh
@@ -1234,6 +1250,7 @@ export function Constellation({
             </mesh>
           );
         })}
+      </group>
       {interactive && <HoverLabel />}
     </group>
   );

@@ -4,6 +4,7 @@ import { homePlane } from "./nebula-home-placement";
 import { getPlacement } from "./nebula-placement";
 import { getOutsideTurn } from "./nebula-outside-turn";
 import { getViewSettle } from "./nebula-simulation";
+import { glassRefract, glassState } from "./nebula-glass";
 
 /**
  * A read-only window onto the camera, for the scripts in `checks/`.
@@ -46,6 +47,8 @@ export interface CameraProbe {
   flying: boolean;
   /** The hero plane, as the rig placed it this frame (nebula-home-placement.ts). */
   home: { position: [number, number, number]; width: number; height: number; opacity: number };
+  /** The refraction pass: whether it ran this frame, at what strength and size. */
+  glass: { active: boolean; refract: number; width: number; height: number };
   /** The graph's on-screen circle, so a script can click it where the rig drew it. */
   cluster: { x: number; y: number; r: number; ready: boolean };
   /** Rig events since load — begin/settle calls — for the checks. */
@@ -74,6 +77,7 @@ const probe: CameraProbe = {
   viewSettle: { nodes: [], units: 0, held: false },
   flying: false,
   home: { position: HOME_POSITION, width: 0, height: 0, opacity: 0 },
+  glass: { active: false, refract: 0, width: 0, height: 0 },
   cluster: { x: 0, y: 0, r: 0, ready: false },
   events: [],
 };
@@ -125,6 +129,10 @@ export function publishCameraProbe(
   probe.home.width = homePlane.width;
   probe.home.height = homePlane.height;
   probe.home.opacity = homePlane.opacity;
+  probe.glass.active = glassState.active;
+  probe.glass.refract = glassRefract.value;
+  probe.glass.width = glassState.width;
+  probe.glass.height = glassState.height;
   const circle = getClusterCircle();
   probe.cluster.x = circle.centerX;
   probe.cluster.y = circle.centerY;

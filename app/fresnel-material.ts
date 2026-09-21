@@ -1,5 +1,11 @@
 import * as THREE from "three";
 import { palette } from "@/lib/palette";
+import {
+  glassAspect,
+  glassBackdrop,
+  glassMix,
+  glassRefract,
+} from "./nebula-glass";
 
 /**
  * Rim-lit translucent sphere with a soft inner core — the shared node
@@ -19,6 +25,13 @@ import { palette } from "@/lib/palette";
  * program — only uniform values differ — so per-node instances stay cheap.
  * Drive uTime externally each frame; leaving it still freezes the shape,
  * which is exactly what prefers-reduced-motion wants.
+ *
+ * It also refracts. Part 6 of 07-continuous-space.md gave the world something
+ * behind the glass — the home page, as an object — and the backdrop pass
+ * (nebula-glass-backdrop.tsx) hands it here as a texture of the scene minus
+ * the shells, cleared to --paper. The shared uniforms carrying it are
+ * re-attached after construction for the same reason uTime is: merge clones,
+ * and one write per frame has to reach every instance.
  */
 export interface FresnelMaterialOptions {
   opacity?: number;
@@ -54,6 +67,10 @@ export function createFresnelMaterial({
         uScrollPos: { value: 0 },
         uScrollLen: { value: 0 },
         uScrollFade: { value: 0 },
+        uBackdrop: { value: null },
+        uRefract: { value: 0 },
+        uGlassMix: { value: 0 },
+        uAspect: { value: 1 },
       },
     ]),
     vertexShader: `
@@ -66,6 +83,7 @@ export function createFresnelMaterial({
       varying vec3 vViewPosition;
       varying float vShapeRim;
       varying vec2 vShapeXY;
+      varying vec4 vClip;
       void main() {
         vNormal = normalize(normalMatrix * normal);
         // Opening a node reshapes the node itself rather than swapping it for
@@ -118,6 +136,10 @@ export function createFresnelMaterial({
         vec4 mvPosition = modelViewMatrix * vec4(displaced, 1.0);
         vViewPosition = -mvPosition.xyz;
         gl_Position = projectionMatrix * mvPosition;
+        // Kept whole rather than divided here: the perspective divide has to
+        // happen per fragment, or the sampled backdrop shears across a sphere
+        // the way an affine-mapped texture does.
+        vClip = gl_Position;
         #include <fog_vertex>
       }
     `,
@@ -129,10 +151,15 @@ export function createFresnelMaterial({
       uniform float uScrollPos;
       uniform float uScrollLen;
       uniform float uScrollFade;
+      uniform sampler2D uBackdrop;
+      uniform float uRefract;
+      uniform float uGlassMix;
+      uniform float uAspect;
       varying vec3 vNormal;
       varying vec3 vViewPosition;
       varying float vShapeRim;
       varying vec2 vShapeXY;
+      varying vec4 vClip;
       void main() {
         vec3 viewDir = normalize(vViewPosition);
         float fresnel = pow(1.0 - max(dot(viewDir, vNormal), 0.0), 2.2);
@@ -176,7 +203,40 @@ export function createFresnelMaterial({
           1.0 - smoothstep(halfLen, halfLen + 0.03, abs(along - uScrollPos));
         alpha += wall * band * uScrollFade * uOpen * 0.45;
 
-        gl_FragColor = vec4(color, alpha);
+        // Home, through the glass.
+        //
+        // The bend is the view-space normal, which at the rim points across
+        // the frame and at the centre of the face points at the viewer — so
+        // the face is left showing what is actually behind it and the edge
+        // gathers, which is what an edge of glass does. Weighted by the same
+        // rim term the alpha uses, and switched off as the node opens: an
+        // opened node is a surface to read text on, not a lens.
+        //
+        // The straight-through view is still there underneath, because the
+        // shell is blended over a frame that already has home in it. That is
+        // deliberate rather than tolerated: a near-clear face over the real
+        // page is the page, and the refracted copy only separates from it
+        // where the offset grows, which is the rim. A shell made opaque
+        // enough to replace what is behind it would have had to stop being
+        // a shell.
+        vec3 rgb = color;
+        if (uRefract > 0.0) {
+          vec2 screen = (vClip.xy / vClip.w) * 0.5 + 0.5;
+          // The offset is the view-space normal's own screen component: zero
+          // looking straight through the middle of a sphere, one at the
+          // silhouette, and everything between in proportion — which is a
+          // lens rather than an outline effect. *Minus*, so a fragment near
+          // the edge samples from further in: what is behind the middle of
+          // the node is carried outward to its rim, the way a ball of glass
+          // magnifies what is behind it. Plus was tried first and read as
+          // the node wiping the page clean at its edge, because outward from
+          // the rim is paper.
+          vec2 bend = -vec2(vNormal.x / uAspect, vNormal.y) * uRefract * rim;
+          vec3 behind = texture2D(uBackdrop, clamp(screen + bend, 0.0, 1.0)).rgb;
+          rgb = mix(color, behind, rim * uGlassMix * (1.0 - uOpen));
+        }
+
+        gl_FragColor = vec4(rgb, alpha);
         #include <fog_fragment>
       }
     `,
@@ -185,5 +245,9 @@ export function createFresnelMaterial({
     fog: true,
   });
   if (timeUniform) material.uniforms.uTime = timeUniform;
+  material.uniforms.uBackdrop = glassBackdrop;
+  material.uniforms.uRefract = glassRefract;
+  material.uniforms.uGlassMix = glassMix;
+  material.uniforms.uAspect = glassAspect;
   return material;
 }
