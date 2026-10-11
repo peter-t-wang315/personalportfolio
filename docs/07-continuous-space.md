@@ -1204,6 +1204,79 @@ real display at DPR 2, and the most favourable moment for it is the flight,
 where home is at full opacity and passing the camera rather than at
 `HOME_REST_OPACITY` behind the reader.
 
+### What three strangers found — **next**
+
+Surveyed 2026-10-10 against a production build of `44d8fb6`. Three visitors
+were told only that a personal website was running and to explore it, with no
+word about what it was for, and no source: one on a 1440×900 laptop, one on a
+390×844 phone, one on a 1024×768 tablet and a 1280×720 laptop with keyboard
+only, reduced motion, typed deep links, history and refresh. Each wrote a
+conclusion.
+
+All three worked out unaided what the site is, who it is for, and that the
+graph is the work drawn as the system it describes. The recruiter path held on
+its own: name, role, headline and the three numbers within seconds, Resume one
+click away, the PDF served. Two of them quoted the solder and driver prose back
+unprompted. Flying into a node and reading inside the shell was what all three
+liked best. Nothing hard-broke: no overflow at any size, deep links, history
+and refresh all sound, and no console errors beyond the 404s they asked for.
+
+These are the fixes, in order. They come before Part 7, which re-verifies
+whatever they change.
+
+1. **The 404 is the framework default.** All three hit it: a white page under
+   the cream site header, the default "404 | This page could not be found",
+   the landing cluster drawn over the text. There is no `app/not-found.tsx`.
+   `/nebula/<bogus>` falls through to the same page with the prose nav, not
+   the graph's chrome. **Done when:** `/nonexistent`, `/work/nope` and
+   `/nebula/bogus` are on paper, in the site's type, with a way home, and
+   nothing in the scene is drawn over the message.
+2. **The graph cannot be reached from the keyboard.** On `/nebula`, Tab finds
+   "Home" and nothing else; no node can be opened without a pointer. Inside an
+   open node, Tab lands on the panel's scroll body and stops. The `/work`
+   pages carry the same content, so nothing is locked away, but the graph is
+   the half of the site the brief says engineers come for. **Done when:**
+   every node can be focused, named and opened from the keyboard, focus is
+   visible in the scene, and Escape returns focus to the node that was open.
+3. **The first seconds ignore taps.** The graph settles for several seconds
+   after load, and taps in that time land where nodes were rather than where
+   they are drawn, and silently do nothing. Seen at about 3s under software
+   GL, so shorter on a real device, but on a slow phone it reads as
+   unresponsive. **Done when:** a tap on a drawn node opens it from the first
+   frame it is drawn, measured, not judged.
+4. **Graph marks over reading text.** Three places: the open node's card on a
+   phone, where nodes and edges run through the paragraphs; the project-page
+   graph on a 1024-wide tablet, where its dots sit on the heading and lede;
+   and the home page on a phone, where the fixed cluster passes under the
+   Selected work list as it scrolls. The open question this document left for
+   mobile, whether the panel wants the edge layer dimmed behind it, is now
+   answered: it does. **Done when:** no text block has a node or edge under it
+   at 390, 1024 or 1440 wide.
+5. **The open card does not say it scrolls.** Its text starts cut off at the
+   bottom edge with nothing to show there is more. **Done when:** the cut-off
+   reads as more to come, not as a clipping bug.
+6. **Small ones.** The `THREE.Clock` deprecation warning in the console (move
+   to `THREE.Timer`). The home page stops dead after Selected work with no
+   closing line. The home nav (Resume, About, Work, GitHub, LinkedIn) and the
+   inner pages' nav (About, Work, Resume) differ.
+
+**Heard and not acted on.** The same visitors asked for things this document
+has already decided against. They are recorded because they are what a
+stranger asks for, not because the decisions change:
+
+- *Labels on the graph and a "tap a node" hint; a label on the landing
+  cluster.* All three asked. The whisper is the deliberate answer, curious
+  rather than steering, and all three found and opened the graph by it. The
+  one case it does not cover: a reader deep-linked straight to `/nebula`
+  never sees the whisper. Worth a decision of its own.
+- *A recenter control, because the view ended up on empty space.* That was a
+  look-around drag; the wheel is off (`mouseButtons-wheel` is `NONE`), so no
+  free movement holds. But it is the first outside report that the settle on
+  release does not always rescue a sparse view, which is the evidence the
+  deferred upper-sky item was waiting on (see "Open decisions").
+- *Reduced motion still drifts and still runs packets.* Two screenshots, and
+  the tester said it was inconclusive. Measure it before deciding anything.
+
 ### Part 7 — Re-verify and document
 
 Five viewports, reduced motion, mobile framerate. Fold the outcome back into
@@ -1387,6 +1460,7 @@ clears the corner links; the landscape hero's links get 16px of air.
 **Not judged yet:** how the outbound wash through the page feels on a real
 phone, the tap targets on ~10-15px nodes, and whether the panel wants the
 edge layer dimmed behind it — from outside, the whole graph is the backdrop.
+(The last is answered: it does. See "What three strangers found", item 4.)
 
 ## Open decisions
 
@@ -1465,3 +1539,6 @@ edge layer dimmed behind it — from outside, the whole graph is the backdrop.
   3. **Deferred** until item 1 has been judged in the browser. If it is still
      needed, the target is the reader's upper sky, and moving nodes means
      re-searching `INTERIOR_HEADING` and re-running the pixel and label checks.
+     The desktop visitor in "What three strangers found" ended a drag facing
+     two or three nodes and asked for a way back, which is the first sign from
+     outside that it may still be needed.
