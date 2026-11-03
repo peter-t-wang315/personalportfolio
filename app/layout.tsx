@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { site } from "@/content";
@@ -56,6 +57,7 @@ export default function RootLayout({
         <NebulaAffordance />
         <SiteHeader />
         <main className="relative z-10">{children}</main>
+        <Analytics />
       </body>
     </html>
   );
