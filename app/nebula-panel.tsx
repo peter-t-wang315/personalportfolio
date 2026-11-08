@@ -218,6 +218,7 @@ export function NebulaPanel({
           ref={scrollRef}
           onScroll={trackScroll}
           tabIndex={0}
+          data-panel-body
           className={
             "h-full w-full max-w-[66ch] overflow-y-auto overscroll-contain pb-6 " +
             "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden"

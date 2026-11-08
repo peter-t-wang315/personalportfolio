@@ -1248,6 +1248,20 @@ whatever they change.
    the half of the site the brief says engineers come for. **Done when:**
    every node can be focused, named and opened from the keyboard, focus is
    visible in the scene, and Escape returns focus to the node that was open.
+   — **done.** `app/nebula-keyboard.tsx` gives the graph a DOM twin: one
+   visually hidden link per node, to the same URL a click pushes, as a
+   single roving tab stop after "Home" (arrows move, Home/End jump, Tab
+   leaves). The focus indicator is the scene itself: the node is lit with
+   the pointer's own hover (glow, edges, title), and the rig turns the view
+   to it when it lands outside the middle 70% of the frame (`keyFocusNodeId`;
+   a look round inside, a globe turn outside), with a caption at the foot
+   naming it and the keys. Opening from the keyboard moves focus into the
+   panel once the node has arrived; closing puts it back on that node, lit.
+   Both only after a key press, so a pointer reader never finds a caption
+   waiting. Tab from the panel body already went on into the article's
+   links; the "stops" the tester saw did not reproduce. `checks/keyboard.mjs`
+   walks all 51 nodes at 1440 and 390 and finds each one's title on screen;
+   30/30, with `tapwhileturning`, `hometap` and `dragguard` still passing.
 3. **The first seconds ignore taps.** The graph settles for several seconds
    after load, and taps in that time land where nodes were rather than where
    they are drawn, and silently do nothing. Seen at about 3s under software
@@ -1278,7 +1292,9 @@ stranger asks for, not because the decisions change:
   cluster.* All three asked. The whisper is the deliberate answer, curious
   rather than steering, and all three found and opened the graph by it. The
   one case it does not cover: a reader deep-linked straight to `/nebula`
-  never sees the whisper. Worth a decision of its own.
+  never sees the whisper. **Decided (2026-11-07): that is fine.** A reader
+  who arrives by a link to `/nebula` was sent to the graph by someone and
+  does not need to be drawn to it.
 - *A recenter control, because the view ended up on empty space.* That was a
   look-around drag; the wheel is off (`mouseButtons-wheel` is `NONE`), so no
   free movement holds. But it is the first outside report that the settle on
