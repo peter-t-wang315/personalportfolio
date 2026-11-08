@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
 import {
@@ -2165,7 +2166,7 @@ function RouteFocus({ id }: { id: string | null }) {
 }
 
 export function NebulaCanvas() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   const router = useRouter();
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
   const isHome = pathname === "/";

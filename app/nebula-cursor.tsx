@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import { useSceneStore } from "@/lib/scene-store";
 import { canDragFrom, isDragging, pointOnCluster } from "./nebula-drag-state";
 
@@ -26,7 +26,7 @@ import { canDragFrom, isDragging, pointOnCluster } from "./nebula-drag-state";
  * hero headline, where text selection wins, it stays an I-beam.
  */
 export function NebulaCursor() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   const isNebula = pathname.startsWith("/nebula");
 
   useEffect(() => {

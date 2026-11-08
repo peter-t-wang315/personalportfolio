@@ -1230,7 +1230,17 @@ whatever they change.
    `/nebula/<bogus>` falls through to the same page with the prose nav, not
    the graph's chrome. **Done when:** `/nonexistent`, `/work/nope` and
    `/nebula/bogus` are on paper, in the site's type, with a way home, and
-   nothing in the scene is drawn over the message.
+   nothing in the scene is drawn over the message. — **done.** `app/not-found.tsx`
+   lays a sheet of paper over the persisted canvas inside `<main>`'s stacking
+   context, and mounts a marker (`lib/missing-page.ts`) that makes the chrome
+   read the route as a plain document whatever the URL says: before it,
+   `/nebula/bogus` flew the camera into the shell, hid the header and offered
+   a grab cursor over a globe behind the message. The routes that throw
+   `notFound()` title themselves "Not found" too. `checks/notfound.mjs` covers
+   all four missing shapes at 390 and 1440 plus a client navigation out of the
+   graph: real 404s, zero off-paper pixels with the text hidden, Home goes
+   home. One seam left: a cold load of `/nebula/<bogus>` shows the header a
+   beat after first paint, since only the client knows the page is missing.
 2. **The graph cannot be reached from the keyboard.** On `/nebula`, Tab finds
    "Home" and nothing else; no node can be opened without a pointer. Inside an
    open node, Tab lands on the panel's scroll body and stops. The `/work`

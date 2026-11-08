@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import { FLIGHT_DURATION_MS } from "./nebula-flight";
 
 /**
@@ -51,7 +51,7 @@ function isGraph(pathname: string) {
  * there would just be latency with a curve on it.
  */
 export function RouteCurtain() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   const previous = useRef<string | null>(null);
 
   useIsomorphicLayoutEffect(() => {
