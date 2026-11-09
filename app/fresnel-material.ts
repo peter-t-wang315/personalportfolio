@@ -71,6 +71,13 @@ export function createFresnelMaterial({
         uRefract: { value: 0 },
         uGlassMix: { value: 0 },
         uAspect: { value: 1 },
+        // In display (sRGB) values, not three's linear working space. This
+        // shader writes its colour to the framebuffer unconverted, and before
+        // the shell was opaque the page behind it was the CSS paper showing
+        // through a transparent canvas, so it is that paper, as the screen
+        // shows it, that the composite has to reproduce. In linear it came
+        // out a full shade darker than the page around it.
+        uPaper: { value: new THREE.Color(palette.paper).convertLinearToSRGB() },
       },
     ]),
     vertexShader: `
@@ -155,6 +162,7 @@ export function createFresnelMaterial({
       uniform float uRefract;
       uniform float uGlassMix;
       uniform float uAspect;
+      uniform vec3 uPaper;
       varying vec3 vNormal;
       varying vec3 vViewPosition;
       varying float vShapeRim;
@@ -235,6 +243,22 @@ export function createFresnelMaterial({
           vec3 behind = texture2D(uBackdrop, clamp(screen + bend, 0.0, 1.0)).rgb;
           rgb = mix(color, behind, rim * uGlassMix * (1.0 - uOpen));
         }
+
+        // **Opened, the shell is opaque.** Near-clear across the face was
+        // right for a sphere and wrong for a page: everything behind the
+        // opened node — edges, the nodes past it, a packet in flight — ran
+        // straight through the paragraphs, and on a phone, where the graph is
+        // stood outside of and all of it is behind the shell, through every
+        // line of the card (07-continuous-space.md, "What three strangers
+        // found", item 4). So as it opens it becomes what it already looked
+        // like with nothing behind it: this colour at this alpha over paper,
+        // composited here and drawn at full opacity. Identical where the
+        // frame behind was paper, and paper where it was not. The blend is
+        // exact at every uOpen in between, so the morph never pops.
+        vec3 overPaper = mix(uPaper, rgb, alpha);
+        float openAlpha = mix(alpha, 1.0, uOpen);
+        rgb = (rgb * alpha * (1.0 - uOpen) + overPaper * uOpen) / max(openAlpha, 1e-4);
+        alpha = openAlpha;
 
         gl_FragColor = vec4(rgb, alpha);
         #include <fog_fragment>

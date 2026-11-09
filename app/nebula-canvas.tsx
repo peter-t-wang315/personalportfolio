@@ -37,6 +37,7 @@ import {
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_PARALLAX_MAX_PX,
+  clusterBesideTextColumn,
   clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
@@ -1381,8 +1382,21 @@ function CameraRig({
     // Pixels per world unit at unit distance, and at the graph's distance.
     const K = H / 2 / Math.tan((STANDING_FOV * Math.PI) / 360);
     const k = K / D;
+    // **On a stacked landing page the graph belongs to the hero, and leaves
+    // with it.** The canvas is fixed and the document scrolls over it, which
+    // beside a column is the point — the globe holds its place while the
+    // reader goes down the page past it. Stacked on a phone there is no
+    // beside: the cluster sits between the headline and the nav, full width,
+    // so everything below the hero scrolled straight across it — Selected
+    // work, the intro, every row of the list (07-continuous-space.md, "What
+    // three strangers found", item 4). Shifting the composition up by the
+    // scroll makes it part of the hero's layout instead, gone when the hero
+    // is. Not damped: it has to move with the page to the pixel, or the
+    // hero's own text slides against it.
+    const scrollShift =
+      isHome && !clusterBesideTextColumn(W, H) ? window.scrollY : 0;
     const centreXPx = solved.current.x + parallaxPx.current.x;
-    const centreYPx = solved.current.y - parallaxPx.current.y;
+    const centreYPx = solved.current.y - parallaxPx.current.y - scrollShift;
     // Where the camera stands to put the graph's *origin* on that point.
     // Looking straight down -z, so a lateral offset of the camera is a
     // lateral offset of the picture and nothing else — a rotation would have

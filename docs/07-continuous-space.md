@@ -1275,7 +1275,29 @@ whatever they change.
    Selected work list as it scrolls. The open question this document left for
    mobile, whether the panel wants the edge layer dimmed behind it, is now
    answered: it does. **Done when:** no text block has a node or edge under it
-   at 390, 1024 or 1440 wide.
+   at 390, 1024 or 1440 wide. — **done**, one fix per place:
+   - *The open card.* The opened shell is opaque (fresnel-material.ts): as it
+     opens it draws what it already looked like over paper, composited in the
+     shader at full alpha, so nothing behind it shows and the look is
+     unchanged where nothing was. The paper is given in display values,
+     because the shader writes unconverted; in linear it came out a shade
+     darker than the page. Opened, it draws last and without a depth test:
+     from inside, the edge batch's origin is nearer than the node, and the
+     node's own edges leave through its face toward the reader.
+   - *The project page at 1024.* `.reading-veil` lays paper under the reading
+     column, inside `<main>`'s stacking context, feathered past its right
+     edge. This reverses part of `d5be778`, which let the rest of a close
+     globe overflow "behind the prose, dimmed"; at 1440 and wider nothing
+     reaches the column and the veil hides nothing.
+   - *The home page on a phone.* On a stacked layout the composition is
+     shifted up by the scroll, undamped, so the cluster leaves with the hero
+     instead of staying fixed while the list scrolls across it.
+
+   `checks/textclear.mjs` hides the text and counts what is under every line
+   box: distance from paper on document pages, steep local steps (a mark,
+   not the shell's own shading) inside the open card. 45/45 at 390, 1024
+   and 1440, from 18 failures before; whisper, handoff (both widths), glass,
+   keyboard, hometap, tapwhileturning and dragguard unchanged.
 5. **The open card does not say it scrolls.** Its text starts cut off at the
    bottom edge with nothing to show there is more. **Done when:** the cut-off
    reads as more to come, not as a clipping bug.

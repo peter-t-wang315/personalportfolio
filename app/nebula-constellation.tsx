@@ -184,6 +184,9 @@ const HOVER_EASE = 0.2;
 /** One shared clock uniform drives every breathing material. */
 const breatheTime = { value: 0 };
 
+/** See the opened shell's renderOrder in the frame loop. Above everything else. */
+const OPEN_SHELL_RENDER_ORDER = 10;
+
 // 48 segments rather than 32. A sphere only ever needs enough to look round,
 // but the same vertices have to describe a superellipsoid when a node opens,
 // and its corners curve far more tightly than anything on a sphere does —
@@ -1054,6 +1057,19 @@ export function Constellation({
       const material = materialByNodeId[node.id];
       const open = node.id === focusOpen.nodeId && canOpen ? openEased : 0;
       material.uniforms.uOpen.value = open;
+      // Drawn last while open. The opened shell is opaque (fresnel-material.ts)
+      // so that nothing behind it crosses the panel's text, but transparent
+      // objects are sorted by their origin, and from inside the graph the
+      // edge batch's origin — the graph's centre — is nearer the camera than
+      // the node being read. Sorted by distance, the edges were drawn over
+      // the shell they are behind.
+      mesh.renderOrder = open > 0 ? OPEN_SHELL_RENDER_ORDER : 0;
+      // And over what is in front of it too. The open node's own edges leave
+      // from its centre, and the ones to neighbours on the camera's side pass
+      // out through the face toward the reader: in front of the shell, so its
+      // depth test kept them drawn across the text however late it went. The
+      // card covers everything in its outline, which is the point of it.
+      material.depthTest = open <= 0;
       // The opened node draws the panel's scroll thumb on its own rim, so the
       // indicator is part of the wall rather than laid over it — see
       // lib/focus-scroll.ts. Held while scrolling, then faded.
