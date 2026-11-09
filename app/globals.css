@@ -103,6 +103,37 @@ body {
 }
 
 /*
+ * **Paper under the reading column.** The canvas is fixed behind every page,
+ * and beside a column the globe is composed to clear it — but not always
+ * entirely: at 1024 wide a spotlit project's cluster is centred in a 196px
+ * band it cannot fit, and the unlit half of the sphere drifted under the
+ * heading and the lede (07-continuous-space.md, "What three strangers found",
+ * item 4). This lays the page's own paper between the scene and the column,
+ * inside <main>'s stacking context, feathered out past its right edge so the
+ * graph fades in beside the text rather than being cut by a straight line.
+ * Where the globe already clears the column it hides nothing.
+ *
+ * It reaches left over the page gutter (the column starts inside it) and
+ * passes no pointer events, so a press beside the text still reaches the
+ * globe's drag exactly as before.
+ */
+.reading-veil {
+  position: relative;
+}
+.reading-veil::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -2rem -3rem -2rem -4rem;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    var(--color-paper) calc(100% - 3rem),
+    transparent
+  );
+}
+
+/*
  * The desktop "What's this?" anchor (nebula-affordance.tsx) is the phrase
  * label itself, and between two phrases it has no size at all — so a focus
  * ring could be drawn around nothing. The label underlines itself on focus

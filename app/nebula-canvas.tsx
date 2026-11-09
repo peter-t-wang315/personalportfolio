@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import { CameraControls, CameraControlsImpl } from "@react-three/drei";
 import { useSceneStore } from "@/lib/scene-store";
 import {
@@ -36,6 +37,7 @@ import {
 import { CONSTELLATION_BOUNDING_RADIUS } from "@/lib/node-geometry";
 import {
   CLUSTER_PARALLAX_MAX_PX,
+  clusterBesideTextColumn,
   clusterCenterXFraction,
   clusterCenterYFraction,
   clusterScaleForViewport,
@@ -65,6 +67,7 @@ import {
   shellLerpPose,
   type CameraPose,
 } from "./nebula-flight";
+import { GlassBackdrop } from "./nebula-glass-backdrop";
 import { NebulaHome } from "./nebula-home";
 import { HOME_HANDOFF_MS } from "./nebula-departure";
 import { getHeroFrame, homePlane } from "./nebula-home-placement";
@@ -374,6 +377,16 @@ const INSIDE_CAMERA_FOV = STANDING_FOV;
  * controls lose the heading entirely.
  */
 const LOOK_DISTANCE = 0.1;
+
+/**
+ * How far from the middle of the frame, in NDC, a node the keyboard lands on
+ * may be before the view turns to it. Generous on purpose: arrowing between
+ * neighbours that are both comfortably on screen should not swing the view
+ * every keypress, only bring back one that is near an edge or out of sight.
+ */
+const KEY_AIM_FRAME = 0.7;
+/** How long the keyboard's turn toward a node takes. */
+const KEY_AIM_DURATION_MS = 700;
 
 /**
  * **The orientation the graph turns to as the reader arrives, and the reason
@@ -1142,6 +1155,74 @@ function CameraRig({
     };
   }, [isNebula, outside, gl]);
 
+  /**
+   * **The keyboard's way of looking.** A pointer finds a node by pointing at
+   * it, so whatever it lights is already on screen. Arrowing through the node
+   * list (nebula-keyboard.tsx) lands on nodes in any direction, half of them
+   * behind the reader, and a highlight nobody can see is no focus indicator.
+   * So when the keyboard lands on a node outside the middle of the frame, the
+   * view turns to it: inside the graph by looking round from where the reader
+   * stands, the same rotation a drag makes; outside it by turning the globe,
+   * the same turn that keeps a closed node in view.
+   *
+   * Only on the bare graph. With a node open the camera is parked against its
+   * shell, and turning away from it would leave the panel floating over sky.
+   */
+  useEffect(() => {
+    if (!isNebula) return;
+    function aim(id: string | null) {
+      const controls = controlsRef.current;
+      const state = useSceneStore.getState();
+      if (!id || !controls || state.flying || state.focusedNodeId !== null) {
+        return;
+      }
+      const live = getLivePosition(id);
+      if (!live) return;
+      const camera = controls.camera;
+      const world = live.clone().applyQuaternion(focusBase());
+      const view = camera.getWorldDirection(new THREE.Vector3());
+      const ahead = world.clone().sub(camera.position).dot(view) > 0;
+      const ndc = world.clone().project(camera);
+      if (ahead && Math.abs(ndc.x) <= KEY_AIM_FRAME && Math.abs(ndc.y) <= KEY_AIM_FRAME) {
+        return;
+      }
+      noteRigEvent("key-aim", id);
+      if (outside) {
+        const facing = turnFacingNode(id);
+        if (!facing) return;
+        if (state.reducedMotion) setOutsideTurn(facing);
+        else {
+          glideOutsideTurn(facing, {
+            start: performance.now(),
+            delay: 0,
+            duration: KEY_AIM_DURATION_MS,
+            ease: flightEase,
+          });
+        }
+        return;
+      }
+      // camera-controls orbits the camera about its target, which
+      // parkForLookingAround put a hand's breadth ahead, so an orbit is a
+      // look. The camera wants to end on the far side of the target from the
+      // node: its offset from the target is the node's direction, reversed.
+      const offset = world.sub(camera.position).normalize().negate();
+      const polar = Math.acos(THREE.MathUtils.clamp(offset.y, -1, 1));
+      let azimuth = Math.atan2(offset.x, offset.z);
+      // The short way round from wherever the reader has turned to.
+      const current = controls.azimuthAngle;
+      azimuth += Math.PI * 2 * Math.round((current - azimuth) / (Math.PI * 2));
+      releaseViewSettle();
+      void controls.rotateTo(azimuth, polar, !state.reducedMotion);
+    }
+    return useSceneStore.subscribe((state, previous) => {
+      if (state.keyFocusNodeId !== previous.keyFocusNodeId) {
+        aim(state.keyFocusNodeId);
+      }
+    });
+    // focusBase reads `outside`, which is a dependency already.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isNebula, outside]);
+
   // The turn belongs to a visit to the graph and is forgotten once the reader
   // is off it — but not by an effect of its own. It was one, declared ahead of
   // the route effect, so on leaving it ran before the departure had begun, saw
@@ -1301,8 +1382,21 @@ function CameraRig({
     // Pixels per world unit at unit distance, and at the graph's distance.
     const K = H / 2 / Math.tan((STANDING_FOV * Math.PI) / 360);
     const k = K / D;
+    // **On a stacked landing page the graph belongs to the hero, and leaves
+    // with it.** The canvas is fixed and the document scrolls over it, which
+    // beside a column is the point — the globe holds its place while the
+    // reader goes down the page past it. Stacked on a phone there is no
+    // beside: the cluster sits between the headline and the nav, full width,
+    // so everything below the hero scrolled straight across it — Selected
+    // work, the intro, every row of the list (07-continuous-space.md, "What
+    // three strangers found", item 4). Shifting the composition up by the
+    // scroll makes it part of the hero's layout instead, gone when the hero
+    // is. Not damped: it has to move with the page to the pixel, or the
+    // hero's own text slides against it.
+    const scrollShift =
+      isHome && !clusterBesideTextColumn(W, H) ? window.scrollY : 0;
     const centreXPx = solved.current.x + parallaxPx.current.x;
-    const centreYPx = solved.current.y - parallaxPx.current.y;
+    const centreYPx = solved.current.y - parallaxPx.current.y - scrollShift;
     // Where the camera stands to put the graph's *origin* on that point.
     // Looking straight down -z, so a lateral offset of the camera is a
     // lateral offset of the picture and nothing else — a rotation would have
@@ -2164,7 +2258,7 @@ function RouteFocus({ id }: { id: string | null }) {
 }
 
 export function NebulaCanvas() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   const router = useRouter();
   const isNebula = pathname === "/nebula" || pathname.startsWith("/nebula/");
   const isHome = pathname === "/";
@@ -2230,6 +2324,10 @@ export function NebulaCanvas() {
           onOpenNode={openNode}
         />
       </ConstellationOrientation>
+      {/* Last, and that is load-bearing: it renders the scene into the
+          backdrop the shells refract, so everything else must have written
+          this frame before it runs. See nebula-glass-backdrop.tsx. */}
+      <GlassBackdrop isNebula={isNebula} />
     </Canvas>
   );
 }

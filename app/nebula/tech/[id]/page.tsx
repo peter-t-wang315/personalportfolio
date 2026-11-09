@@ -15,7 +15,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const node = techById(id);
-  if (!node) return {};
+  if (!node) return { title: "Not found | Peter Wang" };
 
   return {
     title: `${node.label} | Peter Wang`,

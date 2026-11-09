@@ -15,7 +15,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const project = projectBySlug(slug);
-  if (!project) return {};
+  if (!project) return { title: "Not found | Peter Wang" };
 
   return {
     title: `${project.title} | Peter Wang`,
@@ -39,7 +39,7 @@ export default async function ProjectPage({
 
   return (
     <div className="px-6 pt-8 pb-20 md:px-16 md:pt-10 md:pb-24">
-      <div className="max-w-[66ch]">
+      <div className="reading-veil max-w-[66ch]">
         <HomeLink label="Work" href={`/work#${project.slug}`} />
         <ProjectArticle project={project} />
       </div>

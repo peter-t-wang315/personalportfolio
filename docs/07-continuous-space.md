@@ -1137,13 +1137,193 @@ from `content/` at a layout of its own, and the two dissolve into each other
 while the camera holds still — on the click going in, at the moment of landing
 coming out. See "The hand-off".
 
-### Part 6 — Seeing home through the glass
+### Part 6 — Seeing home through the glass — **done**
 
 Transmission on the node shells, now that there is something to refract.
 Tier-gated, measured.
 
 **Done when:** home is visibly bent by a node in front of it on desktop, and
 the frame budget is unchanged on tiers that do not get it.
+
+**Built as a backdrop pass and four uniforms, not as a transmissive
+material.** `MeshPhysicalMaterial`'s `transmission` and drei's
+`MeshTransmissionMaterial` both cost a render pass *per transmissive mesh* —
+which is what the performance budget's standing cap of two such meshes is
+about — and both would replace the fresnel shader, where the rim, the
+breathing, the `uOpen` morph and the scroll thumb all live. So instead:
+`nebula-glass-backdrop.tsx` renders the scene **minus the shells** into a
+half-resolution target cleared to `--paper`, once a frame, and every shell
+samples that target displaced by its own normal
+(`app/fresnel-material.ts`). One pass for all 51 nodes, and the material
+keeps everything it already did.
+
+**The paper clear is the whole trick.** 2.5 removed transmission because the
+canvas is `alpha: true` over a CSS background: the page's own colour is not
+in the scene, so glass transmitted the void and rendered white. The backdrop
+target is not the canvas — it is opaque, and it is cleared to the colour the
+void actually is. Where nothing is behind a node, what it refracts is
+exactly the paper it was already showing, so white is not reachable.
+
+**The bend is the view-space normal, weighted by the same rim term as the
+alpha, and negated.** Zero looking through the middle of a sphere, largest
+at the silhouette. Negated because the first build sampled *outward*, where
+there is only paper, and read as the node wiping the page clean at its edge
+rather than gathering it; sampling inward carries what is behind the middle
+of the node out to its rim, which is what a ball of glass does.
+`GLASS_REFRACT` is 0.03 of the frame height at the silhouette, swept at 0,
+0.008, 0.016, 0.03 and 0.05 against the headline seen from the centre: the
+first two are hard to see at all, and past 0.03 the edge is sampling from so
+far away that it stops being related to what is behind the node.
+
+**Measured** (`checks/glass.mjs`, 1440x900, reduced motion, standing at the
+centre and turned around to face home — `dot = 1.0000`). The same standing
+point with the glass on and off differs in 11,560 pixels of 1,296,000 (0.89%
+of the frame), peak channel delta 92, and 11,421 of those are ink: what
+moved is the page, not rims over empty paper. The pass runs on desktop
+`/nebula` at 720x450 against a 1440x900 buffer, and does not run at all on
+`/`, `/about`, a portrait phone or a tablet — `refract` is 0 there and the
+shader skips the sample, so the material below desktop is the material as it
+was before Part 6. Frame time under SwiftShader was 16.7ms with the pass and
+16.7ms without, which says only that the pass fits inside the 60Hz cap at
+that size under software GL; it is not a measurement of a loaded GPU.
+
+**What it cannot do, stated plainly.** A shell is 10% opaque across its face
+and 42% at the rim, and it is blended over a frame that already has home in
+it. So the refracted copy is always a *fraction* of the pixel, with the
+straight-through page underneath: the page reads as itself, disturbed, and
+the strongest reading available is a stroke of the headline gathering and
+going soft as it crosses a shell's edge. Making it read harder would mean
+making the shell opaque enough to replace what is behind it, at which point
+it stops being a shell and the graph stops showing nodes through nodes — the
+backdrop deliberately excludes the shells, so anything the glass replaced
+would lose them. Bounded on purpose; the brief asked for a smear at the rim.
+
+**Not judged yet:** all of the above was shot at DPR 1 under SwiftShader,
+where a 3px node stroke is already faint. The strength wants one look on a
+real display at DPR 2, and the most favourable moment for it is the flight,
+where home is at full opacity and passing the camera rather than at
+`HOME_REST_OPACITY` behind the reader.
+
+### What three strangers found — **next**
+
+Surveyed 2026-10-10 against a production build of `44d8fb6`. Three visitors
+were told only that a personal website was running and to explore it, with no
+word about what it was for, and no source: one on a 1440×900 laptop, one on a
+390×844 phone, one on a 1024×768 tablet and a 1280×720 laptop with keyboard
+only, reduced motion, typed deep links, history and refresh. Each wrote a
+conclusion.
+
+All three worked out unaided what the site is, who it is for, and that the
+graph is the work drawn as the system it describes. The recruiter path held on
+its own: name, role, headline and the three numbers within seconds, Resume one
+click away, the PDF served. Two of them quoted the solder and driver prose back
+unprompted. Flying into a node and reading inside the shell was what all three
+liked best. Nothing hard-broke: no overflow at any size, deep links, history
+and refresh all sound, and no console errors beyond the 404s they asked for.
+
+These are the fixes, in order. They come before Part 7, which re-verifies
+whatever they change.
+
+1. **The 404 is the framework default.** All three hit it: a white page under
+   the cream site header, the default "404 | This page could not be found",
+   the landing cluster drawn over the text. There is no `app/not-found.tsx`.
+   `/nebula/<bogus>` falls through to the same page with the prose nav, not
+   the graph's chrome. **Done when:** `/nonexistent`, `/work/nope` and
+   `/nebula/bogus` are on paper, in the site's type, with a way home, and
+   nothing in the scene is drawn over the message. — **done.** `app/not-found.tsx`
+   lays a sheet of paper over the persisted canvas inside `<main>`'s stacking
+   context, and mounts a marker (`lib/missing-page.ts`) that makes the chrome
+   read the route as a plain document whatever the URL says: before it,
+   `/nebula/bogus` flew the camera into the shell, hid the header and offered
+   a grab cursor over a globe behind the message. The routes that throw
+   `notFound()` title themselves "Not found" too. `checks/notfound.mjs` covers
+   all four missing shapes at 390 and 1440 plus a client navigation out of the
+   graph: real 404s, zero off-paper pixels with the text hidden, Home goes
+   home. One seam left: a cold load of `/nebula/<bogus>` shows the header a
+   beat after first paint, since only the client knows the page is missing.
+2. **The graph cannot be reached from the keyboard.** On `/nebula`, Tab finds
+   "Home" and nothing else; no node can be opened without a pointer. Inside an
+   open node, Tab lands on the panel's scroll body and stops. The `/work`
+   pages carry the same content, so nothing is locked away, but the graph is
+   the half of the site the brief says engineers come for. **Done when:**
+   every node can be focused, named and opened from the keyboard, focus is
+   visible in the scene, and Escape returns focus to the node that was open.
+   — **done.** `app/nebula-keyboard.tsx` gives the graph a DOM twin: one
+   visually hidden link per node, to the same URL a click pushes, as a
+   single roving tab stop after "Home" (arrows move, Home/End jump, Tab
+   leaves). The focus indicator is the scene itself: the node is lit with
+   the pointer's own hover (glow, edges, title), and the rig turns the view
+   to it when it lands outside the middle 70% of the frame (`keyFocusNodeId`;
+   a look round inside, a globe turn outside), with a caption at the foot
+   naming it and the keys. Opening from the keyboard moves focus into the
+   panel once the node has arrived; closing puts it back on that node, lit.
+   Both only after a key press, so a pointer reader never finds a caption
+   waiting. Tab from the panel body already went on into the article's
+   links; the "stops" the tester saw did not reproduce. `checks/keyboard.mjs`
+   walks all 51 nodes at 1440 and 390 and finds each one's title on screen;
+   30/30, with `tapwhileturning`, `hometap` and `dragguard` still passing.
+3. **The first seconds ignore taps.** The graph settles for several seconds
+   after load, and taps in that time land where nodes were rather than where
+   they are drawn, and silently do nothing. Seen at about 3s under software
+   GL, so shorter on a real device, but on a slow phone it reads as
+   unresponsive. **Done when:** a tap on a drawn node opens it from the first
+   frame it is drawn, measured, not judged.
+4. **Graph marks over reading text.** Three places: the open node's card on a
+   phone, where nodes and edges run through the paragraphs; the project-page
+   graph on a 1024-wide tablet, where its dots sit on the heading and lede;
+   and the home page on a phone, where the fixed cluster passes under the
+   Selected work list as it scrolls. The open question this document left for
+   mobile, whether the panel wants the edge layer dimmed behind it, is now
+   answered: it does. **Done when:** no text block has a node or edge under it
+   at 390, 1024 or 1440 wide. — **done**, one fix per place:
+   - *The open card.* The opened shell is opaque (fresnel-material.ts): as it
+     opens it draws what it already looked like over paper, composited in the
+     shader at full alpha, so nothing behind it shows and the look is
+     unchanged where nothing was. The paper is given in display values,
+     because the shader writes unconverted; in linear it came out a shade
+     darker than the page. Opened, it draws last and without a depth test:
+     from inside, the edge batch's origin is nearer than the node, and the
+     node's own edges leave through its face toward the reader.
+   - *The project page at 1024.* `.reading-veil` lays paper under the reading
+     column, inside `<main>`'s stacking context, feathered past its right
+     edge. This reverses part of `d5be778`, which let the rest of a close
+     globe overflow "behind the prose, dimmed"; at 1440 and wider nothing
+     reaches the column and the veil hides nothing.
+   - *The home page on a phone.* On a stacked layout the composition is
+     shifted up by the scroll, undamped, so the cluster leaves with the hero
+     instead of staying fixed while the list scrolls across it.
+
+   `checks/textclear.mjs` hides the text and counts what is under every line
+   box: distance from paper on document pages, steep local steps (a mark,
+   not the shell's own shading) inside the open card. 45/45 at 390, 1024
+   and 1440, from 18 failures before; whisper, handoff (both widths), glass,
+   keyboard, hometap, tapwhileturning and dragguard unchanged.
+5. **The open card does not say it scrolls.** Its text starts cut off at the
+   bottom edge with nothing to show there is more. **Done when:** the cut-off
+   reads as more to come, not as a clipping bug.
+6. **Small ones.** The `THREE.Clock` deprecation warning in the console (move
+   to `THREE.Timer`). The home page stops dead after Selected work with no
+   closing line. The home nav (Resume, About, Work, GitHub, LinkedIn) and the
+   inner pages' nav (About, Work, Resume) differ.
+
+**Heard and not acted on.** The same visitors asked for things this document
+has already decided against. They are recorded because they are what a
+stranger asks for, not because the decisions change:
+
+- *Labels on the graph and a "tap a node" hint; a label on the landing
+  cluster.* All three asked. The whisper is the deliberate answer, curious
+  rather than steering, and all three found and opened the graph by it. The
+  one case it does not cover: a reader deep-linked straight to `/nebula`
+  never sees the whisper. **Decided (2026-11-07): that is fine.** A reader
+  who arrives by a link to `/nebula` was sent to the graph by someone and
+  does not need to be drawn to it.
+- *A recenter control, because the view ended up on empty space.* That was a
+  look-around drag; the wheel is off (`mouseButtons-wheel` is `NONE`), so no
+  free movement holds. But it is the first outside report that the settle on
+  release does not always rescue a sparse view, which is the evidence the
+  deferred upper-sky item was waiting on (see "Open decisions").
+- *Reduced motion still drifts and still runs packets.* Two screenshots, and
+  the tester said it was inconclusive. Measure it before deciding anything.
 
 ### Part 7 — Re-verify and document
 
@@ -1328,6 +1508,7 @@ clears the corner links; the landscape hero's links get 16px of air.
 **Not judged yet:** how the outbound wash through the page feels on a real
 phone, the tap targets on ~10-15px nodes, and whether the panel wants the
 edge layer dimmed behind it — from outside, the whole graph is the backdrop.
+(The last is answered: it does. See "What three strangers found", item 4.)
 
 ## Open decisions
 
@@ -1406,3 +1587,6 @@ edge layer dimmed behind it — from outside, the whole graph is the backdrop.
   3. **Deferred** until item 1 has been judged in the browser. If it is still
      needed, the target is the reader's upper sky, and moving nodes means
      re-searching `INTERIOR_HEADING` and re-running the pixel and label checks.
+     The desktop visitor in "What three strangers found" ended a drag facing
+     two or three nodes and asked for a way back, which is the first sign from
+     outside that it may still be needed.

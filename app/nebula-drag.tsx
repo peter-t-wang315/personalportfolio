@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import {
   addDragDelta,
   canDragFrom,
@@ -43,7 +43,7 @@ const DRAG_SLOP_PX = 4;
  * nothing behind it to scroll.
  */
 export function NebulaDrag() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   const active = !pathname.startsWith("/nebula");
 
   // A new route is a new view. Whatever the reader spun the last one to is not

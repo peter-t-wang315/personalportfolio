@@ -1,5 +1,6 @@
 import { HomeLink } from "../home-link";
 import { NebulaCloseControl } from "../nebula-close-control";
+import { NebulaKeyboard } from "../nebula-keyboard";
 
 /**
  * The DOM chrome over the graph, shared by `/nebula`, `/nebula/[slug]` and
@@ -38,6 +39,12 @@ export default function NebulaLayout({
       <div className="pointer-events-auto relative z-10 inline-block">
         <HomeLink />
       </div>
+      {/* After Home and before the way out of a node, so Tab reaches the
+          graph second and the panel last. Left pointer-events-none with the
+          rest of this layer: its links are visually hidden and its caption is
+          a picture of the focus, so nothing in it is ever a pointer target,
+          and a box here would swallow drags meant for the graph. */}
+      <NebulaKeyboard />
       <NebulaCloseControl />
       {children}
     </div>

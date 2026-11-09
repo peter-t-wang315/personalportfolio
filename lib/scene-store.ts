@@ -121,6 +121,15 @@ interface SceneState {
    * page, and the route follows once the page has gone (nebula-departure.ts).
    */
   arrivalRequest: number;
+  /**
+   * The node the keyboard is on in the graph's node list (nebula-keyboard.tsx),
+   * or null when focus is anywhere else. The list lights it through
+   * `hoveredNodeId`, the same highlight and label a pointer gets; this is the
+   * extra fact a pointer never needs: that the reader cannot *see* where they
+   * are unless the view turns to it. The camera rig reads it and turns the
+   * view toward a node that is off screen.
+   */
+  keyFocusNodeId: string | null;
   setPointer: (pointer: { x: number; y: number }) => void;
   setReducedMotion: (reducedMotion: boolean) => void;
   setHoveredNodeId: (id: string | null) => void;
@@ -138,6 +147,7 @@ interface SceneState {
   }) => void;
   setHeroLayout: (layout: HeroLayout | null) => void;
   requestArrival: () => void;
+  setKeyFocusNodeId: (id: string | null) => void;
 }
 
 /** One run of text on the hero, as the canvas repaints it. */
@@ -175,6 +185,7 @@ export const useSceneStore = create<SceneState>((set) => ({
   clusterScreen: { ready: false, centerX: 0, centerY: 0, radiusPx: 0 },
   heroLayout: null,
   arrivalRequest: 0,
+  keyFocusNodeId: null,
   setPointer: (pointer) => set({ pointer }),
   setReducedMotion: (reducedMotion) => set({ reducedMotion }),
   setHoveredNodeId: (hoveredNodeId) => set({ hoveredNodeId }),
@@ -192,4 +203,5 @@ export const useSceneStore = create<SceneState>((set) => ({
   setHeroLayout: (heroLayout) => set({ heroLayout }),
   requestArrival: () =>
     set((state) => ({ arrivalRequest: state.arrivalRequest + 1 })),
+  setKeyFocusNodeId: (keyFocusNodeId) => set({ keyFocusNodeId }),
 }));

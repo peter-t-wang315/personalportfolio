@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRoutePathname } from "@/lib/missing-page";
 import { site } from "@/content";
 
 const links = [
@@ -18,7 +18,7 @@ const links = [
  * corner HomeLink (see nebula/page.tsx) as their sole way out.
  */
 export function SiteHeader() {
-  const pathname = usePathname();
+  const pathname = useRoutePathname();
   if (pathname === "/" || pathname.startsWith("/nebula")) return null;
 
   return (
