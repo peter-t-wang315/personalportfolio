@@ -23,6 +23,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.next-*.log
+
+# agent worktrees
+.claude/worktrees/
 
 # local env files
 .env*.local
